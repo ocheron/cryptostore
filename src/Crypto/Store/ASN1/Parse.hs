@@ -31,6 +31,7 @@ import Control.Arrow (first)
 import Control.Monad (MonadPlus(..), liftM2)
 import Control.Monad.Fail
 
+-- | ASN1 parse monad
 newtype ParseASN1 a = P { runP :: [ASN1] -> Either String (a, [ASN1]) }
 
 instance Functor ParseASN1 where
