@@ -28,7 +28,7 @@ import Data.ASN1.Types
 import Data.ASN1.Stream
 import Control.Applicative
 import Control.Arrow (first)
-import Control.Monad (liftM2)
+import Control.Monad (MonadPlus(..), liftM2)
 
 newtype ParseASN1 a = P { runP :: [ASN1] -> Either String (a, [ASN1]) }
 
@@ -43,12 +43,21 @@ instance Applicative ParseASN1 where
                 case runP ma s2 of
                     Left err      -> Left err
                     Right (a, s3) -> Right (f a, s3)
+instance Alternative ParseASN1 where
+    empty = throwParseError "empty"
+    (<|>) = mplus
 instance Monad ParseASN1 where
     return      = pure
     (>>=) m1 m2 = P $ \s ->
         case runP m1 s of
             Left err      -> Left err
             Right (a, s2) -> runP (m2 a) s2
+instance MonadPlus ParseASN1 where
+    mzero = throwParseError "mzero"
+    mplus m1 m2 = P $ \s ->
+        case runP m1 s of
+            Left  _ -> runP m2 s
+            success -> success
 
 get :: ParseASN1 [ASN1]
 get = P $ \stream -> Right (stream, stream)
