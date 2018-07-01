@@ -29,6 +29,7 @@ library
                      , Crypto.Store.CMS.Info
                      , Crypto.Store.CMS.Type
                      , Crypto.Store.CMS.Util
+                     , Crypto.Store.PKCS8.EC
   -- other-extensions:
   build-depends:       base >= 4.9 && < 5
                      , bytestring

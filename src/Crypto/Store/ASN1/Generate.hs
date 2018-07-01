@@ -16,9 +16,12 @@ module Crypto.Store.ASN1.Generate
     , gASN1Time
     , gMany
     , optASN1S
+    , encodeASN1S
     ) where
 
+import           Data.ASN1.BinaryEncoding
 import           Data.ASN1.BitArray
+import           Data.ASN1.Encoding
 import           Data.ASN1.OID
 import           Data.ASN1.Types
 import           Data.ByteString (ByteString)
@@ -65,3 +68,7 @@ gOne = gMany . (:[])
 optASN1S :: Maybe a -> (a -> ASN1S) -> ASN1S
 optASN1S Nothing    _  = id
 optASN1S (Just val) fn = fn val
+
+-- | Encode the ASN.1 stream to DER format.
+encodeASN1S :: ASN1S -> ByteString
+encodeASN1S asn1 = encodeASN1' DER (asn1 [])

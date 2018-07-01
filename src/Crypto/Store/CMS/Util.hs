@@ -18,6 +18,9 @@ module Crypto.Store.CMS.Util
     , intOrNothing
     , dateTimeOrNothing
     -- * Object Identifiers
+    , OIDTable
+    , lookupOID
+    , lookupByOID
     , Enumerable(..)
     , OIDNameableWrapper(..)
     , withObjectID
@@ -59,13 +62,16 @@ dateTimeOrNothing :: ASN1 -> Maybe DateTime
 dateTimeOrNothing (ASN1Time _ t _) = Just t
 dateTimeOrNothing _                = Nothing
 
+-- | Mapping between values and OIDs.
 type OIDTable a = [(a, OID)]
 
+-- | Find the value associated to an OID.
 lookupByOID :: OIDTable a -> OID -> Maybe a
 lookupByOID table oid = fst <$> find ((==) oid . snd) table
 
--- lookupOID :: Eq a => OIDTable a -> a -> Maybe OID
--- lookupOID table a = lookup a table
+-- | Find the OID associated to a value.
+lookupOID :: Eq a => OIDTable a -> a -> Maybe OID
+lookupOID table a = lookup a table
 
 -- | Types with a finite set of values.
 class Enumerable a where
