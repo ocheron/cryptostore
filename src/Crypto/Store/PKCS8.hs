@@ -377,7 +377,9 @@ curveFnASN1S X509.PrivKeyEC_Prime{..} =
     abSeed = asn1Container Sequence (a . b . seed)
     a      = gOctetString (i2ospOf_ bytes privkeyEC_a)
     b      = gOctetString (i2ospOf_ bytes privkeyEC_b)
-    seed   = gBitString (toBitArray (i2osp privkeyEC_seed) 0)
+    seed   = if privkeyEC_seed > 0
+                 then gBitString (toBitArray (i2osp privkeyEC_seed) 0)
+                 else id
 
     gen    = gOctetString generator
     o      = gIntVal privkeyEC_order
@@ -406,7 +408,7 @@ parseCurveFn = parseNamedCurve <|> parsePrimeCurve
             (a, b, seed) <- onNextContainer Sequence $ do
                 OctetString a <- getNext
                 OctetString b <- getNext
-                BitString seed <- getNext -- TODO: optional
+                seed <- parseOptionalSeed
                 return (a, b, seed)
             OctetString generator <- getNext
             IntVal order <- getNext
@@ -420,5 +422,12 @@ parseCurveFn = parseNamedCurve <|> parsePrimeCurve
                     , X509.privkeyEC_generator = X509.SerializedPoint generator
                     , X509.privkeyEC_order     = order
                     , X509.privkeyEC_cofactor  = cofactor
-                    , X509.privkeyEC_seed      = os2ip $ bitArrayGetData seed
+                    , X509.privkeyEC_seed      = seed
                     }
+
+    parseOptionalSeed = do
+        seedAvail <- hasNext
+        if seedAvail
+            then do BitString seed <- getNext
+                    return (os2ip $ bitArrayGetData seed)
+            else return 0
