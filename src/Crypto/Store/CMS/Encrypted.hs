@@ -15,6 +15,7 @@ module Crypto.Store.CMS.Encrypted
     , parseEncryptedContentInfo
     ) where
 
+import Control.Applicative
 import Control.Monad
 
 import           Data.ASN1.Types
@@ -84,8 +85,11 @@ parseEncryptedContentInfo :: ParseASN1Object alg
 parseEncryptedContentInfo = onNextContainer Sequence $ do
     OID oid <- getNext
     alg <- parse
-    ec <- onNextContainer (Container Context 0) parseOctetStrings
+    ec <- parseEncryptedContent
     withObjectID "content type" oid $ \ct -> return (ct, alg, ec)
   where
+    parseEncryptedContent = parseWrapped <|> parsePrimitive
+    parseWrapped  = onNextContainer (Container Context 0) parseOctetStrings
+    parsePrimitive = do Other Context 0 bs <- getNext; return bs
     parseOctetString = do OctetString bs <- getNext; return bs
     parseOctetStrings = B.concat <$> getMany parseOctetString
