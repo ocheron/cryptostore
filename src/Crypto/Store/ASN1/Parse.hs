@@ -29,6 +29,7 @@ import Data.ASN1.Stream
 import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (MonadPlus(..), liftM2)
+import Control.Monad.Fail
 
 newtype ParseASN1 a = P { runP :: [ASN1] -> Either String (a, [ASN1]) }
 
@@ -52,6 +53,9 @@ instance Monad ParseASN1 where
         case runP m1 s of
             Left err      -> Left err
             Right (a, s2) -> runP (m2 a) s2
+    fail        = throwParseError
+instance MonadFail ParseASN1 where
+    fail = throwParseError
 instance MonadPlus ParseASN1 where
     mzero = throwParseError "mzero"
     mplus m1 m2 = P $ \s ->
