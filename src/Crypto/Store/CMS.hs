@@ -18,6 +18,8 @@ module Crypto.Store.CMS
     ( ContentType(..)
     , ContentInfo(..)
     , getContentType
+    -- * Reading and writing PEM files
+    , module Crypto.Store.CMS.PEM
     -- * Enveloped data
     , EncryptedKey
     , KeyEncryptionParams(..)
@@ -80,6 +82,7 @@ import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.Info
+import Crypto.Store.CMS.PEM
 import Crypto.Store.CMS.Type
 
 

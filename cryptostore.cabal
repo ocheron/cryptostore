@@ -27,8 +27,10 @@ library
                      , Crypto.Store.CMS.Encrypted
                      , Crypto.Store.CMS.Enveloped
                      , Crypto.Store.CMS.Info
+                     , Crypto.Store.CMS.PEM
                      , Crypto.Store.CMS.Type
                      , Crypto.Store.CMS.Util
+                     , Crypto.Store.PEM
                      , Crypto.Store.PKCS8.EC
   -- other-extensions:
   build-depends:       base >= 4.9 && < 5

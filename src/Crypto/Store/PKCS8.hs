@@ -7,15 +7,25 @@
 --
 -- Private-Key Information Syntax, aka PKCS #8.
 --
--- Presents an API similar to "Data.X509.Memory" but allows to write private
--- keys and provides support for password-based encryption.
+-- Presents an API similar to "Data.X509.Memory" and "Data.X509.File" but
+-- allows to write private keys and provides support for password-based
+-- encryption.
+--
+-- Functions to read a private key return an object wrapped in the
+-- 'OptProtected' data type.
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.Store.PKCS8
-    ( readKeyFileFromMemory
+    ( readKeyFile
+    , readKeyFileFromMemory
     , pemToKey
+    , writeKeyFile
+    , writeKeyFileToMemory
     , keyToPEM
+    , writeEncryptedKeyFile
+    , writeEncryptedKeyFileToMemory
+    , encryptKeyToPEM
     -- * Serialization formats
     , PrivateKeyFormat(..)
     -- * Password-based protection
@@ -23,6 +33,9 @@ module Crypto.Store.PKCS8
     , OptProtected(..)
     , recover
     , recoverA
+    -- * Reading and writing PEM files
+    , readPEMs
+    , writePEMs
     ) where
 
 import Control.Applicative
@@ -33,7 +46,6 @@ import Data.ASN1.BitArray
 import Data.ASN1.Encoding
 import Data.Maybe
 import qualified Data.X509 as X509
-import Data.PEM (pemParseBS, PEM(..))
 import qualified Data.ByteString as B
 import           Crypto.Number.Serialize (i2osp, i2ospOf_, os2ip)
 import qualified Crypto.PubKey.DSA as DSA
@@ -43,6 +55,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Util
+import Crypto.Store.PEM
 import Crypto.Store.PKCS5
 import Crypto.Store.PKCS8.EC
 
@@ -80,9 +93,16 @@ recoverA get (Protected f)   = fmap f get
 
 -- Reading from PEM format
 
--- | Read private keys in PEM format from a bytearray.
+-- | Read private keys from a PEM file.
+readKeyFile :: FilePath -> IO [OptProtected X509.PrivKey]
+readKeyFile path = accumulate <$> readPEMs path
+
+-- | Read private keys from a bytearray in PEM format.
 readKeyFileFromMemory :: B.ByteString -> [OptProtected X509.PrivKey]
-readKeyFileFromMemory = either (const []) (catMaybes . foldl pemToKey []) . pemParseBS
+readKeyFileFromMemory = either (const []) accumulate . pemParseBS
+
+accumulate :: [PEM] -> [OptProtected X509.PrivKey]
+accumulate = catMaybes . foldr (flip pemToKey) []
 
 -- | Read a private key from a 'PEM' element and add it to the accumulator list.
 pemToKey :: [Maybe (OptProtected X509.PrivKey)] -> PEM -> [Maybe (OptProtected X509.PrivKey)]
@@ -119,6 +139,40 @@ pemToKey acc pem =
 
 -- Writing to PEM format
 
+-- | Write unencrypted private keys to a PEM file.
+writeKeyFile :: PrivateKeyFormat -> FilePath -> [X509.PrivKey] -> IO ()
+writeKeyFile fmt path = writePEMs path . map (keyToPEM fmt)
+
+-- | Write unencrypted private keys to a bytearray in PEM format.
+writeKeyFileToMemory :: PrivateKeyFormat -> [X509.PrivKey] -> B.ByteString
+writeKeyFileToMemory fmt = pemsWriteBS . map (keyToPEM fmt)
+
+-- | Write a PKCS #8 encrypted private key to a PEM file.
+--
+-- If multiple keys need to be stored in the same file, use functions
+-- 'encryptKeyToPEM' and 'writePEMs'.
+--
+-- Fresh 'EncryptionScheme' parameters should be generated for each key to
+-- encrypt.
+writeEncryptedKeyFile :: FilePath
+                      -> EncryptionScheme -> Password-> X509.PrivKey
+                      -> IO (Either String ())
+writeEncryptedKeyFile path alg pwd privKey =
+    let pem = encryptKeyToPEM alg pwd privKey
+     in either (return . Left) (fmap Right . writePEMs path . (:[])) pem
+
+-- | Write a PKCS #8 encrypted private key to a bytearray in PEM format.
+--
+-- If multiple keys need to be stored in the same bytearray, use functions
+-- 'encryptKeyToPEM' and 'pemWriteBS' or 'pemWriteLBS'.
+--
+-- Fresh 'EncryptionScheme' parameters should be generated for each key to
+-- encrypt.
+writeEncryptedKeyFileToMemory :: EncryptionScheme -> Password -> X509.PrivKey
+                              -> Either String B.ByteString
+writeEncryptedKeyFileToMemory alg pwd privKey =
+    pemWriteBS <$> encryptKeyToPEM alg pwd privKey
+
 -- | Generate an unencrypted PEM for a private key.
 keyToPEM :: PrivateKeyFormat -> X509.PrivKey -> PEM
 keyToPEM TraditionalFormat = keyToTraditionalPEM
@@ -144,6 +198,16 @@ keyToModernPEM privKey = mkPEM "PRIVATE KEY" (encodeASN1S asn1)
             X509.PrivKeyDSA k -> modern (dsaPrivToPair k)
             X509.PrivKeyEC  k -> modern k
     modern a = asn1s (Modern a)
+
+-- | Generate a PKCS #8 encrypted PEM for a private key.
+--
+-- Fresh 'EncryptionScheme' parameters should be generated for each key to
+-- encrypt.
+encryptKeyToPEM :: EncryptionScheme -> Password -> X509.PrivKey
+                -> Either String PEM
+encryptKeyToPEM alg pwd privKey = toPEM <$> encrypt alg pwd bs
+  where bs = pemContent (keyToModernPEM privKey)
+        toPEM pkcs8 = mkPEM "ENCRYPTED PRIVATE KEY" (encodeASN1Object pkcs8)
 
 mkPEM :: String -> B.ByteString -> PEM
 mkPEM name bs = PEM { pemName = name, pemHeader = [], pemContent = bs}
@@ -225,7 +289,7 @@ instance ParseASN1Object (Modern RSA.PrivateKey) where
         v     = gIntVal 0
         alg   = asn1Container Sequence (oid . gNull)
         oid   = gOID [1,2,840,113549,1,1,1]
-        bs    = gOctetString (encodeASN1' DER $ asn1s (Traditional privKey) [])
+        bs    = gOctetString (encodeASN1Object $ Traditional privKey)
 
     parse = onNextContainer Sequence $ do
         IntVal 0 <- getNext

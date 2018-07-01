@@ -24,8 +24,9 @@ module Crypto.Store.CMS.Util
     , Enumerable(..)
     , OIDNameableWrapper(..)
     , withObjectID
-    -- * Parsing ASN.1 objects
+    -- * Parsing and encoding ASN.1 objects
     , ParseASN1Object(..)
+    , encodeASN1Object
     -- * Algorithm Identifiers
     , AlgorithmId(..)
     , algorithmASN1S
@@ -40,6 +41,7 @@ module Crypto.Store.CMS.Util
 import           Data.ASN1.OID
 import           Data.ASN1.Types
 import qualified Data.ByteArray as B
+import           Data.ByteString (ByteString)
 import           Data.List (find)
 
 import Time.Types (DateTime)
@@ -104,6 +106,10 @@ class ParseASN1Object obj where
 instance ParseASN1Object obj => ParseASN1Object [obj] where
     asn1s l r = foldr asn1s r l
     parse = getMany parse
+
+-- | Encode the ASN.1 object to DER format.
+encodeASN1Object :: ParseASN1Object obj => obj -> ByteString
+encodeASN1Object = encodeASN1S . asn1s
 
 -- | Algorithm identifier with associated parameter.
 class AlgorithmId param where

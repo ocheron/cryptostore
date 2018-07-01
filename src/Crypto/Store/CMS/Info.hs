@@ -173,9 +173,9 @@ decode parser bs = vals >>= runParseASN1 parser
 -- | Encode the information for encapsulation in another content info.
 encapsulate :: ContentInfo -> ByteString
 encapsulate (DataCI bs)              = bs
-encapsulate (EnvelopedDataCI ed)     = encodeASN1' DER (asn1s ed [])
-encapsulate (DigestedDataCI dd)      = encodeASN1' DER (asn1s dd [])
-encapsulate (EncryptedDataCI ed)     = encodeASN1' DER (asn1s ed [])
+encapsulate (EnvelopedDataCI ed)     = encodeASN1Object ed
+encapsulate (DigestedDataCI dd)      = encodeASN1Object dd
+encapsulate (EncryptedDataCI ed)     = encodeASN1Object ed
 
 -- | Decode the information from encapsulated content.
 decapsulate :: ContentType -> ByteString -> Either String ContentInfo
