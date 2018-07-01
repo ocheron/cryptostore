@@ -1,0 +1,44 @@
+name:                cryptostore
+version:             0.1.0.0
+synopsis:            Serialization of cryptographic data types
+description:         Haskell implementation of PKCS #8 and CMS (Cryptographic
+                     Message Syntax).
+license:             BSD3
+license-file:        LICENSE
+author:              Olivier Chéron
+maintainer:          olivier.cheron@gmail.com
+copyright:           Olivier Chéron
+category:            Cryptography
+build-type:          Simple
+extra-source-files:  ChangeLog.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Crypto.Store.CMS
+                     , Crypto.Store.PKCS5
+                     , Crypto.Store.KeyWrap.AES
+                     , Crypto.Store.KeyWrap.TripleDES
+                     , Crypto.Store.PKCS8
+  other-modules:       Crypto.Store.ASN1.Generate
+                     , Crypto.Store.CMS.Algorithms
+                     , Crypto.Store.CMS.Attribute
+                     , Crypto.Store.CMS.Encrypted
+                     , Crypto.Store.CMS.Enveloped
+                     , Crypto.Store.CMS.Info
+                     , Crypto.Store.CMS.Type
+                     , Crypto.Store.CMS.Util
+  -- other-extensions:
+  build-depends:       base >= 4.9 && < 5
+                     , bytestring
+                     , basement
+                     , memory
+                     , cryptonite >= 0.25
+                     , pem >= 0.1 && < 0.3
+                     , asn1-types >= 0.3.1 && < 0.4
+                     , asn1-encoding >= 0.9 && < 0.10
+                     , asn1-parse >= 0.9.3 && < 0.10
+                     , hourglass >= 0.2
+                     , x509 >= 1.7.3
+  default-language:    Haskell2010
+  ghc-options:         -Wall
