@@ -22,7 +22,6 @@ import Control.Monad
 
 import           Data.ASN1.BinaryEncoding
 import           Data.ASN1.Encoding
-import           Data.ASN1.Parse
 import           Data.ASN1.Types
 import           Data.ByteString (ByteString)
 import qualified Data.ByteArray as B
@@ -30,6 +29,7 @@ import qualified Data.ByteArray as B
 import Crypto.Hash hiding (MD5)
 
 import Crypto.Store.ASN1.Generate
+import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped

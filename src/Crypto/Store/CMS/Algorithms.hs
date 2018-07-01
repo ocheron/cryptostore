@@ -41,7 +41,6 @@ module Crypto.Store.CMS.Algorithms
     ) where
 
 import           Data.ASN1.OID
-import           Data.ASN1.Parse
 import           Data.ASN1.Types
 import           Data.Bits
 import           Data.ByteArray (ByteArray, ByteArrayAccess)
@@ -63,6 +62,7 @@ import qualified Crypto.KDF.Scrypt as Scrypt
 import           Crypto.Random
 
 import           Crypto.Store.ASN1.Generate
+import           Crypto.Store.ASN1.Parse
 import           Crypto.Store.CMS.Util
 import qualified Crypto.Store.KeyWrap.AES as AES_KW
 import qualified Crypto.Store.KeyWrap.TripleDES as TripleDES_KW

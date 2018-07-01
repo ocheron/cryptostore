@@ -17,11 +17,11 @@ module Crypto.Store.CMS.Encrypted
 
 import Control.Monad
 
-import           Data.ASN1.Parse
 import           Data.ASN1.Types
 import qualified Data.ByteString as B
 
 import Crypto.Store.ASN1.Generate
+import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Type

@@ -35,7 +35,6 @@ module Crypto.Store.CMS.Util
     ) where
 
 import           Data.ASN1.OID
-import           Data.ASN1.Parse
 import           Data.ASN1.Types
 import qualified Data.ByteArray as B
 import           Data.List (find)
@@ -43,6 +42,7 @@ import           Data.List (find)
 import Time.Types (DateTime)
 
 import Crypto.Store.ASN1.Generate
+import Crypto.Store.ASN1.Parse
 
 -- | Try to parse a 'Null' ASN.1 value.
 nullOrNothing :: ASN1 -> Maybe ()

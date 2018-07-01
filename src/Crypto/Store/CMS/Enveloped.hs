@@ -29,7 +29,6 @@ module Crypto.Store.CMS.Enveloped
 
 import Control.Monad
 
-import Data.ASN1.Parse
 import Data.ASN1.Types
 import Data.ByteString (ByteString)
 import Data.Maybe (fromMaybe)
@@ -39,6 +38,7 @@ import Time.Types
 import Crypto.Random (MonadRandom)
 
 import Crypto.Store.ASN1.Generate
+import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Encrypted

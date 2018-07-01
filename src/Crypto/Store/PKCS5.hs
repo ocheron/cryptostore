@@ -44,7 +44,6 @@ import           Crypto.Cipher.Types
 import qualified Crypto.Hash as Hash
 import           Crypto.Number.Serialize (i2ospOf_, os2ip)
 
-import           Data.ASN1.Parse
 import           Data.ASN1.Types
 import           Data.ByteArray (ByteArray, ByteArrayAccess)
 import qualified Data.ByteArray as B
@@ -56,6 +55,7 @@ import           Data.Word
 
 import           Foreign.Ptr (plusPtr)
 
+import Crypto.Store.ASN1.Parse
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Encrypted

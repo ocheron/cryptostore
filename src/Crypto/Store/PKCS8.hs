@@ -16,7 +16,6 @@ module Crypto.Store.PKCS8
     , recoverA
     ) where
 
-import Data.ASN1.Parse
 import Data.ASN1.Types
 import Data.ASN1.BinaryEncoding
 import Data.ASN1.BitArray
@@ -32,6 +31,7 @@ import qualified Crypto.PubKey.DSA as DSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.PubKey.RSA as RSA
 
+import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Util
 import Crypto.Store.PKCS5
 

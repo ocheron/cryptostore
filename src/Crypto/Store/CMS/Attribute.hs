@@ -16,11 +16,11 @@ module Crypto.Store.CMS.Attribute
     , filterAttributes
     ) where
 
-import Data.ASN1.Parse
 import Data.ASN1.Types
 import Data.Maybe (fromMaybe)
 
 import Crypto.Store.ASN1.Generate
+import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Util
 
 -- | An attribute extending the CMS structure with arbitrary data.
