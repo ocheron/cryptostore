@@ -149,7 +149,7 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
     , testProperty "enveloping" $ \alg ci ->
         collect alg $ do
             key <- generateKey alg
-            (envFns, devFn) <- arbitraryEnvDev key
+            (envFns, devFn) <- scale succ (arbitraryEnvDev key)
             attrs <- arbitraryAttributes
             Right (EnvelopedDataCI ev) <- envelopData key alg envFns attrs ci
             return (Right ci === openEnvelopedData devFn ev)

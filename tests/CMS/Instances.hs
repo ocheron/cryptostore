@@ -38,8 +38,9 @@ instance Arbitrary ContentInfo where
 
         arbitraryEnvelopedData :: Gen ContentInfo
         arbitraryEnvelopedData = do
-            (inner, alg, key, attrs) <- getCommon
+            (alg, key, attrs) <- getCommon
             (envFns, _) <- arbitraryEnvDev key
+            inner <- scale (subtract $ length envFns) arbitrary
             envelopData key alg envFns attrs inner >>= either fail return
 
         arbitraryDigestedData :: Gen ContentInfo
@@ -50,17 +51,17 @@ instance Arbitrary ContentInfo where
 
         arbitraryEncryptedData :: Gen ContentInfo
         arbitraryEncryptedData = do
-            (inner, alg, key, attrs) <- getCommon
+            (alg, key, attrs) <- getCommon
+            inner <- scale pred arbitrary
             either fail return $ encryptData key alg attrs inner
 
         getCommon :: (HasKeySize params, Arbitrary params, B.ByteArray key)
-                  => Gen (ContentInfo, params, key, [Attribute])
+                  => Gen (params, key, [Attribute])
         getCommon = do
-            inner <- scale pred arbitrary
             alg   <- arbitrary
             key   <- generateKey alg
             attrs <- arbitraryAttributes
-            return (inner, alg, key, attrs)
+            return (alg, key, attrs)
 
 instance Arbitrary Attribute where
     arbitrary = do
@@ -163,9 +164,9 @@ instance Arbitrary KEKIdentifier where
 
 arbitraryEnvDev :: ContentEncryptionKey
                 -> Gen ([ProducerOfRI Gen], ConsumerOfRI)
-arbitraryEnvDev cek = do
+arbitraryEnvDev cek = sized $ \n -> do
     (envFn, devFn) <- onePair
-    otherPairs <- resize 5 $ listOf onePair
+    otherPairs <- resize (min (pred n) 3) $ listOf onePair
     envFns <- shuffle (envFn : map fst otherPairs)
     return (envFns, devFn)
   where
