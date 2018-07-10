@@ -1,0 +1,21 @@
+# compiler supported and their equivalent LTS
+compiler: ghc-8.0 lts-9.21
+compiler: ghc-8.2 lts-11.17
+compiler: ghc-8.4 lts-12.0
+
+# options
+option: cryptomin extradep=basement-0.0.7 extradep=foundation-0.0.20 extradep=memory-0.14.16 extradep=cryptonite-0.25 extradep=x509-1.7.3 extradep=x509-store-1.6.6
+
+# builds
+build: ghc-8.0 cryptomin
+build: ghc-8.2 cryptomin
+build: ghc-8.2 cryptomin os=osx
+build: ghc-8.4
+
+# packages
+package: '.'
+
+# extra builds
+hlint: allowed-failure
+weeder: allowed-failure
+coverall: false
