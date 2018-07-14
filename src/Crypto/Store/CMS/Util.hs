@@ -26,6 +26,8 @@ module Crypto.Store.CMS.Util
     , OIDNameableWrapper(..)
     , withObjectID
     -- * Parsing and encoding ASN.1 objects
+    , ASN1Event
+    , ASN1ObjectExact(..)
     , ProduceASN1Object(..)
     , encodeASN1Object
     , ParseASN1Object(..)
@@ -40,6 +42,7 @@ module Crypto.Store.CMS.Util
     , orElse
     ) where
 
+import           Data.ASN1.BinaryEncoding.Raw
 import           Data.ASN1.OID
 import           Data.ASN1.Types
 import qualified Data.ByteArray as B
@@ -117,6 +120,24 @@ class Monoid e => ParseASN1Object e obj where
 
 instance ParseASN1Object e obj => ParseASN1Object e [obj] where
     parse = getMany parse
+
+-- | An ASN.1 object associated with the raw data it was parsed from.
+data ASN1ObjectExact a = ASN1ObjectExact
+    { exactObject    :: a           -- ^ The wrapped ASN.1 object
+    , exactObjectRaw :: ByteString  -- ^ The raw representation of this object
+    } deriving Show
+
+instance Eq a => Eq (ASN1ObjectExact a)
+    where a == b = exactObject a == exactObject b
+
+instance ProduceASN1Object ASN1P a => ProduceASN1Object ASN1P (ASN1ObjectExact a) where
+    asn1s = gEncoded . exactObjectRaw
+
+instance ParseASN1Object [ASN1Event] a => ParseASN1Object [ASN1Event] (ASN1ObjectExact a) where
+    parse = do
+        (obj, events) <- withAnnotations parse
+        let objRaw = toByteString events
+        return ASN1ObjectExact { exactObject = obj, exactObjectRaw = objRaw }
 
 -- | Algorithm identifier with associated parameter.
 class AlgorithmId param where
