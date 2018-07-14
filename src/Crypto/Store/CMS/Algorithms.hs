@@ -19,6 +19,9 @@
 module Crypto.Store.CMS.Algorithms
     ( DigestType(..)
     , DigestAlgorithm(..)
+    , MessageAuthenticationCode
+    , MACAlgorithm(..)
+    , mac
     , HasKeySize(..)
     , getMaximumKeySize
     , validateKeySize
@@ -62,6 +65,7 @@ import           Crypto.Error
 import qualified Crypto.Hash as Hash
 import qualified Crypto.KDF.PBKDF2 as PBKDF2
 import qualified Crypto.KDF.Scrypt as Scrypt
+import qualified Crypto.MAC.HMAC as HMAC
 import           Crypto.Random
 
 import           Crypto.Store.ASN1.Generate
@@ -131,7 +135,8 @@ instance OIDNameable DigestType where
 
 -- Cipher-like things
 
--- | Algorithms that are based on a secret key.
+-- | Algorithms that are based on a secret key.  This includes ciphers but also
+-- MAC algorithms.
 class HasKeySize params where
     -- | Get a specification of the key sizes allowed by the algorithm.
     getKeySizeSpecifier :: params -> KeySizeSpecifier
@@ -158,6 +163,60 @@ validateKeySize params len =
 generateKey :: (HasKeySize params, MonadRandom m, ByteArray key)
             => params -> m key
 generateKey params = getRandomBytes (getMaximumKeySize params)
+
+
+-- MAC
+
+-- | Message authentication code.  Equality is time constant.
+type MessageAuthenticationCode = AuthTag
+
+-- | Message Authentication Code (MAC) Algorithm.
+data MACAlgorithm
+    = forall hashAlg . Hash.HashAlgorithm hashAlg
+        => HMAC (DigestAlgorithm hashAlg)
+
+deriving instance Show MACAlgorithm
+
+instance Eq MACAlgorithm where
+    HMAC a1 == HMAC a2 = DigestType a1 == DigestType a2
+
+instance Enumerable MACAlgorithm where
+    values = map (\(DigestType a) -> HMAC a) values
+
+instance OIDable MACAlgorithm where
+    getObjectID (HMAC MD5)    = [1,3,6,1,5,5,8,1,1]
+    getObjectID (HMAC SHA1)   = [1,3,6,1,5,5,8,1,2]
+    getObjectID (HMAC SHA224) = [1,2,840,113549,2,8]
+    getObjectID (HMAC SHA256) = [1,2,840,113549,2,9]
+    getObjectID (HMAC SHA384) = [1,2,840,113549,2,10]
+    getObjectID (HMAC SHA512) = [1,2,840,113549,2,11]
+
+instance OIDNameable MACAlgorithm where
+    fromObjectID oid = unOIDNW <$> fromObjectID oid
+
+instance AlgorithmId MACAlgorithm where
+    type AlgorithmType MACAlgorithm = MACAlgorithm
+    algorithmName _  = "mac algorithm"
+    algorithmType    = id
+    parameterASN1S _ = id
+    parseParameter p = getNextMaybe nullOrNothing >> return p
+
+instance HasKeySize MACAlgorithm where
+    getKeySizeSpecifier (HMAC a) = KeySizeFixed (digestSizeFromProxy a)
+      where digestSizeFromProxy = Hash.hashDigestSize . hashFromProxy
+            hashFromProxy :: proxy a -> a
+            hashFromProxy _ = undefined
+
+-- | Invoke the MAC function.
+mac :: (ByteArrayAccess key, ByteArrayAccess message)
+     => MACAlgorithm -> key -> message -> MessageAuthenticationCode
+mac (HMAC alg) = hmacWith alg
+  where
+    hmacWith p key = AuthTag . B.convert . runHMAC p key
+
+    runHMAC :: (Hash.HashAlgorithm a, ByteArrayAccess k, ByteArrayAccess m)
+        => proxy a -> k -> m -> HMAC.HMAC a
+    runHMAC _ = HMAC.hmac
 
 
 -- Content encryption

@@ -57,6 +57,9 @@ module Crypto.Store.CMS
     , getContentEncryptionAlg
     , encryptData
     , decryptData
+    -- * Message authentication
+    , MessageAuthenticationCode
+    , MACAlgorithm(..)
     -- * Key derivation
     , Salt
     , generateSalt

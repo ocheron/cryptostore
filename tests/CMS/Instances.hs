@@ -82,6 +82,9 @@ instance Arbitrary DigestType where
         , DigestType SHA512
         ]
 
+instance Arbitrary MACAlgorithm where
+    arbitrary = (\(DigestType alg) -> HMAC alg) <$> arbitrary
+
 instance Arbitrary PBKDF2_PRF where
     arbitrary = elements
         [ PBKDF2_SHA1
