@@ -105,7 +105,7 @@ data PBEParameter = PBEParameter
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object PBEParameter where
+instance ASN1Elem e => ProduceASN1Object e PBEParameter where
     asn1s PBEParameter{..} =
         let salt  = gOctetString pbeSalt
             iters = gIntVal (toInteger pbeIterationCount)
@@ -125,7 +125,7 @@ data PBES2Parameter = PBES2Parameter
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object PBES2Parameter where
+instance ASN1Elem e => ProduceASN1Object e PBES2Parameter where
     asn1s PBES2Parameter{..} =
         let kdFunc  = algorithmASN1S Sequence pbes2KDF
             eScheme = asn1s pbes2EScheme
@@ -177,7 +177,7 @@ data PKCS5 = PKCS5
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object PKCS5 where
+instance ASN1Elem e => ProduceASN1Object e PKCS5 where
     asn1s PKCS5{..} = asn1Container Sequence (alg . bs)
       where alg = algorithmASN1S Sequence encryptionAlgorithm
             bs  = gOctetString encryptedData

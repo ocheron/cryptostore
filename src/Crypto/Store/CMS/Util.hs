@@ -101,14 +101,14 @@ withObjectID name oid fn =
             throwParseError ("Unsupported " ++ name ++ ": OID " ++ show oid)
 
 -- | Objects that can produce an ASN.1 stream.
-class ProduceASN1Object obj where
-    asn1s :: obj -> ASN1S
+class ProduceASN1Object e obj where
+    asn1s :: obj -> ASN1Stream e
 
-instance ProduceASN1Object obj => ProduceASN1Object [obj] where
+instance ProduceASN1Object e obj => ProduceASN1Object e [obj] where
     asn1s l r = foldr asn1s r l
 
 -- | Encode the ASN.1 object to DER format.
-encodeASN1Object :: ProduceASN1Object obj => obj -> ByteString
+encodeASN1Object :: ProduceASN1Object ASN1P obj => obj -> ByteString
 encodeASN1Object = encodeASN1S . asn1s
 
 -- | Objects that can be parsed from an ASN.1 stream.
@@ -123,19 +123,19 @@ class AlgorithmId param where
     type AlgorithmType param
     algorithmName  :: param -> String
     algorithmType  :: param -> AlgorithmType param
-    parameterASN1S :: param -> ASN1S
+    parameterASN1S :: ASN1Elem e => param -> ASN1Stream e
     parseParameter :: Monoid e => AlgorithmType param -> ParseASN1 e param
 
 -- | Transform the algorithm identifier to ASN.1 stream.
-algorithmASN1S :: (AlgorithmId param, OIDable (AlgorithmType param))
-               => ASN1ConstructionType -> param -> ASN1S
+algorithmASN1S :: (ASN1Elem e, AlgorithmId param, OIDable (AlgorithmType param))
+               => ASN1ConstructionType -> param -> ASN1Stream e
 algorithmASN1S ty p = asn1Container ty (oid . parameterASN1S p)
   where typ = algorithmType p
         oid = gOID (getObjectID typ)
 
 -- | Transform the optional algorithm identifier to ASN.1 stream.
-algorithmMaybeASN1S :: (AlgorithmId param, OIDable (AlgorithmType param))
-                    => ASN1ConstructionType -> Maybe param -> ASN1S
+algorithmMaybeASN1S :: (ASN1Elem e, AlgorithmId param, OIDable (AlgorithmType param))
+                    => ASN1ConstructionType -> Maybe param -> ASN1Stream e
 algorithmMaybeASN1S _  Nothing  = id
 algorithmMaybeASN1S ty (Just p) = algorithmASN1S ty p
 

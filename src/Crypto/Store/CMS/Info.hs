@@ -56,7 +56,7 @@ data ContentInfo = DataCI ByteString                     -- ^ Arbitrary octet st
                  | EncryptedDataCI EncryptedData         -- ^ Encrypted content info
                  deriving (Show,Eq)
 
-instance ProduceASN1Object ContentInfo where
+instance ASN1Elem e => ProduceASN1Object e ContentInfo where
     asn1s ci = asn1Container Sequence (oid . cont)
       where oid = gOID $ getObjectID $ getContentType ci
             cont = asn1Container (Container Context 0) inner
@@ -86,7 +86,7 @@ instance ASN1Object ContentInfo where
 
 -- Data
 
-dataASN1S :: ByteString -> ASN1S
+dataASN1S :: ASN1Elem e => ByteString -> ASN1Stream e
 dataASN1S = gOctetString
 
 parseData :: Monoid e => ParseASN1 e ByteString
@@ -118,7 +118,7 @@ instance Eq DigestedData where
     DigestedData a1 i1 d1 == DigestedData a2 i2 d2 =
         DigestType a1 == DigestType a2 && d1 `eqBA` d2 && i1 == i2
 
-instance ProduceASN1Object DigestedData where
+instance ASN1Elem e => ProduceASN1Object e DigestedData where
     asn1s DigestedData{..} =
         asn1Container Sequence (ver . alg . ci . dig)
       where
@@ -152,7 +152,7 @@ instance Monoid e => ParseASN1Object e DigestedData where
                                                 , ddDigest = d
                                                 }
 
-digestTypeASN1S :: DigestType -> ASN1S
+digestTypeASN1S :: ASN1Elem e => DigestType -> ASN1Stream e
 digestTypeASN1S d = gOID (getObjectID d) . param
   where
     -- MD5 has NULL parameter, other algorithms have no parameter
@@ -189,7 +189,7 @@ decapsulate EnvelopedDataType bs     = EnvelopedDataCI <$> decode parse bs
 decapsulate DigestedDataType bs      = DigestedDataCI <$> decode parse bs
 decapsulate EncryptedDataType bs     = EncryptedDataCI <$> decode parse bs
 
-encapsulatedContentInfoASN1S :: ContentInfo -> ASN1S
+encapsulatedContentInfoASN1S :: ASN1Elem e => ContentInfo -> ASN1Stream e
 encapsulatedContentInfoASN1S ci = asn1Container Sequence (oid . cont)
   where oid = gOID $ getObjectID $ getContentType ci
         cont = asn1Container (Container Context 0) inner

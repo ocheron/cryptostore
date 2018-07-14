@@ -32,7 +32,7 @@ data Attribute = Attribute
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object Attribute where
+instance ASN1Elem e => ProduceASN1Object e Attribute where
     asn1s Attribute{..} =
         asn1Container Sequence
             (gOID attrType . asn1Container Set (gMany attrValues))
@@ -44,7 +44,8 @@ instance Monoid e => ParseASN1Object e Attribute where
         return Attribute { attrType = oid, attrValues = vals }
 
 -- | Produce the ASN.1 stream for a list of attributes.
-attributesASN1S :: ASN1ConstructionType -> [Attribute] -> ASN1S
+attributesASN1S :: ASN1Elem e
+                => ASN1ConstructionType -> [Attribute] -> ASN1Stream e
 attributesASN1S _  []    = id
 attributesASN1S ty attrs = asn1Container ty (asn1s attrs)
 

@@ -355,7 +355,7 @@ instance HasKeySize ContentEncryptionParams where
     getKeySizeSpecifier (ParamsCFB c _) = getCipherKeySizeSpecifier c
     getKeySizeSpecifier (ParamsCTR c _) = getCipherKeySizeSpecifier c
 
-instance ProduceASN1Object ContentEncryptionParams where
+instance ASN1Elem e => ProduceASN1Object e ContentEncryptionParams where
     asn1s param =
         asn1Container Sequence (oid . params)
       where
@@ -367,7 +367,7 @@ instance Monoid e => ParseASN1Object e ContentEncryptionParams where
         OID oid <- getNext
         withObjectID "content encryption algorithm" oid parseCEParameter
 
-ceParameterASN1S :: ContentEncryptionParams -> ASN1S
+ceParameterASN1S :: ASN1Elem e => ContentEncryptionParams -> ASN1Stream e
 ceParameterASN1S (ParamsECB _)    = id
 ceParameterASN1S (ParamsCBC _ iv) = gOctetString (B.convert iv)
 ceParameterASN1S (ParamsCFB _ iv) = gOctetString (B.convert iv)

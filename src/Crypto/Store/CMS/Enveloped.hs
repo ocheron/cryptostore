@@ -66,7 +66,7 @@ data OtherKeyAttribute = OtherKeyAttribute
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object OtherKeyAttribute where
+instance ASN1Elem e => ProduceASN1Object e OtherKeyAttribute where
     asn1s OtherKeyAttribute{..} = asn1Container Sequence (attrId . attr)
       where attrId = gOID keyAttrId
             attr   = gMany keyAttr
@@ -85,7 +85,7 @@ data KEKIdentifier = KEKIdentifier
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object KEKIdentifier where
+instance ASN1Elem e => ProduceASN1Object e KEKIdentifier where
     asn1s KEKIdentifier{..} = asn1Container Sequence (keyId . date . other)
       where
         keyId = gOctetString kekKeyIdentifier
@@ -127,7 +127,7 @@ data RecipientInfo = KEKRI KEKRecipientInfo
                      -- ^ Recipient using password-based protection
     deriving (Show,Eq)
 
-instance ProduceASN1Object RecipientInfo where
+instance ASN1Elem e => ProduceASN1Object e RecipientInfo where
     asn1s (KEKRI KEKRecipientInfo{..}) =
         asn1Container (Container Context 2) (ver . kid . kep . ek)
       where
@@ -197,7 +197,7 @@ data EnvelopedData = EnvelopedData
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object EnvelopedData where
+instance ASN1Elem e => ProduceASN1Object e EnvelopedData where
     asn1s EnvelopedData{..} =
         asn1Container Sequence (ver . ris . eci . ua)
       where

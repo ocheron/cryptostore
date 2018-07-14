@@ -50,7 +50,7 @@ data EncryptedData = EncryptedData
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object EncryptedData where
+instance ASN1Elem e => ProduceASN1Object e EncryptedData where
     asn1s EncryptedData{..} =
         asn1Container Sequence (ver . eci . ua)
       where
@@ -74,8 +74,8 @@ instance Monoid e => ParseASN1Object e EncryptedData where
                                  }
 
 -- | Generate ASN.1 for EncryptedContentInfo.
-encryptedContentInfoASN1S :: ProduceASN1Object alg
-                          => (ContentType, alg, B.ByteString) -> ASN1S
+encryptedContentInfoASN1S :: (ASN1Elem e, ProduceASN1Object e alg)
+                          => (ContentType, alg, B.ByteString) -> ASN1Stream e
 encryptedContentInfoASN1S (ct, alg, ec) =
     asn1Container Sequence (ct' . alg' . ec')
   where

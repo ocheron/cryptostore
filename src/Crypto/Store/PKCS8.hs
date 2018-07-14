@@ -239,7 +239,7 @@ parseBoth = parseTraditional <|> parseModern
 
 -- RSA
 
-instance ProduceASN1Object (Traditional RSA.PrivateKey) where
+instance ASN1Elem e => ProduceASN1Object e (Traditional RSA.PrivateKey) where
     asn1s (Traditional privKey) =
         asn1Container Sequence (v . n . e . d . p1 . p2 . pexp1 . pexp2 . pcoef)
       where
@@ -284,7 +284,7 @@ instance Monoid e => ParseASN1Object e (Traditional RSA.PrivateKey) where
                                     }
         return (Traditional privKey)
 
-instance ProduceASN1Object (Modern RSA.PrivateKey) where
+instance ASN1Elem e => ProduceASN1Object e (Modern RSA.PrivateKey) where
     asn1s (Modern privKey) =
         asn1Container Sequence (v . alg . bs)
       where
@@ -309,7 +309,7 @@ instance Monoid e => ParseASN1Object e (Modern RSA.PrivateKey) where
 
 -- DSA
 
-instance ProduceASN1Object (Traditional DSA.KeyPair) where
+instance ASN1Elem e => ProduceASN1Object e (Traditional DSA.KeyPair) where
     asn1s (Traditional (DSA.KeyPair params pub priv)) =
         asn1Container Sequence (v . pqgASN1S params . pub' . priv')
       where
@@ -325,7 +325,7 @@ instance Monoid e => ParseASN1Object e (Traditional DSA.KeyPair) where
         IntVal priv <- getNext
         return (Traditional $ DSA.KeyPair params pub priv)
 
-instance ProduceASN1Object (Modern DSA.KeyPair) where
+instance ASN1Elem e => ProduceASN1Object e (Modern DSA.KeyPair) where
     asn1s (Modern (DSA.KeyPair params _ priv)) =
         asn1Container Sequence (v . alg . bs)
       where
@@ -349,7 +349,7 @@ instance Monoid e => ParseASN1Object e (Modern DSA.KeyPair) where
             Right _ -> throwParseError "PKCS8: invalid format when parsing inner DSA"
             Left  e -> throwParseError ("PKCS8: error parsing inner DSA: " ++ show e)
 
-pqgASN1S :: DSA.Params -> ASN1S
+pqgASN1S :: ASN1Elem e => DSA.Params -> ASN1Stream e
 pqgASN1S params = p . q . g
   where p = gIntVal (DSA.params_p params)
         q = gIntVal (DSA.params_q params)
@@ -374,13 +374,13 @@ dsaPrivToPair k = DSA.KeyPair params pub x
 
 -- ECDSA
 
-instance ProduceASN1Object (Traditional X509.PrivKeyEC) where
+instance ASN1Elem e => ProduceASN1Object e (Traditional X509.PrivKeyEC) where
     asn1s = innerEcdsaASN1S True . unTraditional
 
 instance Monoid e => ParseASN1Object e (Traditional X509.PrivKeyEC) where
     parse = Traditional <$> parseInnerEcdsa Nothing
 
-instance ProduceASN1Object (Modern X509.PrivKeyEC) where
+instance ASN1Elem e => ProduceASN1Object e (Modern X509.PrivKeyEC) where
     asn1s (Modern privKey) = asn1Container Sequence (v . f . bs)
       where
         v     = gIntVal 0
@@ -402,7 +402,7 @@ instance Monoid e => ParseASN1Object e (Modern X509.PrivKeyEC) where
             Left err -> throwParseError ("PKCS8: error parsing inner EC: " ++ err)
             Right privKey -> return (Modern privKey)
 
-innerEcdsaASN1S :: Bool -> X509.PrivKeyEC -> ASN1S
+innerEcdsaASN1S :: ASN1Elem e => Bool -> X509.PrivKeyEC -> ASN1Stream e
 innerEcdsaASN1S addC k
     | addC      = asn1Container Sequence (v . ds . c0 . c1)
     | otherwise = asn1Container Sequence (v . ds . c1)
@@ -433,7 +433,7 @@ parseInnerEcdsa fn = onNextContainer Sequence $ do
   where
     parsePK = do { BitString bs <- getNext; return bs }
 
-curveFnASN1S :: X509.PrivKeyEC -> ASN1S
+curveFnASN1S :: ASN1Elem e => X509.PrivKeyEC -> ASN1Stream e
 curveFnASN1S X509.PrivKeyEC_Named{..} = gOID (curveNameOID privkeyEC_name)
 curveFnASN1S X509.PrivKeyEC_Prime{..} =
     asn1Container Sequence (v . prime . abSeed . gen . o . c)
