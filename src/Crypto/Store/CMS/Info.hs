@@ -34,6 +34,7 @@ import Crypto.Hash hiding (MD5)
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
+import Crypto.Store.CMS.AuthEnveloped
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.Type
@@ -45,6 +46,7 @@ getContentType (DataCI _)              = DataType
 getContentType (EnvelopedDataCI _)     = EnvelopedDataType
 getContentType (DigestedDataCI _)      = DigestedDataType
 getContentType (EncryptedDataCI _)     = EncryptedDataType
+getContentType (AuthEnvelopedDataCI _) = AuthEnvelopedDataType
 
 
 -- ContentInfo
@@ -54,9 +56,10 @@ data ContentInfo = DataCI ByteString                     -- ^ Arbitrary octet st
                  | EnvelopedDataCI EnvelopedData         -- ^ Enveloped content info
                  | DigestedDataCI DigestedData           -- ^ Content info with associated digest
                  | EncryptedDataCI EncryptedData         -- ^ Encrypted content info
+                 | AuthEnvelopedDataCI AuthEnvelopedData -- ^ Authenticated-enveloped content info
                  deriving (Show,Eq)
 
-instance ASN1Elem e => ProduceASN1Object e ContentInfo where
+instance ProduceASN1Object ASN1P ContentInfo where
     asn1s ci = asn1Container Sequence (oid . cont)
       where oid = gOID $ getObjectID $ getContentType ci
             cont = asn1Container (Container Context 0) inner
@@ -66,8 +69,9 @@ instance ASN1Elem e => ProduceASN1Object e ContentInfo where
                     EnvelopedDataCI ed     -> asn1s ed
                     DigestedDataCI dd      -> asn1s dd
                     EncryptedDataCI ed     -> asn1s ed
+                    AuthEnvelopedDataCI ae -> asn1s ae
 
-instance Monoid e => ParseASN1Object e ContentInfo where
+instance ParseASN1Object [ASN1Event] ContentInfo where
     parse =
         onNextContainer Sequence $ do
             OID oid <- getNext
@@ -78,10 +82,7 @@ instance Monoid e => ParseASN1Object e ContentInfo where
         parseInner EnvelopedDataType     = EnvelopedDataCI <$> parse
         parseInner DigestedDataType      = DigestedDataCI <$> parse
         parseInner EncryptedDataType     = EncryptedDataCI <$> parse
-
-instance ASN1Object ContentInfo where
-    toASN1   = asn1s
-    fromASN1 = runParseASN1State parse
+        parseInner AuthEnvelopedDataType = AuthEnvelopedDataCI <$> parse
 
 
 -- Data
@@ -170,9 +171,9 @@ parseDigestType = do
 
 -- Utilities
 
-decode :: ParseASN1 () a -> ByteString -> Either String a
-decode parser bs = vals >>= runParseASN1 parser
-  where vals = either (Left . showerr) Right (decodeASN1' BER bs)
+decode :: ParseASN1 [ASN1Event] a -> ByteString -> Either String a
+decode parser bs = vals >>= runParseASN1_ parser
+  where vals = either (Left . showerr) Right (decodeASN1Repr' BER bs)
         showerr err = "Unable to decode encapsulated ASN.1: " ++ show err
 
 -- | Encode the information for encapsulation in another content info.
@@ -181,6 +182,7 @@ encapsulate (DataCI bs)              = bs
 encapsulate (EnvelopedDataCI ed)     = encodeASN1Object ed
 encapsulate (DigestedDataCI dd)      = encodeASN1Object dd
 encapsulate (EncryptedDataCI ed)     = encodeASN1Object ed
+encapsulate (AuthEnvelopedDataCI ae) = encodeASN1Object ae
 
 -- | Decode the information from encapsulated content.
 decapsulate :: ContentType -> ByteString -> Either String ContentInfo
@@ -188,6 +190,7 @@ decapsulate DataType bs              = pure (DataCI bs)
 decapsulate EnvelopedDataType bs     = EnvelopedDataCI <$> decode parse bs
 decapsulate DigestedDataType bs      = DigestedDataCI <$> decode parse bs
 decapsulate EncryptedDataType bs     = EncryptedDataCI <$> decode parse bs
+decapsulate AuthEnvelopedDataType bs = AuthEnvelopedDataCI <$> decode parse bs
 
 encapsulatedContentInfoASN1S :: ASN1Elem e => ContentInfo -> ASN1Stream e
 encapsulatedContentInfoASN1S ci = asn1Container Sequence (oid . cont)

@@ -17,7 +17,6 @@ module Crypto.Store.CMS.PEM
 
 import           Data.ASN1.BinaryEncoding
 import           Data.ASN1.Encoding
-import           Data.ASN1.Types
 import qualified Data.ByteString as B
 import           Data.Maybe (catMaybes)
 
@@ -48,10 +47,10 @@ pemToContentInfo acc pem
   where
     names = [ "CMS", "PKCS7" ]
     decode bs =
-        case decodeASN1' BER bs of
+        case decodeASN1Repr' BER bs of
             Left _ -> Nothing : acc
             Right asn1 ->
-                case fromASN1 asn1 of
+                case fromASN1Repr asn1 of
                     Right (info, []) -> Just info : acc
                     _                -> Nothing : acc
 

@@ -22,6 +22,7 @@ data ContentType = DataType              -- ^ Arbitrary octet string
                  | EnvelopedDataType     -- ^ Enveloped content info
                  | DigestedDataType      -- ^ Content info with associated digest
                  | EncryptedDataType     -- ^ Encrypted content info
+                 | AuthEnvelopedDataType -- ^ Authenticated-enveloped content info
                  deriving (Show,Eq)
 
 instance Enumerable ContentType where
@@ -29,6 +30,7 @@ instance Enumerable ContentType where
              , EnvelopedDataType
              , DigestedDataType
              , EncryptedDataType
+             , AuthEnvelopedDataType
              ]
 
 instance OIDable ContentType where
@@ -36,6 +38,7 @@ instance OIDable ContentType where
     getObjectID EnvelopedDataType     = [1,2,840,113549,1,7,3]
     getObjectID DigestedDataType      = [1,2,840,113549,1,7,5]
     getObjectID EncryptedDataType     = [1,2,840,113549,1,7,6]
+    getObjectID AuthEnvelopedDataType = [1,2,840,113549,1,9,16,1,23]
 
 instance OIDNameable ContentType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid

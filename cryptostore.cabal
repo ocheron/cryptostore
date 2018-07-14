@@ -24,6 +24,7 @@ library
                      , Crypto.Store.ASN1.Parse
                      , Crypto.Store.CMS.Algorithms
                      , Crypto.Store.CMS.Attribute
+                     , Crypto.Store.CMS.AuthEnveloped
                      , Crypto.Store.CMS.Encrypted
                      , Crypto.Store.CMS.Enveloped
                      , Crypto.Store.CMS.Info

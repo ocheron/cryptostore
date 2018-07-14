@@ -12,6 +12,8 @@ import           Data.ByteString (ByteString)
 
 import Test.Tasty.QuickCheck
 
+import Crypto.Cipher.Types
+
 import Crypto.Store.CMS
 
 import X509.Instances
@@ -31,6 +33,7 @@ instance Arbitrary ContentInfo where
                        , arbitraryEnvelopedData
                        , arbitraryDigestedData
                        , arbitraryEncryptedData
+                       , arbitraryAuthEnvelopedData
                        ]
       where
         arbitraryMessage :: Gen ByteString
@@ -54,6 +57,15 @@ instance Arbitrary ContentInfo where
             (alg, key, attrs) <- getCommon
             inner <- scale pred arbitrary
             either fail return $ encryptData key alg attrs inner
+
+        arbitraryAuthEnvelopedData :: Gen ContentInfo
+        arbitraryAuthEnvelopedData = do
+            (alg, key, uAttrs) <- getCommon
+            aAttrs <- arbitraryAttributes
+            (envFns, _) <- arbitraryEnvDev key
+            inner <- scale (subtract $ length envFns) arbitrary
+            authEnvelopData key alg envFns aAttrs uAttrs inner
+                >>= either fail return
 
         getCommon :: (HasKeySize params, Arbitrary params, B.ByteArray key)
                   => Gen (params, key, [Attribute])
@@ -119,6 +131,48 @@ instance Arbitrary ContentEncryptionAlg where
 
 instance Arbitrary ContentEncryptionParams where
     arbitrary = arbitrary >>= generateEncryptionParams
+
+instance Arbitrary AuthContentEncryptionAlg where
+    arbitrary = elements
+        [ AUTH_ENC_128
+        , AUTH_ENC_256
+
+        , CCM AES128
+        , CCM AES192
+        , CCM AES256
+
+        , GCM AES128
+        , GCM AES192
+        , GCM AES256
+        ]
+
+instance Arbitrary AuthContentEncryptionParams where
+    arbitrary = do
+        alg <- arbitrary
+        case alg of
+            AUTH_ENC_128 -> arb3 generateAuthEnc128Params
+            AUTH_ENC_256 -> arb3 generateAuthEnc256Params
+            CCM c -> do m <- arbitraryM
+                        l <- arbitraryL
+                        generateCCMParams c m l
+            GCM c -> choose (12,16) >>= generateGCMParams c
+      where arb3 fn = do
+                a <- arbitrary; b <- arbitrary; c <- arbitrary
+                fn a b c
+
+arbitraryM :: Gen CCM_M
+arbitraryM = elements
+    [ CCM_M4
+    , CCM_M6
+    , CCM_M8
+    , CCM_M10
+    , CCM_M12
+    , CCM_M14
+    , CCM_M16
+    ]
+
+arbitraryL :: Gen CCM_L
+arbitraryL = elements [ CCM_L2, CCM_L3, CCM_L4 ]
 
 instance Arbitrary KeyDerivationFunc where
     arbitrary = do

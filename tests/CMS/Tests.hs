@@ -141,6 +141,29 @@ encryptedDataTests =
                 , ("Camellia128_ECB",      testKey 16)
                 ]
 
+authEnvelopedDataTests :: TestTree
+authEnvelopedDataTests =
+    testCaseSteps "AuthEnvelopedData" $ \step -> do
+        cms <- readCMSFile path
+        assertEqual "unexpected parse count" count (length cms)
+
+        forM_ (zip [0..] cms) $ \(index, ci) -> do
+            step ("testing vector " ++ show (index :: Int))
+            assertBool "unexpected type" (hasType AuthEnvelopedDataType ci)
+            let AuthEnvelopedDataCI ae = ci
+                result = openAuthEnvelopedData (withRecipientPassword pwd) ae
+            assertRight result (verifyInnerMessage msg)
+
+            step ("testing encoded vector " ++ show index)
+            let [Just ci'] = pemToContentInfo [] (contentInfoToPEM ci)
+                AuthEnvelopedDataCI ae' = ci'
+                result' = openAuthEnvelopedData (withRecipientPassword pwd) ae'
+            assertRight result' (verifyInnerMessage msg)
+  where path  = testFile "cms-auth-enveloped-data-rfc6476.pem"
+        pwd   = fromString "password"
+        msg   = fromString "Some test data\NUL"
+        count = 2
+
 propertyTests :: TestTree
 propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
     [ testProperty "marshalling" $ \l ->
@@ -163,6 +186,15 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
             attrs <- arbitraryAttributes
             let Right (EncryptedDataCI ed) = encryptData key alg attrs ci
             return (Right ci === decryptData key ed)
+    , testProperty "enveloping with authentication" $ \alg ci ->
+        collect alg $ do
+            key <- generateKey alg
+            (envFns, devFn) <- scale succ (arbitraryEnvDev key)
+            aAttrs <- arbitraryAttributes
+            uAttrs <- arbitraryAttributes
+            result <- authEnvelopData key alg envFns aAttrs uAttrs ci
+            let Right (AuthEnvelopedDataCI ae) = result
+            return (Right ci === openAuthEnvelopedData devFn ae)
     ]
   where
     sizeRange bs =
@@ -176,5 +208,6 @@ cmsTests =
         , envelopedDataTests
         , digestedDataTests
         , encryptedDataTests
+        , authEnvelopedDataTests
         , propertyTests
         ]

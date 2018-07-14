@@ -31,6 +31,7 @@ module Crypto.Store.CMS.Util
     , ProduceASN1Object(..)
     , encodeASN1Object
     , ParseASN1Object(..)
+    , fromASN1Repr
     -- * Algorithm Identifiers
     , AlgorithmId(..)
     , algorithmASN1S
@@ -44,6 +45,7 @@ module Crypto.Store.CMS.Util
 
 import           Data.ASN1.BinaryEncoding.Raw
 import           Data.ASN1.OID
+import           Data.ASN1.Stream
 import           Data.ASN1.Types
 import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
@@ -120,6 +122,11 @@ class Monoid e => ParseASN1Object e obj where
 
 instance ParseASN1Object e obj => ParseASN1Object e [obj] where
     parse = getMany parse
+
+-- | Create an object from the ASN.1 stream.
+fromASN1Repr :: ParseASN1Object [ASN1Event] obj
+             => [ASN1Repr] -> Either String (obj, [ASN1Repr])
+fromASN1Repr = runParseASN1State_ parse
 
 -- | An ASN.1 object associated with the raw data it was parsed from.
 data ASN1ObjectExact a = ASN1ObjectExact
