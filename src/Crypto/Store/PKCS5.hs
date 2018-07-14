@@ -7,6 +7,8 @@
 --
 -- Password-Based Cryptography, aka PKCS #5.
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 module Crypto.Store.PKCS5
     ( Password
@@ -103,12 +105,13 @@ data PBEParameter = PBEParameter
     }
     deriving (Show,Eq)
 
-instance ParseASN1Object PBEParameter where
+instance ProduceASN1Object PBEParameter where
     asn1s PBEParameter{..} =
         let salt  = gOctetString pbeSalt
             iters = gIntVal (toInteger pbeIterationCount)
          in asn1Container Sequence (salt . iters)
 
+instance Monoid e => ParseASN1Object e PBEParameter where
     parse = onNextContainer Sequence $ do
         OctetString salt <- getNext
         IntVal iters <- getNext
@@ -122,12 +125,13 @@ data PBES2Parameter = PBES2Parameter
     }
     deriving (Show,Eq)
 
-instance ParseASN1Object PBES2Parameter where
+instance ProduceASN1Object PBES2Parameter where
     asn1s PBES2Parameter{..} =
         let kdFunc  = algorithmASN1S Sequence pbes2KDF
             eScheme = asn1s pbes2EScheme
          in asn1Container Sequence (kdFunc . eScheme)
 
+instance Monoid e => ParseASN1Object e PBES2Parameter where
     parse = onNextContainer Sequence $ do
         kdFunc  <- parseAlgorithm Sequence
         eScheme <- parse
@@ -173,11 +177,12 @@ data PKCS5 = PKCS5
     }
     deriving (Show,Eq)
 
-instance ParseASN1Object PKCS5 where
+instance ProduceASN1Object PKCS5 where
     asn1s PKCS5{..} = asn1Container Sequence (alg . bs)
       where alg = algorithmASN1S Sequence encryptionAlgorithm
             bs  = gOctetString encryptedData
 
+instance Monoid e => ParseASN1Object e PKCS5 where
     parse = onNextContainer Sequence $ do
         alg <- parseAlgorithm Sequence
         OctetString bs <- getNext

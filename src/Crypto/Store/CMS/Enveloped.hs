@@ -6,6 +6,8 @@
 -- Portability : unknown
 --
 --
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.Store.CMS.Enveloped
     ( EncryptedKey
@@ -64,11 +66,12 @@ data OtherKeyAttribute = OtherKeyAttribute
     }
     deriving (Show,Eq)
 
-instance ParseASN1Object OtherKeyAttribute where
+instance ProduceASN1Object OtherKeyAttribute where
     asn1s OtherKeyAttribute{..} = asn1Container Sequence (attrId . attr)
       where attrId = gOID keyAttrId
             attr   = gMany keyAttr
 
+instance Monoid e => ParseASN1Object e OtherKeyAttribute where
     parse = onNextContainer Sequence $ do
         OID attrId <- getNext
         attr <- getMany getNext
@@ -82,13 +85,14 @@ data KEKIdentifier = KEKIdentifier
     }
     deriving (Show,Eq)
 
-instance ParseASN1Object KEKIdentifier where
+instance ProduceASN1Object KEKIdentifier where
     asn1s KEKIdentifier{..} = asn1Container Sequence (keyId . date . other)
       where
         keyId = gOctetString kekKeyIdentifier
         date  = optASN1S kekDate $ \v -> gASN1Time TimeGeneralized v Nothing
         other = optASN1S kekOther asn1s
 
+instance Monoid e => ParseASN1Object e KEKIdentifier where
     parse = onNextContainer Sequence $ do
         OctetString keyId <- getNext
         date <- getNextMaybe dateTimeOrNothing
@@ -123,7 +127,7 @@ data RecipientInfo = KEKRI KEKRecipientInfo
                      -- ^ Recipient using password-based protection
     deriving (Show,Eq)
 
-instance ParseASN1Object RecipientInfo where
+instance ProduceASN1Object RecipientInfo where
     asn1s (KEKRI KEKRecipientInfo{..}) =
         asn1Container (Container Context 2) (ver . kid . kep . ek)
       where
@@ -140,6 +144,7 @@ instance ParseASN1Object RecipientInfo where
         kep = algorithmASN1S Sequence priKeyEncryptionParams
         ek  = gOctetString priEncryptedKey
 
+instance Monoid e => ParseASN1Object e RecipientInfo where
     parse = do
         c <- onNextContainerMaybe (Container Context 2) parseKEK
              `orElse` onNextContainerMaybe (Container Context 3) parsePassword
@@ -192,7 +197,7 @@ data EnvelopedData = EnvelopedData
     }
     deriving (Show,Eq)
 
-instance ParseASN1Object EnvelopedData where
+instance ProduceASN1Object EnvelopedData where
     asn1s EnvelopedData{..} =
         asn1Container Sequence (ver . ris . eci . ua)
       where
@@ -207,6 +212,7 @@ instance ParseASN1Object EnvelopedData where
           | all isVersion0 evRecipientInfos = 0
           | otherwise                       = 2
 
+instance Monoid e => ParseASN1Object e EnvelopedData where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

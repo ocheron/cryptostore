@@ -9,8 +9,11 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 module Crypto.Store.CMS.Algorithms
@@ -293,13 +296,14 @@ instance HasKeySize ContentEncryptionParams where
     getKeySizeSpecifier (ParamsCFB c _) = getCipherKeySizeSpecifier c
     getKeySizeSpecifier (ParamsCTR c _) = getCipherKeySizeSpecifier c
 
-instance ParseASN1Object ContentEncryptionParams where
+instance ProduceASN1Object ContentEncryptionParams where
     asn1s param =
         asn1Container Sequence (oid . params)
       where
         oid    = gOID (getObjectID $ getContentEncryptionAlg param)
         params = ceParameterASN1S param
 
+instance Monoid e => ParseASN1Object e ContentEncryptionParams where
     parse = onNextContainer Sequence $ do
         OID oid <- getNext
         withObjectID "content encryption algorithm" oid parseCEParameter
@@ -310,13 +314,14 @@ ceParameterASN1S (ParamsCBC _ iv) = gOctetString (B.convert iv)
 ceParameterASN1S (ParamsCFB _ iv) = gOctetString (B.convert iv)
 ceParameterASN1S (ParamsCTR _ iv) = gOctetString (B.convert iv)
 
-parseCEParameter :: ContentEncryptionAlg -> ParseASN1 ContentEncryptionParams
+parseCEParameter :: Monoid e
+                 => ContentEncryptionAlg -> ParseASN1 e ContentEncryptionParams
 parseCEParameter (ECB c) = getMany getNext >> return (ParamsECB c)
 parseCEParameter (CBC c) = ParamsCBC c <$> (getNext >>= getIV)
 parseCEParameter (CFB c) = ParamsCFB c <$> (getNext >>= getIV)
 parseCEParameter (CTR c) = ParamsCTR c <$> (getNext >>= getIV)
 
-getIV :: BlockCipher cipher => ASN1 -> ParseASN1 (IV cipher)
+getIV :: BlockCipher cipher => ASN1 -> ParseASN1 e (IV cipher)
 getIV (OctetString ivBs) =
     case makeIV ivBs of
         Nothing -> throwParseError "Bad IV in parsed parameters"

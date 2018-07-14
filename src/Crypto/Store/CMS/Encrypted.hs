@@ -6,6 +6,9 @@
 -- Portability : unknown
 --
 --
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.Store.CMS.Encrypted
     ( EncryptedContent
@@ -47,7 +50,7 @@ data EncryptedData = EncryptedData
     }
     deriving (Show,Eq)
 
-instance ParseASN1Object EncryptedData where
+instance ProduceASN1Object EncryptedData where
     asn1s EncryptedData{..} =
         asn1Container Sequence (ver . eci . ua)
       where
@@ -56,6 +59,7 @@ instance ParseASN1Object EncryptedData where
                   (edContentType, edContentEncryptionParams, edEncryptedContent)
         ua  = attributesASN1S (Container Context 1) edUnprotectedAttrs
 
+instance Monoid e => ParseASN1Object e EncryptedData where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext
@@ -70,7 +74,7 @@ instance ParseASN1Object EncryptedData where
                                  }
 
 -- | Generate ASN.1 for EncryptedContentInfo.
-encryptedContentInfoASN1S :: ParseASN1Object alg
+encryptedContentInfoASN1S :: ProduceASN1Object alg
                           => (ContentType, alg, B.ByteString) -> ASN1S
 encryptedContentInfoASN1S (ct, alg, ec) =
     asn1Container Sequence (ct' . alg' . ec')
@@ -80,8 +84,8 @@ encryptedContentInfoASN1S (ct, alg, ec) =
     ec'  = asn1Container (Container Context 0) (gOctetString ec)
 
 -- | Parse EncryptedContentInfo from ASN.1.
-parseEncryptedContentInfo :: ParseASN1Object alg
-                          => ParseASN1 (ContentType, alg, B.ByteString)
+parseEncryptedContentInfo :: ParseASN1Object e alg
+                          => ParseASN1 e (ContentType, alg, B.ByteString)
 parseEncryptedContentInfo = onNextContainer Sequence $ do
     OID oid <- getNext
     alg <- parse

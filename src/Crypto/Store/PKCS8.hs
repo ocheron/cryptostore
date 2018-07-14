@@ -15,6 +15,7 @@
 -- 'OptProtected' data type.
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.Store.PKCS8
     ( readKeyFile
@@ -225,20 +226,20 @@ data PrivateKeyFormat = TraditionalFormat -- ^ SSLeay compatible
 newtype Traditional a = Traditional { unTraditional :: a }
 newtype Modern a = Modern { unModern :: a }
 
-parseTraditional :: ParseASN1Object (Traditional a) => ParseASN1 a
+parseTraditional :: ParseASN1Object e (Traditional a) => ParseASN1 e a
 parseTraditional = unTraditional <$> parse
 
-parseModern :: ParseASN1Object (Modern a) => ParseASN1 a
+parseModern :: ParseASN1Object e (Modern a) => ParseASN1 e a
 parseModern = unModern <$> parse
 
-parseBoth :: (ParseASN1Object (Traditional a), ParseASN1Object (Modern a))
-          => ParseASN1 a
+parseBoth :: (ParseASN1Object e (Traditional a), ParseASN1Object e (Modern a))
+          => ParseASN1 e a
 parseBoth = parseTraditional <|> parseModern
 
 
 -- RSA
 
-instance ParseASN1Object (Traditional RSA.PrivateKey) where
+instance ProduceASN1Object (Traditional RSA.PrivateKey) where
     asn1s (Traditional privKey) =
         asn1Container Sequence (v . n . e . d . p1 . p2 . pexp1 . pexp2 . pcoef)
       where
@@ -254,6 +255,7 @@ instance ParseASN1Object (Traditional RSA.PrivateKey) where
         pexp2 = gIntVal (RSA.private_dQ privKey)
         pcoef = gIntVal (RSA.private_qinv privKey)
 
+instance Monoid e => ParseASN1Object e (Traditional RSA.PrivateKey) where
     parse = onNextContainer Sequence $ do
         IntVal 0 <- getNext
         IntVal n <- getNext
@@ -282,7 +284,7 @@ instance ParseASN1Object (Traditional RSA.PrivateKey) where
                                     }
         return (Traditional privKey)
 
-instance ParseASN1Object (Modern RSA.PrivateKey) where
+instance ProduceASN1Object (Modern RSA.PrivateKey) where
     asn1s (Modern privKey) =
         asn1Container Sequence (v . alg . bs)
       where
@@ -291,6 +293,7 @@ instance ParseASN1Object (Modern RSA.PrivateKey) where
         oid   = gOID [1,2,840,113549,1,1,1]
         bs    = gOctetString (encodeASN1Object $ Traditional privKey)
 
+instance Monoid e => ParseASN1Object e (Modern RSA.PrivateKey) where
     parse = onNextContainer Sequence $ do
         IntVal 0 <- getNext
         Null <- onNextContainer Sequence $ do
@@ -306,7 +309,7 @@ instance ParseASN1Object (Modern RSA.PrivateKey) where
 
 -- DSA
 
-instance ParseASN1Object (Traditional DSA.KeyPair) where
+instance ProduceASN1Object (Traditional DSA.KeyPair) where
     asn1s (Traditional (DSA.KeyPair params pub priv)) =
         asn1Container Sequence (v . pqgASN1S params . pub' . priv')
       where
@@ -314,6 +317,7 @@ instance ParseASN1Object (Traditional DSA.KeyPair) where
         pub'  = gIntVal pub
         priv' = gIntVal priv
 
+instance Monoid e => ParseASN1Object e (Traditional DSA.KeyPair) where
     parse = onNextContainer Sequence $ do
         IntVal 0 <- getNext
         params <- parsePQG
@@ -321,7 +325,7 @@ instance ParseASN1Object (Traditional DSA.KeyPair) where
         IntVal priv <- getNext
         return (Traditional $ DSA.KeyPair params pub priv)
 
-instance ParseASN1Object (Modern DSA.KeyPair) where
+instance ProduceASN1Object (Modern DSA.KeyPair) where
     asn1s (Modern (DSA.KeyPair params _ priv)) =
         asn1Container Sequence (v . alg . bs)
       where
@@ -331,6 +335,7 @@ instance ParseASN1Object (Modern DSA.KeyPair) where
         pr    = asn1Container Sequence (pqgASN1S params)
         bs    = gOctetString (encodeASN1S $ gIntVal priv)
 
+instance Monoid e => ParseASN1Object e (Modern DSA.KeyPair) where
     parse = onNextContainer Sequence $ do
         IntVal 0 <- getNext
         params <- onNextContainer Sequence $ do
@@ -350,7 +355,7 @@ pqgASN1S params = p . q . g
         q = gIntVal (DSA.params_q params)
         g = gIntVal (DSA.params_g params)
 
-parsePQG :: ParseASN1 DSA.Params
+parsePQG :: Monoid e => ParseASN1 e DSA.Params
 parsePQG = do
     IntVal p <- getNext
     IntVal q <- getNext
@@ -369,11 +374,13 @@ dsaPrivToPair k = DSA.KeyPair params pub x
 
 -- ECDSA
 
-instance ParseASN1Object (Traditional X509.PrivKeyEC) where
+instance ProduceASN1Object (Traditional X509.PrivKeyEC) where
     asn1s = innerEcdsaASN1S True . unTraditional
+
+instance Monoid e => ParseASN1Object e (Traditional X509.PrivKeyEC) where
     parse = Traditional <$> parseInnerEcdsa Nothing
 
-instance ParseASN1Object (Modern X509.PrivKeyEC) where
+instance ProduceASN1Object (Modern X509.PrivKeyEC) where
     asn1s (Modern privKey) = asn1Container Sequence (v . f . bs)
       where
         v     = gIntVal 0
@@ -382,6 +389,7 @@ instance ParseASN1Object (Modern X509.PrivKeyEC) where
         bs    = gOctetString (encodeASN1S inner)
         inner = innerEcdsaASN1S False privKey
 
+instance Monoid e => ParseASN1Object e (Modern X509.PrivKeyEC) where
     parse = onNextContainer Sequence $ do
         IntVal 0 <- getNext
         f <- onNextContainer Sequence $ do
@@ -410,8 +418,9 @@ innerEcdsaASN1S addC k
     pub = gBitString (toBitArray sp 0)
     X509.SerializedPoint sp = getSerializedPoint curve (X509.privkeyEC_priv k)
 
-parseInnerEcdsa :: Maybe (ECDSA.PrivateNumber -> X509.PrivKeyEC)
-                -> ParseASN1 X509.PrivKeyEC
+parseInnerEcdsa :: Monoid e
+                => Maybe (ECDSA.PrivateNumber -> X509.PrivKeyEC)
+                -> ParseASN1 e X509.PrivKeyEC
 parseInnerEcdsa fn = onNextContainer Sequence $ do
     IntVal 1 <- getNext
     OctetString ds <- getNext
@@ -449,7 +458,7 @@ curveFnASN1S X509.PrivKeyEC_Prime{..} =
     o      = gIntVal privkeyEC_order
     c      = gIntVal privkeyEC_cofactor
 
-parseCurveFn :: ParseASN1 (ECDSA.PrivateNumber -> X509.PrivKeyEC)
+parseCurveFn :: Monoid e => ParseASN1 e (ECDSA.PrivateNumber -> X509.PrivKeyEC)
 parseCurveFn = parseNamedCurve <|> parsePrimeCurve
   where
     parseNamedCurve = do

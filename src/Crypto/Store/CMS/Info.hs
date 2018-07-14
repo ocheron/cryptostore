@@ -7,7 +7,10 @@
 --
 -- CMS content information.
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 module Crypto.Store.CMS.Info
@@ -53,7 +56,7 @@ data ContentInfo = DataCI ByteString                     -- ^ Arbitrary octet st
                  | EncryptedDataCI EncryptedData         -- ^ Encrypted content info
                  deriving (Show,Eq)
 
-instance ParseASN1Object ContentInfo where
+instance ProduceASN1Object ContentInfo where
     asn1s ci = asn1Container Sequence (oid . cont)
       where oid = gOID $ getObjectID $ getContentType ci
             cont = asn1Container (Container Context 0) inner
@@ -64,6 +67,7 @@ instance ParseASN1Object ContentInfo where
                     DigestedDataCI dd      -> asn1s dd
                     EncryptedDataCI ed     -> asn1s ed
 
+instance Monoid e => ParseASN1Object e ContentInfo where
     parse =
         onNextContainer Sequence $ do
             OID oid <- getNext
@@ -85,7 +89,7 @@ instance ASN1Object ContentInfo where
 dataASN1S :: ByteString -> ASN1S
 dataASN1S = gOctetString
 
-parseData :: ParseASN1 ByteString
+parseData :: Monoid e => ParseASN1 e ByteString
 parseData = do
     next <- getNext
     case next of
@@ -114,7 +118,7 @@ instance Eq DigestedData where
     DigestedData a1 i1 d1 == DigestedData a2 i2 d2 =
         DigestType a1 == DigestType a2 && d1 `eqBA` d2 && i1 == i2
 
-instance ParseASN1Object DigestedData where
+instance ProduceASN1Object DigestedData where
     asn1s DigestedData{..} =
         asn1Container Sequence (ver . alg . ci . dig)
       where
@@ -129,6 +133,7 @@ instance ParseASN1Object DigestedData where
         isData (DataCI _) = True
         isData _          = False
 
+instance Monoid e => ParseASN1Object e DigestedData where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext
@@ -155,7 +160,7 @@ digestTypeASN1S d = gOID (getObjectID d) . param
                 DigestType MD5 -> gNull
                 _              -> id
 
-parseDigestType :: ParseASN1 DigestType
+parseDigestType :: Monoid e => ParseASN1 e DigestType
 parseDigestType = do
     OID oid <- getNext
     withObjectID "digest algorithm" oid $ \alg -> do
@@ -165,7 +170,7 @@ parseDigestType = do
 
 -- Utilities
 
-decode :: ParseASN1 a -> ByteString -> Either String a
+decode :: ParseASN1 () a -> ByteString -> Either String a
 decode parser bs = vals >>= runParseASN1 parser
   where vals = either (Left . showerr) Right (decodeASN1' BER bs)
         showerr err = "Unable to decode encapsulated ASN.1: " ++ show err
@@ -190,7 +195,7 @@ encapsulatedContentInfoASN1S ci = asn1Container Sequence (oid . cont)
         cont = asn1Container (Container Context 0) inner
         inner = gOctetString (encapsulate ci)
 
-parseEncapsulatedContentInfo :: ParseASN1 ContentInfo
+parseEncapsulatedContentInfo :: Monoid e => ParseASN1 e ContentInfo
 parseEncapsulatedContentInfo =
     onNextContainer Sequence $ do
         OID oid <- getNext

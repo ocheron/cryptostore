@@ -6,6 +6,8 @@
 -- Portability : unknown
 --
 -- CMS attributes
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.Store.CMS.Attribute
     ( Attribute(..)
@@ -30,11 +32,12 @@ data Attribute = Attribute
     }
     deriving (Show,Eq)
 
-instance ParseASN1Object Attribute where
+instance ProduceASN1Object Attribute where
     asn1s Attribute{..} =
         asn1Container Sequence
             (gOID attrType . asn1Container Set (gMany attrValues))
 
+instance Monoid e => ParseASN1Object e Attribute where
     parse = onNextContainer Sequence $ do
         OID oid <- getNext
         vals <- onNextContainer Set (getMany getNext)
@@ -46,7 +49,7 @@ attributesASN1S _  []    = id
 attributesASN1S ty attrs = asn1Container ty (asn1s attrs)
 
 -- | Parse a list of attributes.
-parseAttributes :: ASN1ConstructionType -> ParseASN1 [Attribute]
+parseAttributes :: Monoid e => ASN1ConstructionType -> ParseASN1 e [Attribute]
 parseAttributes ty = fromMaybe [] <$> onNextContainerMaybe ty parse
 
 -- | Return the values for the first attribute with the specified type.

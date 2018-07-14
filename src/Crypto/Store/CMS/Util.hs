@@ -8,6 +8,7 @@
 -- CMS and ASN.1 utilities
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -25,8 +26,9 @@ module Crypto.Store.CMS.Util
     , OIDNameableWrapper(..)
     , withObjectID
     -- * Parsing and encoding ASN.1 objects
-    , ParseASN1Object(..)
+    , ProduceASN1Object(..)
     , encodeASN1Object
+    , ParseASN1Object(..)
     -- * Algorithm Identifiers
     , AlgorithmId(..)
     , algorithmASN1S
@@ -91,25 +93,30 @@ instance (Enumerable a, OIDable a) => OIDNameable (OIDNameableWrapper a) where
 
 -- | Convert the specified OID and apply a parser to the result.
 withObjectID :: OIDNameable a
-             => String -> OID -> (a -> ParseASN1 b) -> ParseASN1 b
+             => String -> OID -> (a -> ParseASN1 e b) -> ParseASN1 e b
 withObjectID name oid fn =
     case fromObjectID oid of
         Just val -> fn val
         Nothing  ->
             throwParseError ("Unsupported " ++ name ++ ": OID " ++ show oid)
 
--- | Types which can be parsed from ASN.1 and converted back to ASN.1 stream.
-class ParseASN1Object obj where
+-- | Objects that can produce an ASN.1 stream.
+class ProduceASN1Object obj where
     asn1s :: obj -> ASN1S
-    parse :: ParseASN1 obj
 
-instance ParseASN1Object obj => ParseASN1Object [obj] where
+instance ProduceASN1Object obj => ProduceASN1Object [obj] where
     asn1s l r = foldr asn1s r l
-    parse = getMany parse
 
 -- | Encode the ASN.1 object to DER format.
-encodeASN1Object :: ParseASN1Object obj => obj -> ByteString
+encodeASN1Object :: ProduceASN1Object obj => obj -> ByteString
 encodeASN1Object = encodeASN1S . asn1s
+
+-- | Objects that can be parsed from an ASN.1 stream.
+class Monoid e => ParseASN1Object e obj where
+    parse :: ParseASN1 e obj
+
+instance ParseASN1Object e obj => ParseASN1Object e [obj] where
+    parse = getMany parse
 
 -- | Algorithm identifier with associated parameter.
 class AlgorithmId param where
@@ -117,7 +124,7 @@ class AlgorithmId param where
     algorithmName  :: param -> String
     algorithmType  :: param -> AlgorithmType param
     parameterASN1S :: param -> ASN1S
-    parseParameter :: AlgorithmType param -> ParseASN1 param
+    parseParameter :: Monoid e => AlgorithmType param -> ParseASN1 e param
 
 -- | Transform the algorithm identifier to ASN.1 stream.
 algorithmASN1S :: (AlgorithmId param, OIDable (AlgorithmType param))
@@ -133,8 +140,8 @@ algorithmMaybeASN1S _  Nothing  = id
 algorithmMaybeASN1S ty (Just p) = algorithmASN1S ty p
 
 -- | Parse an algorithm identifier from an ASN.1 stream.
-parseAlgorithm :: forall param . (AlgorithmId param, OIDNameable (AlgorithmType param))
-               => ASN1ConstructionType -> ParseASN1 param
+parseAlgorithm :: forall e param . (Monoid e, AlgorithmId param, OIDNameable (AlgorithmType param))
+               => ASN1ConstructionType -> ParseASN1 e param
 parseAlgorithm ty = onNextContainer ty $ do
     OID oid <- getNext
     withObjectID (getName undefined) oid parseParameter
@@ -143,8 +150,8 @@ parseAlgorithm ty = onNextContainer ty $ do
     getName = algorithmName
 
 -- | Parse an optional algorithm identifier from an ASN.1 stream.
-parseAlgorithmMaybe :: forall param . (AlgorithmId param, OIDNameable (AlgorithmType param))
-                    => ASN1ConstructionType -> ParseASN1 (Maybe param)
+parseAlgorithmMaybe :: forall e param . (Monoid e, AlgorithmId param, OIDNameable (AlgorithmType param))
+                    => ASN1ConstructionType -> ParseASN1 e (Maybe param)
 parseAlgorithmMaybe ty = onNextContainerMaybe ty $ do
     OID oid <- getNext
     withObjectID (getName undefined) oid parseParameter
