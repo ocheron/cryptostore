@@ -89,7 +89,7 @@ toUCS2 pwdUTF8
 pkcs5 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
       => (String -> result)
       -> (Key -> ContentEncryptionParams -> ByteString -> result)
-      -> hash
+      -> DigestAlgorithm hash
       -> ContentEncryptionCipher cipher
       -> PBEParameter
       -> ByteString
@@ -108,7 +108,7 @@ pkcs5 failure encdec hashAlg cec pbeParam bs pwd
 -- PBKDF1, RFC 8018 section 5.1
 
 pbkdf1 :: (Hash.HashAlgorithm hash, ByteArrayAccess password, ByteArray out)
-       => hash
+       => DigestAlgorithm hash
        -> password
        -> PBEParameter
        -> Int
@@ -117,8 +117,9 @@ pbkdf1 hashAlg pwd PBEParameter{..} dkLen
     | dkLen > B.length t1 = Left "PBKDF1: derived key too long"
     | otherwise           = Right (B.convert $ B.takeView tc dkLen)
   where
-    t1 = Hash.hashFinalize (Hash.hashUpdate (Hash.hashUpdate (Hash.hashInitWith hashAlg) pwd) pbeSalt)
-    tc = iterate (Hash.hashWith hashAlg) t1 !! pred pbeIterationCount
+    a  = hashFromProxy hashAlg
+    t1 = Hash.hashFinalize (Hash.hashUpdate (Hash.hashUpdate (Hash.hashInitWith a) pwd) pbeSalt)
+    tc = iterate (Hash.hashWith a) t1 !! pred pbeIterationCount
 
 
 -- PKCS#12 encryption, RFC 7292 appendix B.2
@@ -126,7 +127,7 @@ pbkdf1 hashAlg pwd PBEParameter{..} dkLen
 pkcs12 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
        => (String -> result)
        -> (Key -> ContentEncryptionParams -> ByteString -> result)
-       -> hash
+       -> DigestAlgorithm hash
        -> ContentEncryptionCipher cipher
        -> PBEParameter
        -> ByteString
@@ -144,17 +145,18 @@ pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
             in encdec key eScheme bs
 
 pkcs12Derive :: (Hash.HashAlgorithm hash, ByteArray bout)
-             => hash
+             => DigestAlgorithm hash
              -> PBEParameter
              -> Word8
              -> ByteString -- password (UCS2)
              -> Int
              -> bout
 pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
-    B.take n $ B.concat $ take c $ loop hashAlg (s `B.append` p)
+    B.take n $ B.concat $ take c $ loop a (s `B.append` p)
   where
+    a = hashFromProxy hashAlg
     v = 64 -- always 512 bits, we're using only SHA1
-    u = Hash.hashDigestSize hashAlg
+    u = Hash.hashDigestSize a
 
     c = (n + u - 1) `div` u
     d = B.replicate v idByte :: B.Bytes
@@ -171,6 +173,9 @@ pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
                    b  = ai `extendedTo` v
                    j  = B.concat $ map (add1 b) (chunks v i)
                 in ai : loop h j
+
+hashFromProxy :: proxy a -> a
+hashFromProxy _ = undefined
 
 -- Split in chunks of size 'n'
 chunks :: ByteArray ba => Int -> ba -> [ba]

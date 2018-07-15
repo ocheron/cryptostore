@@ -37,8 +37,6 @@ module Crypto.Store.PKCS5
     , pbDecrypt
     ) where
 
-import qualified Crypto.Hash as Hash
-
 import           Data.ASN1.Types
 import           Data.ByteArray (ByteArrayAccess)
 import           Data.ByteString (ByteString)
@@ -175,19 +173,19 @@ decrypt obj = pbDecrypt (encryptionAlgorithm obj) (encryptedData obj)
 pbEncrypt :: EncryptionScheme -> ByteString -> Password
           -> Either String EncryptedContent
 pbEncrypt (PBES2 p)                 = pbes2  contentEncrypt p
-pbEncrypt (PBE_MD5_DES_CBC p)       = pkcs5  Left contentEncrypt Hash.MD5  DES p
-pbEncrypt (PBE_SHA1_DES_CBC p)      = pkcs5  Left contentEncrypt Hash.SHA1 DES p
-pbEncrypt (PBE_SHA1_DES_EDE3_CBC p) = pkcs12 Left contentEncrypt Hash.SHA1 DES_EDE3 p
-pbEncrypt (PBE_SHA1_DES_EDE2_CBC p) = pkcs12 Left contentEncrypt Hash.SHA1 DES_EDE2 p
+pbEncrypt (PBE_MD5_DES_CBC p)       = pkcs5  Left contentEncrypt MD5  DES p
+pbEncrypt (PBE_SHA1_DES_CBC p)      = pkcs5  Left contentEncrypt SHA1 DES p
+pbEncrypt (PBE_SHA1_DES_EDE3_CBC p) = pkcs12 Left contentEncrypt SHA1 DES_EDE3 p
+pbEncrypt (PBE_SHA1_DES_EDE2_CBC p) = pkcs12 Left contentEncrypt SHA1 DES_EDE2 p
 
 -- | Decrypt an encrypted bytestring with the specified encryption scheme and
 -- password.
 pbDecrypt :: EncryptionScheme -> EncryptedContent -> Password -> Either String ByteString
 pbDecrypt (PBES2 p)                 = pbes2  contentDecrypt p
-pbDecrypt (PBE_MD5_DES_CBC p)       = pkcs5  Left contentDecrypt Hash.MD5  DES p
-pbDecrypt (PBE_SHA1_DES_CBC p)      = pkcs5  Left contentDecrypt Hash.SHA1 DES p
-pbDecrypt (PBE_SHA1_DES_EDE3_CBC p) = pkcs12 Left contentDecrypt Hash.SHA1 DES_EDE3 p
-pbDecrypt (PBE_SHA1_DES_EDE2_CBC p) = pkcs12 Left contentDecrypt Hash.SHA1 DES_EDE2 p
+pbDecrypt (PBE_MD5_DES_CBC p)       = pkcs5  Left contentDecrypt MD5  DES p
+pbDecrypt (PBE_SHA1_DES_CBC p)      = pkcs5  Left contentDecrypt SHA1 DES p
+pbDecrypt (PBE_SHA1_DES_EDE3_CBC p) = pkcs12 Left contentDecrypt SHA1 DES_EDE3 p
+pbDecrypt (PBE_SHA1_DES_EDE2_CBC p) = pkcs12 Left contentDecrypt SHA1 DES_EDE2 p
 
 pbes2 :: ByteArrayAccess password
       => (Key -> ContentEncryptionParams -> ByteString -> result)
