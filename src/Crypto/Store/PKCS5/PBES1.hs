@@ -15,6 +15,8 @@ module Crypto.Store.PKCS5.PBES1
     , pkcs5
     , pbkdf1
     , pkcs12
+    , pkcs12stream
+    , rc4Combine
     ) where
 
 import           Basement.Block (Block)
@@ -23,6 +25,7 @@ import           Basement.Endianness
 import qualified Basement.String as S
 
 import           Crypto.Cipher.Types
+import qualified Crypto.Cipher.RC4 as RC4
 import qualified Crypto.Hash as Hash
 import           Crypto.Number.Serialize (i2ospOf_, os2ip)
 
@@ -69,6 +72,10 @@ cbcWith :: (BlockCipher cipher, ByteArrayAccess iv)
 cbcWith cipher iv = ParamsCBC cipher getIV
   where
     getIV = fromMaybe (error "PKCS5: bad initialization vector") (makeIV iv)
+
+-- | RC4 encryption or decryption.
+rc4Combine :: (ByteArrayAccess key, ByteArray ba) => key -> ba -> Either String ba
+rc4Combine key = Right . snd . RC4.combine (RC4.initialize key)
 
 -- | Conversion to UCS2 from UTF-8, ignoring non-BMP bits.
 toUCS2 :: (ByteArrayAccess butf8, ByteArray bucs2) => butf8 -> Maybe bucs2
@@ -143,6 +150,22 @@ pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
                 keyLen  = getMaximumKeySize eScheme
                 key     = pkcs12Derive hashAlg pbeParam 1 pwdUCS2 keyLen :: Key
             in encdec key eScheme bs
+
+pkcs12stream :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
+             => (String -> result)
+             -> (Key -> ByteString -> result)
+             -> DigestAlgorithm hash
+             -> Int
+             -> PBEParameter
+             -> ByteString
+             -> password
+             -> result
+pkcs12stream failure encdec hashAlg keyLen pbeParam bs pwdUTF8 =
+    case toUCS2 pwdUTF8 of
+        Nothing      -> failure "Provided password is not valid UTF-8"
+        Just pwdUCS2 ->
+            let key = pkcs12Derive hashAlg pbeParam 1 pwdUCS2 keyLen :: Key
+             in encdec key bs
 
 pkcs12Derive :: (Hash.HashAlgorithm hash, ByteArray bout)
              => DigestAlgorithm hash

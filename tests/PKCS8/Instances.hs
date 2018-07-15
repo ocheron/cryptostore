@@ -24,6 +24,8 @@ instance Arbitrary EncryptionScheme where
     arbitrary = oneof [ PBES2 <$> arbitrary
                       , PBE_MD5_DES_CBC <$> arbitrary
                       , PBE_SHA1_DES_CBC <$> arbitrary
+                      , PBE_SHA1_RC4_128 <$> arbitrary
+                      , PBE_SHA1_RC4_40 <$> arbitrary
                       , PBE_SHA1_DES_EDE3_CBC <$> arbitrary
                       , PBE_SHA1_DES_EDE2_CBC <$> arbitrary
                       ]

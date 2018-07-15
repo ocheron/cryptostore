@@ -49,6 +49,8 @@ function encrypt() {
   (
     for cipher in pbeWithMD5AndDES-CBC \
                   pbeWithSHA1AndDES-CBC \
+                  PBE-SHA1-RC4-128 \
+                  PBE-SHA1-RC4-40 \
                   pbeWithSHA1And3-KeyTripleDES-CBC \
                   pbeWithSHA1And2-KeyTripleDES-CBC; do
       "$OPENSSL" pkcs8 -topk8 -in "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
