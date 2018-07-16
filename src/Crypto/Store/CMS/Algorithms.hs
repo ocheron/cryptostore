@@ -1018,6 +1018,7 @@ instance AlgorithmId KeyEncryptionParams where
     algorithmType DES_EDE3_WRAP    = TypeDES_EDE3_WRAP
 
     parameterASN1S (PWRIKEK cep)  = asn1s cep
+    parameterASN1S DES_EDE3_WRAP  = gNull
     parameterASN1S _              = id
 
     parseParameter TypePWRIKEK          = PWRIKEK <$> parse
@@ -1027,7 +1028,7 @@ instance AlgorithmId KeyEncryptionParams where
     parseParameter TypeAES128_WRAP_PAD  = return AES128_WRAP_PAD
     parseParameter TypeAES192_WRAP_PAD  = return AES192_WRAP_PAD
     parseParameter TypeAES256_WRAP_PAD  = return AES256_WRAP_PAD
-    parseParameter TypeDES_EDE3_WRAP    = return DES_EDE3_WRAP
+    parseParameter TypeDES_EDE3_WRAP    = getNextMaybe nullOrNothing >> return DES_EDE3_WRAP
 
 instance HasKeySize KeyEncryptionParams where
     getKeySizeSpecifier (PWRIKEK cep)   = getKeySizeSpecifier cep
