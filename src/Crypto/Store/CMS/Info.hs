@@ -21,6 +21,7 @@ module Crypto.Store.CMS.Info
     , decapsulate
     ) where
 
+import Control.Applicative
 import Control.Monad
 
 import           Data.ASN1.BinaryEncoding
@@ -206,7 +207,11 @@ parseEncapsulatedContentInfo =
             onNextContainer (Container Context 0) (parseInner ct)
   where
     parseInner ct = do
-        OctetString bs <- getNext
+        bs <- parseContentSingle <|> parseContentChunks
         case decapsulate ct bs of
             Left err -> throwParseError err
             Right ci -> return ci
+
+    parseContentSingle = do { OctetString bs <- getNext; return bs }
+    parseContentChunks = onNextContainer (Container Universal 4) $
+        B.concat <$> getMany parseContentSingle
