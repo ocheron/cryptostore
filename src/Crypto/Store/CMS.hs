@@ -14,6 +14,7 @@
 -- * <https://tools.ietf.org/html/rfc5083 RFC 5083>: Cryptographic Message Syntax (CMS) Authenticated-Enveloped-Data Content Type
 -- * <https://tools.ietf.org/html/rfc5084 RFC 5084>: Using AES-CCM and AES-GCM Authenticated Encryption in the Cryptographic Message Syntax (CMS)
 -- * <https://tools.ietf.org/html/rfc6476 RFC 6476>: Using Message Authentication Code (MAC) Encryption in the Cryptographic Message Syntax (CMS)
+-- * <https://tools.ietf.org/html/rfc8103 RFC 8103>: Using ChaCha20-Poly1305 Authenticated Encryption in the Cryptographic Message Syntax (CMS)
 --
 -- /TODO: only symmetric crypto is implemented currently/
 {-# LANGUAGE RecordWildCards #-}
@@ -66,6 +67,7 @@ module Crypto.Store.CMS
     , AuthEnvelopedData(..)
     , generateAuthEnc128Params
     , generateAuthEnc256Params
+    , generateChaChaPoly1305Params
     , generateCCMParams
     , generateGCMParams
     , authEnvelopData

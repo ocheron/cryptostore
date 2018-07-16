@@ -136,6 +136,7 @@ instance Arbitrary AuthContentEncryptionAlg where
     arbitrary = elements
         [ AUTH_ENC_128
         , AUTH_ENC_256
+        , CHACHA20_POLY1305
 
         , CCM AES128
         , CCM AES192
@@ -152,6 +153,7 @@ instance Arbitrary AuthContentEncryptionParams where
         case alg of
             AUTH_ENC_128 -> arb3 generateAuthEnc128Params
             AUTH_ENC_256 -> arb3 generateAuthEnc256Params
+            CHACHA20_POLY1305 -> generateChaChaPoly1305Params
             CCM c -> do m <- arbitraryM
                         l <- arbitraryL
                         generateCCMParams c m l

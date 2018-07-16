@@ -38,6 +38,7 @@ module Crypto.Store.CMS.Algorithms
     , AuthContentEncryptionParams(..)
     , generateAuthEnc128Params
     , generateAuthEnc256Params
+    , generateChaChaPoly1305Params
     , generateCCMParams
     , generateGCMParams
     , getAuthContentEncryptionAlg
@@ -69,6 +70,7 @@ import           Data.Word
 import qualified Crypto.Cipher.AES as Cipher
 import qualified Crypto.Cipher.CAST5 as Cipher
 import qualified Crypto.Cipher.Camellia as Cipher
+import qualified Crypto.Cipher.ChaChaPoly1305 as ChaChaPoly1305
 import qualified Crypto.Cipher.DES as Cipher
 import qualified Crypto.Cipher.TripleDES as Cipher
 import           Crypto.Cipher.Types
@@ -78,6 +80,7 @@ import qualified Crypto.Hash as Hash
 import qualified Crypto.KDF.PBKDF2 as PBKDF2
 import qualified Crypto.KDF.Scrypt as Scrypt
 import qualified Crypto.MAC.HMAC as HMAC
+import qualified Crypto.MAC.Poly1305 as Poly1305
 import           Crypto.Random
 
 import           Crypto.Store.ASN1.Generate
@@ -457,6 +460,8 @@ data AuthContentEncryptionAlg
       -- ^ authEnc with 128-bit key
     | AUTH_ENC_256
       -- ^ authEnc with 256-bit key
+    | CHACHA20_POLY1305
+      -- ^ ChaCha20-Poly1305 Authenticated Encryption
     | forall c . BlockCipher c => CCM (ContentEncryptionCipher c)
       -- ^ Counter with CBC-MAC
     | forall c . BlockCipher c => GCM (ContentEncryptionCipher c)
@@ -465,12 +470,14 @@ data AuthContentEncryptionAlg
 instance Show AuthContentEncryptionAlg where
     show AUTH_ENC_128 = "AUTH_ENC_128"
     show AUTH_ENC_256 = "AUTH_ENC_256"
+    show CHACHA20_POLY1305 = "CHACHA20_POLY1305"
     show (CCM c)      = shows c "_CCM"
     show (GCM c)      = shows c "_GCM"
 
 instance Enumerable AuthContentEncryptionAlg where
     values = [ AUTH_ENC_128
              , AUTH_ENC_256
+             , CHACHA20_POLY1305
 
              , CCM AES128
              , CCM AES192
@@ -484,6 +491,7 @@ instance Enumerable AuthContentEncryptionAlg where
 instance OIDable AuthContentEncryptionAlg where
     getObjectID AUTH_ENC_128       = [1,2,840,113549,1,9,16,3,15]
     getObjectID AUTH_ENC_256       = [1,2,840,113549,1,9,16,3,16]
+    getObjectID CHACHA20_POLY1305  = [1,2,840,113549,1,9,16,3,18]
 
     getObjectID (CCM AES128)       = [2,16,840,1,101,3,4,1,7]
     getObjectID (CCM AES192)       = [2,16,840,1,101,3,4,1,27]
@@ -544,6 +552,8 @@ data AuthContentEncryptionParams
       -- ^ authEnc with 128-bit keying material
     | Params_AUTH_ENC_256 AuthEncParams
       -- ^ authEnc with 256-bit keying material
+    | Params_CHACHA20_POLY1305 ChaChaPoly1305.Nonce
+      -- ^ ChaCha20-Poly1305 Authenticated Encryption
     | forall c . BlockCipher c => ParamsCCM (ContentEncryptionCipher c) B.Bytes CCM_M CCM_L
       -- ^ Counter with CBC-MAC
     | forall c . BlockCipher c => ParamsGCM (ContentEncryptionCipher c) B.Bytes Int
@@ -555,6 +565,9 @@ instance Show AuthContentEncryptionParams where
 instance Eq AuthContentEncryptionParams where
     Params_AUTH_ENC_128 p1 == Params_AUTH_ENC_128 p2 = p1 == p2
     Params_AUTH_ENC_256 p1 == Params_AUTH_ENC_256 p2 = p1 == p2
+    Params_CHACHA20_POLY1305 iv1 == Params_CHACHA20_POLY1305 iv2 =
+        iv1 `eqBA` iv2
+
     ParamsCCM c1 iv1 m1 l1 == ParamsCCM c2 iv2 m2 l2 =
         cecI c1 == cecI c2 && iv1 == iv2 && (m1, l1) == (m2, l2)
     ParamsGCM c1 iv1 len1  == ParamsGCM c2 iv2 len2  =
@@ -564,6 +577,7 @@ instance Eq AuthContentEncryptionParams where
 instance HasKeySize AuthContentEncryptionParams where
     getKeySizeSpecifier (Params_AUTH_ENC_128 _) = KeySizeFixed 16
     getKeySizeSpecifier (Params_AUTH_ENC_256 _) = KeySizeFixed 32
+    getKeySizeSpecifier (Params_CHACHA20_POLY1305 _) = KeySizeFixed 32
     getKeySizeSpecifier (ParamsCCM c _ _ _)     = getCipherKeySizeSpecifier c
     getKeySizeSpecifier (ParamsGCM c _ _)       = getCipherKeySizeSpecifier c
 
@@ -583,6 +597,7 @@ instance Monoid e => ParseASN1Object e AuthContentEncryptionParams where
 aceParameterASN1S :: ASN1Elem e => AuthContentEncryptionParams -> ASN1Stream e
 aceParameterASN1S (Params_AUTH_ENC_128 p) = asn1s p
 aceParameterASN1S (Params_AUTH_ENC_256 p) = asn1s p
+aceParameterASN1S (Params_CHACHA20_POLY1305 iv) = gOctetString (B.convert iv)
 aceParameterASN1S (ParamsCCM _ iv m _) =
     asn1Container Sequence (nonce . icvlen)
   where
@@ -599,6 +614,12 @@ parseACEParameter :: Monoid e
                   -> ParseASN1 e AuthContentEncryptionParams
 parseACEParameter AUTH_ENC_128 = Params_AUTH_ENC_128 <$> parse
 parseACEParameter AUTH_ENC_256 = Params_AUTH_ENC_256 <$> parse
+parseACEParameter CHACHA20_POLY1305 = do
+    OctetString bs <- getNext
+    case ChaChaPoly1305.nonce12 bs of
+        CryptoPassed iv -> return (Params_CHACHA20_POLY1305 iv)
+        CryptoFailed e  ->
+            throwParseError $ "Parsed invalid ChaChaPoly1305 nonce: " ++ show e
 parseACEParameter (CCM c)      = onNextContainer Sequence $ do
     OctetString iv <- getNext
     let ivlen = B.length iv
@@ -621,6 +642,7 @@ getAuthContentEncryptionAlg :: AuthContentEncryptionParams
                             -> AuthContentEncryptionAlg
 getAuthContentEncryptionAlg (Params_AUTH_ENC_128 _) = AUTH_ENC_128
 getAuthContentEncryptionAlg (Params_AUTH_ENC_256 _) = AUTH_ENC_256
+getAuthContentEncryptionAlg (Params_CHACHA20_POLY1305 _) = CHACHA20_POLY1305
 getAuthContentEncryptionAlg (ParamsCCM c _ _ _)     = CCM c
 getAuthContentEncryptionAlg (ParamsGCM c _ _)       = GCM c
 
@@ -648,6 +670,13 @@ generateAuthEnc256Params prfAlg cea macAlg = do
                       , macAlgorithm = macAlg
                       }
 
+-- | Generate random 'CHACHA20_POLY1305' parameters.
+generateChaChaPoly1305Params :: MonadRandom m => m AuthContentEncryptionParams
+generateChaChaPoly1305Params = do
+    bs <- nonceGenerate 12
+    let iv = throwCryptoError (ChaChaPoly1305.nonce12 bs)
+    return (Params_CHACHA20_POLY1305 iv)
+
 -- | Generate random 'CCM' parameters for the specified cipher.
 generateCCMParams :: (MonadRandom m, BlockCipher c)
                   => ContentEncryptionCipher c -> CCM_M -> CCM_L
@@ -674,6 +703,7 @@ authContentEncrypt key params paramsRaw aad bs =
     case params of
         Params_AUTH_ENC_128 p   -> checkAuthKey 16 key >> authEncrypt p
         Params_AUTH_ENC_256 p   -> checkAuthKey 32 key >> authEncrypt p
+        Params_CHACHA20_POLY1305 iv -> ccpInit key iv aad >>= ccpEncrypt
         ParamsCCM cipher iv m l -> getAEAD cipher key (AEAD_CCM msglen m l) iv >>= encrypt (getM m)
         ParamsGCM cipher iv len -> getAEAD cipher key AEAD_GCM iv >>= encrypt len
   where
@@ -682,6 +712,12 @@ authContentEncrypt key params paramsRaw aad bs =
 
     encrypt :: Int -> AEAD a -> Either String (AuthTag, ba)
     encrypt len aead = force $ aeadSimpleEncrypt aead aad bs len
+
+    ccpEncrypt :: ChaChaPoly1305.State -> Either a (AuthTag, ba)
+    ccpEncrypt state = force (found, encrypted)
+      where
+        (encrypted, state') = ChaChaPoly1305.encrypt bs state
+        found = ccpTag (ChaChaPoly1305.finalize state')
 
     authEncrypt :: AuthEncParams -> Either String (AuthTag, ba)
     authEncrypt p@AuthEncParams{..} = do
@@ -701,6 +737,7 @@ authContentDecrypt key params paramsRaw aad bs expected =
     case params of
         Params_AUTH_ENC_128 p   -> checkAuthKey 16 key >> authDecrypt p
         Params_AUTH_ENC_256 p   -> checkAuthKey 32 key >> authDecrypt p
+        Params_CHACHA20_POLY1305 iv -> ccpInit key iv aad >>= ccpDecrypt
         ParamsCCM cipher iv m l -> getAEAD cipher key (AEAD_CCM msglen m l) iv >>= decrypt
         ParamsGCM cipher iv _   -> getAEAD cipher key AEAD_GCM iv >>= decrypt
   where
@@ -709,6 +746,14 @@ authContentDecrypt key params paramsRaw aad bs expected =
 
     decrypt :: AEAD a -> Either String ba
     decrypt aead = maybe badMac Right (aeadSimpleDecrypt aead aad bs expected)
+
+    ccpDecrypt :: ChaChaPoly1305.State -> Either String ba
+    ccpDecrypt state
+        | found == expected = Right decrypted
+        | otherwise         = badMac
+      where
+        (decrypted, state') = ChaChaPoly1305.decrypt bs state
+        found = ccpTag (ChaChaPoly1305.finalize state')
 
     authDecrypt :: AuthEncParams -> Either String ba
     authDecrypt p@AuthEncParams{..}
@@ -748,6 +793,19 @@ checkAuthKey sz key
     | otherwise    =
         Left ("Expecting " ++ show sz ++ "-byte key instead of " ++ show actual)
   where actual = B.length key
+
+ccpInit :: (ByteArrayAccess key, ByteArrayAccess aad)
+        => key
+        -> ChaChaPoly1305.Nonce
+        -> aad
+        -> Either String ChaChaPoly1305.State
+ccpInit key nonce aad = case ChaChaPoly1305.initialize key nonce of
+    CryptoPassed s -> return (addAAD s)
+    CryptoFailed e -> Left ("Invalid ChaChaPoly1305 parameters: " ++ show e)
+  where addAAD = ChaChaPoly1305.finalizeAAD . ChaChaPoly1305.appendAAD aad
+
+ccpTag :: Poly1305.Auth -> AuthTag
+ccpTag (Poly1305.Auth bs) = AuthTag bs
 
 -- PRF
 
