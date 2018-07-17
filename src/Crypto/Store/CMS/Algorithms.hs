@@ -94,6 +94,10 @@ import qualified Crypto.Store.KeyWrap.TripleDES as TripleDES_KW
 
 -- | CMS digest algorithm.
 data DigestAlgorithm hashAlg where
+    -- | MD2
+    MD2    :: DigestAlgorithm Hash.MD2
+    -- | MD4
+    MD4    :: DigestAlgorithm Hash.MD4
     -- | MD5
     MD5    :: DigestAlgorithm Hash.MD5
     -- | SHA-1
@@ -119,6 +123,8 @@ instance Show DigestType where
     show (DigestType a) = show a
 
 instance Eq DigestType where
+    DigestType MD2    == DigestType MD2    = True
+    DigestType MD4    == DigestType MD4    = True
     DigestType MD5    == DigestType MD5    = True
     DigestType SHA1   == DigestType SHA1   = True
     DigestType SHA224 == DigestType SHA224 = True
@@ -128,7 +134,9 @@ instance Eq DigestType where
     _                 == _                 = False
 
 instance Enumerable DigestType where
-    values = [ DigestType MD5
+    values = [ DigestType MD2
+             , DigestType MD4
+             , DigestType MD5
              , DigestType SHA1
              , DigestType SHA224
              , DigestType SHA256
@@ -137,6 +145,8 @@ instance Enumerable DigestType where
              ]
 
 instance OIDable DigestType where
+    getObjectID (DigestType MD2)    = [1,2,840,113549,2,2]
+    getObjectID (DigestType MD4)    = [1,2,840,113549,2,4]
     getObjectID (DigestType MD5)    = [1,2,840,113549,2,5]
     getObjectID (DigestType SHA1)   = [1,3,14,3,2,26]
     getObjectID (DigestType SHA224) = [2,16,840,1,101,3,4,2,4]
@@ -196,7 +206,13 @@ instance Eq MACAlgorithm where
     HMAC a1 == HMAC a2 = DigestType a1 == DigestType a2
 
 instance Enumerable MACAlgorithm where
-    values = map (\(DigestType a) -> HMAC a) values
+    values = [ HMAC MD5
+             , HMAC SHA1
+             , HMAC SHA224
+             , HMAC SHA256
+             , HMAC SHA384
+             , HMAC SHA512
+             ]
 
 instance OIDable MACAlgorithm where
     getObjectID (HMAC MD5)    = [1,3,6,1,5,5,8,1,1]
@@ -205,6 +221,8 @@ instance OIDable MACAlgorithm where
     getObjectID (HMAC SHA256) = [1,2,840,113549,2,9]
     getObjectID (HMAC SHA384) = [1,2,840,113549,2,10]
     getObjectID (HMAC SHA512) = [1,2,840,113549,2,11]
+
+    getObjectID ty = error ("Unsupported MACAlgorithm: " ++ show ty)
 
 instance OIDNameable MACAlgorithm where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
