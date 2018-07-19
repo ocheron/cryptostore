@@ -21,7 +21,7 @@ import Util
 newtype Message = Message ByteString deriving (Show, Eq)
 
 instance Arbitrary Message where
-    arbitrary = Message . pack <$> vectorOf 24 arbitrary
+    arbitrary = Message . pack <$> vector 24
 
 data Vector = Vector
     { vecKey        :: ByteString

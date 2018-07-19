@@ -21,7 +21,7 @@ import Util
 newtype Message = Message ByteString deriving (Show, Eq)
 
 instance Arbitrary Message where
-    arbitrary = sized $ \n -> Message . pack <$> vectorOf (8 * n) arbitrary
+    arbitrary = sized $ \n -> Message . pack <$> vector (8 * n)
 
 newtype MessageP = MessageP ByteString deriving (Show, Eq)
 

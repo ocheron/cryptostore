@@ -99,7 +99,7 @@ instance Arbitrary Attribute where
         return Attribute { attrType = oid, attrValues = vals }
 
 arbitraryAttributes :: Gen [Attribute]
-arbitraryAttributes = resize 3 $ listOf arbitrary
+arbitraryAttributes = resize 3 arbitrary
 
 instance Arbitrary DigestType where
     arbitrary = elements
