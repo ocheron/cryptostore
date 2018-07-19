@@ -13,16 +13,24 @@ module Crypto.Store.CMS.Attribute
     ( Attribute(..)
     , attributesASN1S
     , parseAttributes
+    -- * Generic attribute
     , findAttribute
     , setAttribute
     , filterAttributes
+    -- * Standard attributes
+    , getContentTypeAttr
+    , setContentTypeAttr
+    , getMessageDigestAttr
+    , setMessageDigestAttr
     ) where
 
 import Data.ASN1.Types
+import Data.ByteString (ByteString)
 import Data.Maybe (fromMaybe)
 
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
+import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
 -- | An attribute extending the CMS structure with arbitrary data.
@@ -68,3 +76,46 @@ filterAttributes p = filter (p . attrType)
 setAttribute :: OID -> [ASN1] -> [Attribute] -> [Attribute]
 setAttribute oid vals = (:) attr . filterAttributes (/= oid)
   where attr = Attribute { attrType = oid, attrValues = vals }
+
+runParseAttribute :: OID -> [Attribute] -> ParseASN1 () a -> Maybe a
+runParseAttribute oid attrs p =
+    case findAttribute oid attrs of
+        Nothing -> Nothing
+        Just s  -> either (const Nothing) Just (runParseASN1 p s)
+
+setAttributeASN1S :: OID -> [Attribute] -> ASN1S -> [Attribute]
+setAttributeASN1S oid attrs g = setAttribute oid (g []) attrs
+
+
+-- Content type
+
+contentType :: OID
+contentType = [1,2,840,113549,1,9,3]
+
+-- | Return the value of the @contentType@ attribute.
+getContentTypeAttr :: [Attribute] -> Maybe ContentType
+getContentTypeAttr attrs = runParseAttribute contentType attrs $ do
+    OID oid <- getNext
+    withObjectID "content type" oid return
+
+-- | Add or replace the @contentType@ attribute in a list of attributes.
+setContentTypeAttr :: ContentType -> [Attribute] -> [Attribute]
+setContentTypeAttr ct attrs =
+    setAttributeASN1S contentType attrs (gOID $ getObjectID ct)
+
+
+-- Message digest
+
+messageDigest :: OID
+messageDigest = [1,2,840,113549,1,9,4]
+
+-- | Return the value of the @messageDigest@ attribute.
+getMessageDigestAttr :: [Attribute] -> Maybe ByteString
+getMessageDigestAttr attrs = runParseAttribute messageDigest attrs $ do
+    OctetString d <- getNext
+    return d
+
+-- | Add or replace the @messageDigest@ attribute in a list of attributes.
+setMessageDigestAttr :: ByteString -> [Attribute] -> [Attribute]
+setMessageDigestAttr d attrs =
+    setAttributeASN1S messageDigest attrs (gOctetString d)
