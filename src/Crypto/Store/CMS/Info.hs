@@ -17,6 +17,7 @@ module Crypto.Store.CMS.Info
     ( ContentInfo(..)
     , getContentType
     , DigestedData(..)
+    , AuthenticatedData(..)
     , encapsulate
     , decapsulate
     ) where
@@ -30,11 +31,13 @@ import           Data.ASN1.Types
 import           Data.ByteString (ByteString)
 import qualified Data.ByteArray as B
 
+import Crypto.Cipher.Types
 import Crypto.Hash hiding (MD5)
 
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
+import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.AuthEnveloped
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
@@ -47,6 +50,7 @@ getContentType (DataCI _)              = DataType
 getContentType (EnvelopedDataCI _)     = EnvelopedDataType
 getContentType (DigestedDataCI _)      = DigestedDataType
 getContentType (EncryptedDataCI _)     = EncryptedDataType
+getContentType (AuthenticatedDataCI _) = AuthenticatedDataType
 getContentType (AuthEnvelopedDataCI _) = AuthEnvelopedDataType
 
 
@@ -57,6 +61,7 @@ data ContentInfo = DataCI ByteString                     -- ^ Arbitrary octet st
                  | EnvelopedDataCI EnvelopedData         -- ^ Enveloped content info
                  | DigestedDataCI DigestedData           -- ^ Content info with associated digest
                  | EncryptedDataCI EncryptedData         -- ^ Encrypted content info
+                 | AuthenticatedDataCI AuthenticatedData -- ^ Authenticatedcontent info
                  | AuthEnvelopedDataCI AuthEnvelopedData -- ^ Authenticated-enveloped content info
                  deriving (Show,Eq)
 
@@ -70,6 +75,7 @@ instance ProduceASN1Object ASN1P ContentInfo where
                     EnvelopedDataCI ed     -> asn1s ed
                     DigestedDataCI dd      -> asn1s dd
                     EncryptedDataCI ed     -> asn1s ed
+                    AuthenticatedDataCI ad -> asn1s ad
                     AuthEnvelopedDataCI ae -> asn1s ae
 
 instance ParseASN1Object [ASN1Event] ContentInfo where
@@ -83,6 +89,7 @@ instance ParseASN1Object [ASN1Event] ContentInfo where
         parseInner EnvelopedDataType     = EnvelopedDataCI <$> parse
         parseInner DigestedDataType      = DigestedDataCI <$> parse
         parseInner EncryptedDataType     = EncryptedDataCI <$> parse
+        parseInner AuthenticatedDataType = AuthenticatedDataCI <$> parse
         parseInner AuthEnvelopedDataType = AuthEnvelopedDataCI <$> parse
 
 
@@ -143,10 +150,10 @@ instance Monoid e => ParseASN1Object e DigestedData where
                 throwParseError ("DigestedData: parsed invalid version: " ++ show v)
             alg <- onNextContainer Sequence parseDigestType
             inner <- parseEncapsulatedContentInfo
-            OctetString digest <- getNext
+            OctetString bs <- getNext
             case alg of
                 DigestType digAlg ->
-                    case digestFromByteString digest of
+                    case digestFromByteString bs of
                         Nothing -> throwParseError "DigestedData: parsed invalid digest"
                         Just d  ->
                             return DigestedData { ddDigestAlgorithm = digAlg
@@ -170,6 +177,66 @@ parseDigestType = do
         return alg
 
 
+-- Authenticated data
+
+-- | Authenticated content information.
+--
+-- TODO: originator info is missing
+data AuthenticatedData = AuthenticatedData
+    { adRecipientInfos :: [RecipientInfo]
+      -- ^ Information for recipients, allowing to authenticate the content
+    , adMACAlgorithm :: MACAlgorithm
+      -- ^ MAC algorithm
+    , adDigestAlgorithm :: Maybe DigestType
+      -- ^ Optional digest algorithm
+    , adContentInfo :: ContentInfo
+      -- ^ Inner content info
+    , adAuthAttrs :: [Attribute]
+      -- ^ Optional authenticated attributes
+    , adMAC :: MessageAuthenticationCode
+      -- ^ Message authentication code
+    , adUnauthAttrs :: [Attribute]
+      -- ^ Optional unauthenticated attributes
+    }
+    deriving (Show,Eq)
+
+instance ProduceASN1Object ASN1P AuthenticatedData where
+    asn1s AuthenticatedData{..} =
+        asn1Container Sequence (ver . ris . alg . dig . ci . aa . tag . ua)
+      where
+        ver = gIntVal 0
+        ris = asn1Container Set (asn1s adRecipientInfos)
+        alg = algorithmASN1S Sequence adMACAlgorithm
+        dig = maybe id (asn1Container (Container Context 1) . digestTypeASN1S)
+                  adDigestAlgorithm
+        ci  = encapsulatedContentInfoASN1S adContentInfo
+        aa  = attributesASN1S(Container Context 2) adAuthAttrs
+        tag = gOctetString (B.convert adMAC)
+        ua  = attributesASN1S (Container Context 3) adUnauthAttrs
+
+instance ParseASN1Object [ASN1Event] AuthenticatedData where
+    parse =
+        onNextContainer Sequence $ do
+            IntVal v <- getNext
+            when (v /= 0) $
+                throwParseError ("AuthenticatedData: parsed invalid version: " ++ show v)
+            ris <- onNextContainer Set parse
+            alg <- parseAlgorithm Sequence
+            dig <- onNextContainerMaybe (Container Context 1) parseDigestType
+            inner <- parseEncapsulatedContentInfo
+            aAttrs <- parseAttributes (Container Context 2)
+            OctetString tag <- getNext
+            uAttrs <- parseAttributes (Container Context 3)
+            return AuthenticatedData { adRecipientInfos = ris
+                                     , adMACAlgorithm = alg
+                                     , adDigestAlgorithm = dig
+                                     , adContentInfo = inner
+                                     , adAuthAttrs = aAttrs
+                                     , adMAC = AuthTag $ B.convert tag
+                                     , adUnauthAttrs = uAttrs
+                                     }
+
+
 -- Utilities
 
 decode :: ParseASN1 [ASN1Event] a -> ByteString -> Either String a
@@ -183,6 +250,7 @@ encapsulate (DataCI bs)              = bs
 encapsulate (EnvelopedDataCI ed)     = encodeASN1Object ed
 encapsulate (DigestedDataCI dd)      = encodeASN1Object dd
 encapsulate (EncryptedDataCI ed)     = encodeASN1Object ed
+encapsulate (AuthenticatedDataCI ad) = encodeASN1Object ad
 encapsulate (AuthEnvelopedDataCI ae) = encodeASN1Object ae
 
 -- | Decode the information from encapsulated content.
@@ -191,6 +259,7 @@ decapsulate DataType bs              = pure (DataCI bs)
 decapsulate EnvelopedDataType bs     = EnvelopedDataCI <$> decode parse bs
 decapsulate DigestedDataType bs      = DigestedDataCI <$> decode parse bs
 decapsulate EncryptedDataType bs     = EncryptedDataCI <$> decode parse bs
+decapsulate AuthenticatedDataType bs = AuthenticatedDataCI <$> decode parse bs
 decapsulate AuthEnvelopedDataType bs = AuthEnvelopedDataCI <$> decode parse bs
 
 encapsulatedContentInfoASN1S :: ASN1Elem e => ContentInfo -> ASN1Stream e

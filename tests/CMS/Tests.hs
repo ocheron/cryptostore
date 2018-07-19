@@ -5,6 +5,7 @@ import Control.Monad
 
 import qualified Data.ByteString as B
 import           Data.String (fromString)
+import           Data.Maybe (isNothing)
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -171,9 +172,7 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         in label (sizeRange bs) $ l === readCMSFileFromMemory bs
     , testProperty "enveloping" $ \alg ci ->
         collect alg $ do
-            key <- generateKey alg
-            (envFns, devFn) <- scale succ (arbitraryEnvDev key)
-            attrs <- arbitraryAttributes
+            (key, envFns, devFn, attrs) <- getCommon alg
             Right (EnvelopedDataCI ev) <- envelopData key alg envFns attrs ci
             return (Right ci === openEnvelopedData devFn ev)
     , testProperty "digesting" $ \alg ci ->
@@ -186,20 +185,34 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
             attrs <- arbitraryAttributes
             let Right (EncryptedDataCI ed) = encryptData key alg attrs ci
             return (Right ci === decryptData key ed)
+    , testProperty "authenticating" $ \alg dig ci ->
+        collect alg $ do
+            (key, envFns, devFn, uAttrs) <- getCommon alg
+            aAttrs <- if isNothing dig then pure [] else arbitraryAttributes
+            r <- generateAuthenticatedData key alg dig envFns aAttrs uAttrs ci
+            let Right (AuthenticatedDataCI ad) = r
+            return (Right ci === verifyAuthenticatedData devFn ad)
     , testProperty "enveloping with authentication" $ \alg ci ->
         collect alg $ do
-            key <- generateKey alg
-            (envFns, devFn) <- scale succ (arbitraryEnvDev key)
+            (key, envFns, devFn, uAttrs) <- getCommon alg
             aAttrs <- arbitraryAttributes
-            uAttrs <- arbitraryAttributes
-            result <- authEnvelopData key alg envFns aAttrs uAttrs ci
-            let Right (AuthEnvelopedDataCI ae) = result
+            r <- authEnvelopData key alg envFns aAttrs uAttrs ci
+            let Right (AuthEnvelopedDataCI ae) = r
             return (Right ci === openAuthEnvelopedData devFn ae)
     ]
   where
     sizeRange bs =
         let n = B.length bs `div` 1024
          in show n ++ " .. " ++ show (n + 1) ++ " KB"
+
+getCommon :: HasKeySize params
+          => params
+          -> Gen (B.ByteString, [ProducerOfRI Gen], ConsumerOfRI, [Attribute])
+getCommon alg = do
+    key <- generateKey alg
+    (envFns, devFn) <- scale succ (arbitraryEnvDev key)
+    attrs <- arbitraryAttributes
+    return (key, envFns, devFn, attrs)
 
 cmsTests :: TestTree
 cmsTests =

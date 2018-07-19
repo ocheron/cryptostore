@@ -33,6 +33,7 @@ instance Arbitrary ContentInfo where
                        , arbitraryEnvelopedData
                        , arbitraryDigestedData
                        , arbitraryEncryptedData
+                       , arbitraryAuthenticatedData
                        , arbitraryAuthEnvelopedData
                        ]
       where
@@ -58,14 +59,30 @@ instance Arbitrary ContentInfo where
             inner <- scale pred arbitrary
             either fail return $ encryptData key alg attrs inner
 
+        arbitraryAuthenticatedData :: Gen ContentInfo
+        arbitraryAuthenticatedData = do
+            (alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
+            dig <- arbitrary
+            inner <- scale (subtract $ length envFns) arbitrary
+            generateAuthenticatedData key alg dig envFns aAttrs uAttrs inner
+                >>= either fail return
+
         arbitraryAuthEnvelopedData :: Gen ContentInfo
         arbitraryAuthEnvelopedData = do
-            (alg, key, uAttrs) <- getCommon
-            aAttrs <- arbitraryAttributes
-            (envFns, _) <- arbitraryEnvDev key
+            (alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
             inner <- scale (subtract $ length envFns) arbitrary
             authEnvelopData key alg envFns aAttrs uAttrs inner
                 >>= either fail return
+
+        getCommonAuth :: (HasKeySize params, Arbitrary params)
+                  => Gen ( params, ContentEncryptionKey
+                         , [ProducerOfRI Gen], [Attribute], [Attribute]
+                         )
+        getCommonAuth = do
+            (alg, key, uAttrs) <- getCommon
+            aAttrs <- arbitraryAttributes
+            (envFns, _) <- arbitraryEnvDev key
+            return (alg, key, envFns, aAttrs, uAttrs)
 
         getCommon :: (HasKeySize params, Arbitrary params, B.ByteArray key)
                   => Gen (params, key, [Attribute])

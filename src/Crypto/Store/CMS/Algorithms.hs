@@ -19,6 +19,7 @@
 module Crypto.Store.CMS.Algorithms
     ( DigestType(..)
     , DigestAlgorithm(..)
+    , digest
     , MessageAuthenticationCode
     , MACAlgorithm(..)
     , mac
@@ -156,6 +157,13 @@ instance OIDable DigestType where
 
 instance OIDNameable DigestType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
+
+digest :: ByteArrayAccess message => DigestType -> message -> ByteString
+digest (DigestType hashAlg) message = B.convert (doHash hashAlg message)
+
+doHash :: (Hash.HashAlgorithm hashAlg, ByteArrayAccess ba)
+       => proxy hashAlg -> ba -> Hash.Digest hashAlg
+doHash _ = Hash.hash
 
 
 -- Cipher-like things

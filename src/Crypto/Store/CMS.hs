@@ -61,6 +61,13 @@ module Crypto.Store.CMS
     , getContentEncryptionAlg
     , encryptData
     , decryptData
+    -- * Authenticated data
+    , AuthenticationKey
+    , MACAlgorithm(..)
+    , MessageAuthenticationCode
+    , AuthenticatedData(..)
+    , generateAuthenticatedData
+    , verifyAuthenticatedData
     -- * Authenticated-enveloped data
     , AuthContentEncryptionAlg(..)
     , AuthContentEncryptionParams
@@ -72,9 +79,6 @@ module Crypto.Store.CMS
     , generateGCMParams
     , authEnvelopData
     , openAuthEnvelopedData
-    -- * Message authentication
-    , MessageAuthenticationCode
-    , MACAlgorithm(..)
     -- * Key derivation
     , Salt
     , generateSalt
@@ -92,6 +96,7 @@ module Crypto.Store.CMS
     , ASN1ObjectExact
     ) where
 
+import Data.Maybe (isJust)
 import Data.List.NonEmpty (nonEmpty)
 import Data.Semigroup
 
@@ -193,6 +198,78 @@ openEnvelopedData devFn EnvelopedData{..} =
     ct       = evContentType
     params   = evContentEncryptionParams
     unwrap k = contentDecrypt k params evEncryptedContent >>= decapsulate ct
+
+
+-- AuthenticatedData
+
+-- | Key used for authentication.
+type AuthenticationKey = ContentEncryptionKey
+
+-- | Add an authenticated-data layer on the specified content info.  The content
+-- is MACed with the specified key and algorithms.  The key is then processed by
+-- one or several 'ProducerOfRI' functions to create recipient info elements.
+--
+-- Two lists of optional attributes can be provided.  The attributes will be
+-- part of message authentication when provided in the first list.
+generateAuthenticatedData :: Applicative f
+                          => AuthenticationKey
+                          -> MACAlgorithm
+                          -> Maybe DigestType
+                          -> [ProducerOfRI f]
+                          -> [Attribute]
+                          -> [Attribute]
+                          -> ContentInfo
+                          -> f (Either String ContentInfo)
+generateAuthenticatedData key macAlg digAlg envFns aAttrs uAttrs ci =
+    f <$> (sequence <$> traverse ($ key) envFns)
+  where
+    msg = encapsulate ci
+    ct  = getContentType ci
+
+    (aAttrs', input) =
+        case digAlg of
+            Nothing  -> (aAttrs, msg)
+            Just dig ->
+                let md = digest dig msg
+                    l  = setContentTypeAttr ct $ setMessageDigestAttr md aAttrs
+                in (l, encodeAuthAttrs l)
+
+    ebs   = mac macAlg key input
+    f ris = AuthenticatedDataCI <$> (build ebs <$> ris)
+    build authTag ris = AuthenticatedData
+                            { adRecipientInfos = ris
+                            , adMACAlgorithm = macAlg
+                            , adDigestAlgorithm = digAlg
+                            , adContentInfo = ci
+                            , adAuthAttrs = aAttrs'
+                            , adMAC = authTag
+                            , adUnauthAttrs = uAttrs
+                            }
+
+-- | Verify the integrity of an authenticated content info using the specified
+-- 'ConsumerOfRI' function.  The inner content info is returned only if the MAC
+-- could be verified.
+verifyAuthenticatedData :: ConsumerOfRI -> AuthenticatedData -> Either String ContentInfo
+verifyAuthenticatedData devFn AuthenticatedData{..} =
+    riAttempts (map devFn adRecipientInfos) >>= unwrap
+  where
+    msg = encapsulate adContentInfo
+    ct  = getContentType adContentInfo
+
+    noAttr    = null adAuthAttrs
+    mdMatch   = case adDigestAlgorithm of
+                    Nothing  -> False
+                    Just dig -> mdAttr == Just (digest dig msg)
+    attrMatch = ctAttr == Just ct && mdMatch
+    mdAttr    = getMessageDigestAttr adAuthAttrs
+    ctAttr    = getContentTypeAttr adAuthAttrs
+    input     = if noAttr then msg else encodeAuthAttrs adAuthAttrs
+
+    unwrap k
+        | isJust adDigestAlgorithm && noAttr  = Left "Missing auth attributes"
+        | not noAttr && not attrMatch         = Left "Invalid auth attributes"
+        | adMAC /= mac adMACAlgorithm k input = Left "Bad content MAC"
+        | otherwise                           = Right adContentInfo
 
 
 -- AuthEnvelopedData
