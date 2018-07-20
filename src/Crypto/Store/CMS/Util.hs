@@ -50,6 +50,7 @@ import           Data.ASN1.Types
 import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
 import           Data.List (find)
+import           Data.X509
 
 import Time.Types (DateTime)
 
@@ -112,6 +113,9 @@ class ProduceASN1Object e obj where
 instance ProduceASN1Object e obj => ProduceASN1Object e [obj] where
     asn1s l r = foldr asn1s r l
 
+instance (Show a, Eq a, ASN1Object a) => ProduceASN1Object ASN1P (SignedExact a) where
+    asn1s = gEncoded . encodeSignedObject
+
 -- | Encode the ASN.1 object to DER format.
 encodeASN1Object :: ProduceASN1Object ASN1P obj => obj -> ByteString
 encodeASN1Object = encodeASN1S . asn1s
@@ -122,6 +126,15 @@ class Monoid e => ParseASN1Object e obj where
 
 instance ParseASN1Object e obj => ParseASN1Object e [obj] where
     parse = getMany parse
+
+instance (Show a, Eq a, ASN1Object a) => ParseASN1Object [ASN1Event] (SignedExact a) where
+    parse = withAnnotations parseSequence >>= finish
+      where
+        parseSequence = onNextContainer Sequence (getMany getNext)
+        finish (_, events) =
+            case decodeSignedObject (toByteString events) of
+                Right se -> return se
+                Left err -> throwParseError ("SignedExact: " ++ err)
 
 -- | Create an object from the ASN.1 stream.
 fromASN1Repr :: ParseASN1Object [ASN1Event] obj
