@@ -172,8 +172,9 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         in label (sizeRange bs) $ l === readCMSFileFromMemory bs
     , testProperty "enveloping" $ \alg ci ->
         collect alg $ do
-            (key, envFns, devFn, attrs) <- getCommon alg
-            Right (EnvelopedDataCI ev) <- envelopData key alg envFns attrs ci
+            (oinfo, key, envFns, devFn, attrs) <- getCommon alg
+            r <- envelopData oinfo key alg envFns attrs ci
+            let Right (EnvelopedDataCI ev) = r
             return (Right ci === openEnvelopedData devFn ev)
     , testProperty "digesting" $ \alg ci ->
         collect alg $
@@ -187,16 +188,16 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
             return (Right ci === decryptData key ed)
     , testProperty "authenticating" $ \alg dig ci ->
         collect alg $ do
-            (key, envFns, devFn, uAttrs) <- getCommon alg
+            (oinfo, key, envFns, devFn, uAttrs) <- getCommon alg
             aAttrs <- if isNothing dig then pure [] else arbitraryAttributes
-            r <- generateAuthenticatedData key alg dig envFns aAttrs uAttrs ci
+            r <- generateAuthenticatedData oinfo key alg dig envFns aAttrs uAttrs ci
             let Right (AuthenticatedDataCI ad) = r
             return (Right ci === verifyAuthenticatedData devFn ad)
     , testProperty "enveloping with authentication" $ \alg ci ->
         collect alg $ do
-            (key, envFns, devFn, uAttrs) <- getCommon alg
+            (oinfo, key, envFns, devFn, uAttrs) <- getCommon alg
             aAttrs <- arbitraryAttributes
-            r <- authEnvelopData key alg envFns aAttrs uAttrs ci
+            r <- authEnvelopData oinfo key alg envFns aAttrs uAttrs ci
             let Right (AuthEnvelopedDataCI ae) = r
             return (Right ci === openAuthEnvelopedData devFn ae)
     ]
@@ -207,12 +208,13 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
 
 getCommon :: HasKeySize params
           => params
-          -> Gen (B.ByteString, [ProducerOfRI Gen], ConsumerOfRI, [Attribute])
+          -> Gen (OriginatorInfo, B.ByteString, [ProducerOfRI Gen], ConsumerOfRI, [Attribute])
 getCommon alg = do
+    oinfo <- arbitrary
     key <- generateKey alg
     (envFns, devFn) <- scale succ (arbitraryEnvDev key)
     attrs <- arbitraryAttributes
-    return (key, envFns, devFn, attrs)
+    return (oinfo, key, envFns, devFn, attrs)
 
 cmsTests :: TestTree
 cmsTests =

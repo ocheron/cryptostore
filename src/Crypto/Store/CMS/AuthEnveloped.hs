@@ -14,6 +14,7 @@ module Crypto.Store.CMS.AuthEnveloped
     , encodeAuthAttrs
     ) where
 
+import Control.Applicative
 import Control.Monad
 
 import Data.ASN1.Types
@@ -28,14 +29,15 @@ import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
+import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
 -- | Authenticated-enveloped content information.
---
--- TODO: originator info is missing
 data AuthEnvelopedData = AuthEnvelopedData
-    { aeRecipientInfos :: [RecipientInfo]
+    { aeOriginatorInfo :: OriginatorInfo
+      -- ^ Optional information about the originator
+    , aeRecipientInfos :: [RecipientInfo]
       -- ^ Information for recipients, allowing to decrypt the content
     , aeContentType :: ContentType
       -- ^ Inner content type
@@ -54,7 +56,7 @@ data AuthEnvelopedData = AuthEnvelopedData
 
 instance ProduceASN1Object ASN1P AuthEnvelopedData where
     asn1s AuthEnvelopedData{..} =
-        asn1Container Sequence (ver . ris . eci . aa . tag . ua)
+        asn1Container Sequence (ver . oi . ris . eci . aa . tag . ua)
       where
         ver = gIntVal 0
         ris = asn1Container Set (asn1s aeRecipientInfos)
@@ -64,18 +66,23 @@ instance ProduceASN1Object ASN1P AuthEnvelopedData where
         tag = gOctetString (convert aeMAC)
         ua  = attributesASN1S (Container Context 2) aeUnauthAttrs
 
+        oi | aeOriginatorInfo == mempty = id
+           | otherwise = originatorInfoASN1S (Container Context 0) aeOriginatorInfo
+
 instance ParseASN1Object [ASN1Event] AuthEnvelopedData where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext
             when (v /= 0) $
                 throwParseError ("AuthEnvelopedData: parsed invalid version: " ++ show v)
+            oi <- parseOriginatorInfo (Container Context 0) <|> return mempty
             ris <- onNextContainer Set parse
             (ct, params, ec) <- parseEncryptedContentInfo
             aAttrs <- parseAttributes (Container Context 1)
             OctetString tag <- getNext
             uAttrs <- parseAttributes (Container Context 2)
-            return AuthEnvelopedData { aeContentType = ct
+            return AuthEnvelopedData { aeOriginatorInfo = oi
+                                     , aeContentType = ct
                                      , aeRecipientInfos = ris
                                      , aeContentEncryptionParams = params
                                      , aeEncryptedContent = ec

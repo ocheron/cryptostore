@@ -42,10 +42,11 @@ instance Arbitrary ContentInfo where
 
         arbitraryEnvelopedData :: Gen ContentInfo
         arbitraryEnvelopedData = do
+            oinfo <- arbitrary
             (alg, key, attrs) <- getCommon
             (envFns, _) <- arbitraryEnvDev key
             inner <- scale (subtract $ length envFns) arbitrary
-            envelopData key alg envFns attrs inner >>= either fail return
+            envelopData oinfo key alg envFns attrs inner >>= either fail return
 
         arbitraryDigestedData :: Gen ContentInfo
         arbitraryDigestedData = do
@@ -61,28 +62,29 @@ instance Arbitrary ContentInfo where
 
         arbitraryAuthenticatedData :: Gen ContentInfo
         arbitraryAuthenticatedData = do
-            (alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
+            (oinfo, alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
             dig <- arbitrary
             inner <- scale (subtract $ length envFns) arbitrary
-            generateAuthenticatedData key alg dig envFns aAttrs uAttrs inner
+            generateAuthenticatedData oinfo key alg dig envFns aAttrs uAttrs inner
                 >>= either fail return
 
         arbitraryAuthEnvelopedData :: Gen ContentInfo
         arbitraryAuthEnvelopedData = do
-            (alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
+            (oinfo, alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
             inner <- scale (subtract $ length envFns) arbitrary
-            authEnvelopData key alg envFns aAttrs uAttrs inner
+            authEnvelopData oinfo key alg envFns aAttrs uAttrs inner
                 >>= either fail return
 
         getCommonAuth :: (HasKeySize params, Arbitrary params)
-                  => Gen ( params, ContentEncryptionKey
+                  => Gen ( OriginatorInfo, params, ContentEncryptionKey
                          , [ProducerOfRI Gen], [Attribute], [Attribute]
                          )
         getCommonAuth = do
+            oinfo <- arbitrary
             (alg, key, uAttrs) <- getCommon
             aAttrs <- arbitraryAttributes
             (envFns, _) <- arbitraryEnvDev key
-            return (alg, key, envFns, aAttrs, uAttrs)
+            return (oinfo, alg, key, envFns, aAttrs, uAttrs)
 
         getCommon :: (HasKeySize params, Arbitrary params, B.ByteArray key)
                   => Gen (params, key, [Attribute])
@@ -289,3 +291,32 @@ arbitraryEnvDev cek = sized $ \n -> do
         case getContentEncryptionAlg params of
             CTR _ -> False
             _     -> True
+
+instance Arbitrary OriginatorInfo where
+    arbitrary = OriginatorInfo <$> arbitrary <*> arbitrary
+
+instance Arbitrary CertificateChoice where
+    arbitrary = oneof [ CertificateCertificate <$> arbitrary
+                      , CertificateOther <$> arbitrary
+                      ]
+
+instance Arbitrary RevocationInfoChoice where
+    arbitrary = oneof [ RevocationInfoCRL <$> arbitrary
+                      , RevocationInfoOther <$> arbitrary
+                      ]
+
+instance Arbitrary OtherCertificateFormat where
+    arbitrary = do
+        oid  <- arbitraryOID
+        vals <- resize 3 $ listOf1 (OctetString <$> arbitrarySmall)
+        return OtherCertificateFormat { otherCertFormat = oid
+                                      , otherCertValues = vals
+                                      }
+
+instance Arbitrary OtherRevocationInfoFormat where
+    arbitrary = do
+        oid  <- arbitraryOID
+        vals <- resize 3 $ listOf1 (OctetString <$> arbitrarySmall)
+        return OtherRevocationInfoFormat { otherRevInfoFormat = oid
+                                         , otherRevInfoValues = vals
+                                         }

@@ -92,6 +92,12 @@ module Crypto.Store.CMS
     , findAttribute
     , setAttribute
     , filterAttributes
+    -- * Originator information
+    , OriginatorInfo(..)
+    , CertificateChoice(..)
+    , OtherCertificateFormat(..)
+    , RevocationInfoChoice(..)
+    , OtherRevocationInfoFormat(..)
     -- * ASN.1 representation
     , ASN1ObjectExact
     ) where
@@ -107,6 +113,7 @@ import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.AuthEnveloped
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
+import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Info
 import Crypto.Store.CMS.PEM
 import Crypto.Store.CMS.Type
@@ -170,19 +177,21 @@ decryptData key EncryptedData{..} = do
 --
 -- Some optional attributes can be added but will not be encrypted.
 envelopData :: Applicative f
-            => ContentEncryptionKey
+            => OriginatorInfo
+            -> ContentEncryptionKey
             -> ContentEncryptionParams
             -> [ProducerOfRI f]
             -> [Attribute]
             -> ContentInfo
             -> f (Either String ContentInfo)
-envelopData key params envFns attrs ci =
+envelopData oinfo key params envFns attrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
     ebs = contentEncrypt key params (encapsulate ci)
     f ris = EnvelopedDataCI <$> (build <$> ebs <*> ris)
     build bs ris = EnvelopedData
-                       { evRecipientInfos = ris
+                       { evOriginatorInfo = oinfo
+                       , evRecipientInfos = ris
                        , evContentType = getContentType ci
                        , evContentEncryptionParams = params
                        , evEncryptedContent = bs
@@ -212,7 +221,8 @@ type AuthenticationKey = ContentEncryptionKey
 -- Two lists of optional attributes can be provided.  The attributes will be
 -- part of message authentication when provided in the first list.
 generateAuthenticatedData :: Applicative f
-                          => AuthenticationKey
+                          => OriginatorInfo
+                          -> AuthenticationKey
                           -> MACAlgorithm
                           -> Maybe DigestType
                           -> [ProducerOfRI f]
@@ -220,7 +230,7 @@ generateAuthenticatedData :: Applicative f
                           -> [Attribute]
                           -> ContentInfo
                           -> f (Either String ContentInfo)
-generateAuthenticatedData key macAlg digAlg envFns aAttrs uAttrs ci =
+generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
     msg = encapsulate ci
@@ -237,7 +247,8 @@ generateAuthenticatedData key macAlg digAlg envFns aAttrs uAttrs ci =
     ebs   = mac macAlg key input
     f ris = AuthenticatedDataCI <$> (build ebs <$> ris)
     build authTag ris = AuthenticatedData
-                            { adRecipientInfos = ris
+                            { adOriginatorInfo = oinfo
+                            , adRecipientInfos = ris
                             , adMACAlgorithm = macAlg
                             , adDigestAlgorithm = digAlg
                             , adContentInfo = ci
@@ -282,14 +293,15 @@ verifyAuthenticatedData devFn AuthenticatedData{..} =
 -- Some attributes can be added but will not be encrypted.  The attributes
 -- will be part of message authentication when provided in the first list.
 authEnvelopData :: Applicative f
-                => ContentEncryptionKey
+                => OriginatorInfo
+                -> ContentEncryptionKey
                 -> AuthContentEncryptionParams
                 -> [ProducerOfRI f]
                 -> [Attribute]
                 -> [Attribute]
                 -> ContentInfo
                 -> f (Either String ContentInfo)
-authEnvelopData key params envFns aAttrs uAttrs ci =
+authEnvelopData oinfo key params envFns aAttrs uAttrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
     raw = encodeASN1Object params
@@ -297,7 +309,8 @@ authEnvelopData key params envFns aAttrs uAttrs ci =
     ebs = authContentEncrypt key params raw aad (encapsulate ci)
     f ris = AuthEnvelopedDataCI <$> (build <$> ebs <*> ris)
     build (authTag, bs) ris = AuthEnvelopedData
-                       { aeRecipientInfos = ris
+                       { aeOriginatorInfo = oinfo
+                       , aeRecipientInfos = ris
                        , aeContentType = getContentType ci
                        , aeContentEncryptionParams = ASN1ObjectExact params raw
                        , aeEncryptedContent = bs

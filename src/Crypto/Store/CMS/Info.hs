@@ -41,6 +41,7 @@ import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.AuthEnveloped
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
+import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
@@ -180,10 +181,10 @@ parseDigestType = do
 -- Authenticated data
 
 -- | Authenticated content information.
---
--- TODO: originator info is missing
 data AuthenticatedData = AuthenticatedData
-    { adRecipientInfos :: [RecipientInfo]
+    { adOriginatorInfo :: OriginatorInfo
+      -- ^ Optional information about the originator
+    , adRecipientInfos :: [RecipientInfo]
       -- ^ Information for recipients, allowing to authenticate the content
     , adMACAlgorithm :: MACAlgorithm
       -- ^ MAC algorithm
@@ -202,9 +203,9 @@ data AuthenticatedData = AuthenticatedData
 
 instance ProduceASN1Object ASN1P AuthenticatedData where
     asn1s AuthenticatedData{..} =
-        asn1Container Sequence (ver . ris . alg . dig . ci . aa . tag . ua)
+        asn1Container Sequence (ver . oi . ris . alg . dig . ci . aa . tag . ua)
       where
-        ver = gIntVal 0
+        ver = gIntVal v
         ris = asn1Container Set (asn1s adRecipientInfos)
         alg = algorithmASN1S Sequence adMACAlgorithm
         dig = maybe id (asn1Container (Container Context 1) . digestTypeASN1S)
@@ -214,12 +215,19 @@ instance ProduceASN1Object ASN1P AuthenticatedData where
         tag = gOctetString (B.convert adMAC)
         ua  = attributesASN1S (Container Context 3) adUnauthAttrs
 
+        oi | adOriginatorInfo == mempty = id
+           | otherwise = originatorInfoASN1S (Container Context 0) adOriginatorInfo
+
+        v | hasChoiceOther adOriginatorInfo = 3
+          | otherwise                       = 0
+
 instance ParseASN1Object [ASN1Event] AuthenticatedData where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext
-            when (v /= 0) $
+            when (v `notElem` [0, 1, 3]) $
                 throwParseError ("AuthenticatedData: parsed invalid version: " ++ show v)
+            oi <- parseOriginatorInfo (Container Context 0) <|> return mempty
             ris <- onNextContainer Set parse
             alg <- parseAlgorithm Sequence
             dig <- onNextContainerMaybe (Container Context 1) parseDigestType
@@ -227,7 +235,8 @@ instance ParseASN1Object [ASN1Event] AuthenticatedData where
             aAttrs <- parseAttributes (Container Context 2)
             OctetString tag <- getNext
             uAttrs <- parseAttributes (Container Context 3)
-            return AuthenticatedData { adRecipientInfos = ris
+            return AuthenticatedData { adOriginatorInfo = oi
+                                     , adRecipientInfos = ris
                                      , adMACAlgorithm = alg
                                      , adDigestAlgorithm = dig
                                      , adContentInfo = inner

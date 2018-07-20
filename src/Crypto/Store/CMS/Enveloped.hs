@@ -29,6 +29,7 @@ module Crypto.Store.CMS.Enveloped
     , withRecipientPassword
     ) where
 
+import Control.Applicative
 import Control.Monad
 
 import Data.ASN1.Types
@@ -44,6 +45,7 @@ import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Encrypted
+import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
@@ -181,10 +183,10 @@ isPwriOri (KEKRI _)      = False
 isPwriOri (PasswordRI _) = True
 
 -- | Enveloped content information.
---
--- TODO: originator info is missing
 data EnvelopedData = EnvelopedData
-    { evRecipientInfos :: [RecipientInfo]
+    { evOriginatorInfo :: OriginatorInfo
+      -- ^ Optional information about the originator
+    , evRecipientInfos :: [RecipientInfo]
       -- ^ Information for recipients, allowing to decrypt the content
     , evContentType :: ContentType
       -- ^ Inner content type
@@ -197,9 +199,9 @@ data EnvelopedData = EnvelopedData
     }
     deriving (Show,Eq)
 
-instance ASN1Elem e => ProduceASN1Object e EnvelopedData where
+instance ProduceASN1Object ASN1P EnvelopedData where
     asn1s EnvelopedData{..} =
-        asn1Container Sequence (ver . ris . eci . ua)
+        asn1Container Sequence (ver . oi . ris . eci . ua)
       where
         ver = gIntVal v
         ris = asn1Container Set (asn1s evRecipientInfos)
@@ -207,22 +209,29 @@ instance ASN1Elem e => ProduceASN1Object e EnvelopedData where
                   (evContentType, evContentEncryptionParams, evEncryptedContent)
         ua  = attributesASN1S (Container Context 1) evUnprotectedAttrs
 
-        v | any isPwriOri evRecipientInfos  = 3
+        oi | evOriginatorInfo == mempty = id
+           | otherwise = originatorInfoASN1S (Container Context 0) evOriginatorInfo
+
+        v | hasChoiceOther evOriginatorInfo = 4
+          | any isPwriOri evRecipientInfos  = 3
+          | evOriginatorInfo /= mempty      = 2
           | not (null evUnprotectedAttrs)   = 2
           | all isVersion0 evRecipientInfos = 0
           | otherwise                       = 2
 
-instance Monoid e => ParseASN1Object e EnvelopedData where
+instance ParseASN1Object [ASN1Event] EnvelopedData where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext
             when (v > 4) $
                 throwParseError ("EnvelopedData: parsed invalid version: " ++ show v)
+            oi <- parseOriginatorInfo (Container Context 0) <|> return mempty
             ris <- onNextContainer Set parse
             (ct, params, ec) <- parseEncryptedContentInfo
             attrs <- parseAttributes (Container Context 1)
-            return EnvelopedData { evContentType = ct
+            return EnvelopedData { evOriginatorInfo = oi
                                  , evRecipientInfos = ris
+                                 , evContentType = ct
                                  , evContentEncryptionParams = params
                                  , evEncryptedContent = ec
                                  , evUnprotectedAttrs = attrs

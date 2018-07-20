@@ -2,9 +2,16 @@
 -- | Orphan instances.
 module X509.Instances
     ( arbitraryOID
+    , arbitraryRSA
+    , arbitraryDSA
+    , arbitraryNamedEC
+    , arbitrarySignedCertificate
+    , arbitraryCertificateChain
     ) where
 
+import           Data.ASN1.Types
 import qualified Data.ByteArray as B
+import           Data.Hourglass
 import           Data.X509
 
 import Test.Tasty.QuickCheck
@@ -27,6 +34,21 @@ arbitraryOID = do
     o2 <- choose (0,15)
     os <- resize 5 $ listOf (getPositive <$> arbitrary)
     return (o1 : o2 : os)
+
+arbitraryDN :: Gen DistinguishedName
+arbitraryDN = DistinguishedName <$> resize 5 (listOf1 arbitraryDE)
+  where
+    arbitrarySE = elements [IA5, UTF8]
+    arbitraryDE = (,) <$> arbitraryOID <*> arbitraryCS
+    arbitraryCS = ASN1CharacterString <$> arbitrarySE <*> arbitraryBS
+    arbitraryBS = resize 16 (B.pack <$> listOf1 arbitrary)
+
+instance Arbitrary PubKey where
+    arbitrary = oneof [ PubKeyRSA . fst <$> arbitraryRSA
+                      , PubKeyDSA . fst <$> arbitraryDSA
+                      , PubKeyEC . fst  <$> arbitraryNamedEC
+                      --, PubKeyEC . fst  <$> arbitraryExplicitPrimeCurve
+                      ]
 
 instance Arbitrary PrivKey where
     arbitrary = oneof [ PrivKeyRSA . snd <$> arbitraryRSA
@@ -159,3 +181,76 @@ getSerializedPoint curve pt = SerializedPoint (serializePoint pt)
 
 curveSizeBytes :: ECC.Curve -> Int
 curveSizeBytes curve = (ECC.curveSizeBits curve + 7) `div` 8
+
+instance Arbitrary SignatureALG where
+    arbitrary = elements
+        [ SignatureALG HashSHA1   PubKeyALG_RSA
+        , SignatureALG HashMD5    PubKeyALG_RSA
+        , SignatureALG HashMD2    PubKeyALG_RSA
+        , SignatureALG HashSHA256 PubKeyALG_RSA
+        , SignatureALG HashSHA384 PubKeyALG_RSA
+        , SignatureALG HashSHA512 PubKeyALG_RSA
+        , SignatureALG HashSHA224 PubKeyALG_RSA
+
+        , SignatureALG HashSHA1   PubKeyALG_DSA
+        , SignatureALG HashSHA224 PubKeyALG_DSA
+        , SignatureALG HashSHA256 PubKeyALG_DSA
+
+        , SignatureALG HashSHA224 PubKeyALG_EC
+        , SignatureALG HashSHA256 PubKeyALG_EC
+        , SignatureALG HashSHA384 PubKeyALG_EC
+        , SignatureALG HashSHA512 PubKeyALG_EC
+        ]
+
+instance Arbitrary DateTime where
+    arbitrary =
+        let arbitraryElapsed = Elapsed . Seconds <$> choose (1, 100000000)
+         in timeConvert <$> arbitraryElapsed
+
+arbitraryCertificate :: PubKey -> Gen Certificate
+arbitraryCertificate pubKey =
+    Certificate <$> pure 2
+                <*> arbitrary
+                <*> arbitrary
+                <*> arbitraryDN
+                <*> arbitrary
+                <*> arbitraryDN
+                <*> pure pubKey
+                <*> pure (Extensions Nothing)
+
+instance Arbitrary Certificate where
+    arbitrary = arbitrary >>= arbitraryCertificate
+
+instance Arbitrary RevokedCertificate where
+    arbitrary = RevokedCertificate <$> arbitrary
+                                   <*> arbitrary
+                                   <*> pure (Extensions Nothing)
+
+instance Arbitrary CRL where
+    arbitrary = CRL <$> pure 1
+                    <*> arbitrary
+                    <*> arbitraryDN
+                    <*> arbitrary
+                    <*> arbitrary
+                    <*> arbitrary
+                    <*> pure (Extensions Nothing)
+
+arbitrarySignedExact :: (Show a, Eq a, ASN1Object a)
+                     => a -> Gen (SignedExact a)
+arbitrarySignedExact = objectToSignedExactF doSign
+  where
+    doSign _ = (,) <$> arbitrarySig <*> arbitrary
+    arbitrarySig = B.pack <$> vector 16
+
+arbitrarySignedCertificate :: PubKey -> Gen SignedCertificate
+arbitrarySignedCertificate pubKey =
+    arbitraryCertificate pubKey >>= arbitrarySignedExact
+
+instance (Show a, Eq a, ASN1Object a, Arbitrary a) => Arbitrary (SignedExact a) where
+    arbitrary = arbitrary >>= arbitrarySignedExact
+
+arbitraryCertificateChain :: PubKey -> Gen CertificateChain
+arbitraryCertificateChain pubKey = do
+    leaf <- arbitrarySignedCertificate pubKey
+    others <- resize 3 $ listOf (arbitrary >>= arbitrarySignedCertificate)
+    return $ CertificateChain (leaf:others)
