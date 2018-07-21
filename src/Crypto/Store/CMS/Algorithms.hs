@@ -572,7 +572,8 @@ instance Monoid e => ParseASN1Object e AuthEncParams where
 -- (i.e. the nonce).
 --
 -- A value can be generated with functions 'generateAuthEnc128Params',
--- 'generateAuthEnc256Params', 'generateCCMParams' and 'generateGCMParams'.
+-- 'generateAuthEnc256Params', 'generateChaChaPoly1305Params',
+-- 'generateCCMParams' and 'generateGCMParams'.
 data AuthContentEncryptionParams
     = Params_AUTH_ENC_128 AuthEncParams
       -- ^ authEnc with 128-bit keying material
