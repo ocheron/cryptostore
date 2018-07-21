@@ -15,6 +15,7 @@ module Crypto.Store.ASN1.Generate
     , gNull
     , gIntVal
     , gOID
+    , gASN1String
     , gOctetString
     , gBitString
     , gASN1Time
@@ -108,6 +109,10 @@ gIntVal = gOne . IntVal
 -- | Generate an 'OID' ASN.1 element.
 gOID :: ASN1Elem e => OID -> ASN1Stream e
 gOID = gOne . OID
+
+-- | Generate an 'ASN1String' ASN.1 element.
+gASN1String :: ASN1Elem e => ASN1CharacterString -> ASN1Stream e
+gASN1String = gOne . ASN1String
 
 -- | Generate an 'OctetString' ASN.1 element.
 gOctetString :: ASN1Elem e => ByteString -> ASN1Stream e
