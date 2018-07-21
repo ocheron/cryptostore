@@ -113,6 +113,14 @@ class ProduceASN1Object e obj where
 instance ProduceASN1Object e obj => ProduceASN1Object e [obj] where
     asn1s l r = foldr asn1s r l
 
+instance ASN1Elem e => ProduceASN1Object e DistinguishedName where
+    asn1s = asn1Container Sequence . inner
+      where
+        inner (DistinguishedName dn) cont = foldr dnSet cont dn
+        dnSet (oid, cs) =
+            asn1Container Set $
+                asn1Container Sequence (gOID oid . gASN1String cs)
+
 instance (Show a, Eq a, ASN1Object a) => ProduceASN1Object ASN1P (SignedExact a) where
     asn1s = gEncoded . encodeSignedObject
 
@@ -126,6 +134,17 @@ class Monoid e => ParseASN1Object e obj where
 
 instance ParseASN1Object e obj => ParseASN1Object e [obj] where
     parse = getMany parse
+
+instance Monoid e => ParseASN1Object e DistinguishedName where
+    parse = DistinguishedName <$> onNextContainer Sequence inner
+      where
+        inner = concat <$> getMany parseOne
+        parseOne =
+            onNextContainer Set $ getMany $
+                onNextContainer Sequence $ do
+                    OID oid <- getNext
+                    ASN1String cs <- getNext
+                    return (oid, cs)
 
 instance (Show a, Eq a, ASN1Object a) => ParseASN1Object [ASN1Event] (SignedExact a) where
     parse = withAnnotations parseSequence >>= finish
