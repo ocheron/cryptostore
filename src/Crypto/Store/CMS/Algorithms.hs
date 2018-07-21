@@ -158,12 +158,26 @@ instance OIDable DigestType where
 instance OIDNameable DigestType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
 
+instance AlgorithmId DigestType where
+    type AlgorithmType DigestType = DigestType
+    algorithmName _  = "digest algorithm"
+    algorithmType    = id
+
+    -- MD5 has NULL parameter, other algorithms have no parameter
+    parameterASN1S (DigestType MD5) = gNull
+    parameterASN1S _                = id
+
+    parseParameter p = getNextMaybe nullOrNothing >> return p
+
 digest :: ByteArrayAccess message => DigestType -> message -> ByteString
 digest (DigestType hashAlg) message = B.convert (doHash hashAlg message)
 
 doHash :: (Hash.HashAlgorithm hashAlg, ByteArrayAccess ba)
        => proxy hashAlg -> ba -> Hash.Digest hashAlg
 doHash _ = Hash.hash
+
+hashFromProxy :: proxy a -> a
+hashFromProxy _ = undefined
 
 
 -- Cipher-like things
@@ -245,8 +259,6 @@ instance AlgorithmId MACAlgorithm where
 instance HasKeySize MACAlgorithm where
     getKeySizeSpecifier (HMAC a) = KeySizeFixed (digestSizeFromProxy a)
       where digestSizeFromProxy = Hash.hashDigestSize . hashFromProxy
-            hashFromProxy :: proxy a -> a
-            hashFromProxy _ = undefined
 
 -- | Invoke the MAC function.
 mac :: (ByteArrayAccess key, ByteArrayAccess message)

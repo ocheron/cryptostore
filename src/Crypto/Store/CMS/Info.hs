@@ -106,6 +106,10 @@ parseData = do
         OctetString bs -> return bs
         _              -> throwParseError "Data: parsed unexpected content"
 
+isData :: ContentInfo -> Bool
+isData (DataCI _) = True
+isData _          = False
+
 
 -- DigestedData
 
@@ -136,12 +140,9 @@ instance ASN1Elem e => ProduceASN1Object e DigestedData where
         d = DigestType ddDigestAlgorithm
 
         ver = gIntVal v
-        alg = asn1Container Sequence (digestTypeASN1S d)
+        alg = algorithmASN1S Sequence d
         ci  = encapsulatedContentInfoASN1S ddContentInfo
         dig = gOctetString (B.convert ddDigest)
-
-        isData (DataCI _) = True
-        isData _          = False
 
 instance Monoid e => ParseASN1Object e DigestedData where
     parse =
@@ -149,7 +150,7 @@ instance Monoid e => ParseASN1Object e DigestedData where
             IntVal v <- getNext
             when (v /= 0 && v /= 2) $
                 throwParseError ("DigestedData: parsed invalid version: " ++ show v)
-            alg <- onNextContainer Sequence parseDigestType
+            alg <- parseAlgorithm Sequence
             inner <- parseEncapsulatedContentInfo
             OctetString bs <- getNext
             case alg of
@@ -161,21 +162,6 @@ instance Monoid e => ParseASN1Object e DigestedData where
                                                 , ddContentInfo = inner
                                                 , ddDigest = d
                                                 }
-
-digestTypeASN1S :: ASN1Elem e => DigestType -> ASN1Stream e
-digestTypeASN1S d = gOID (getObjectID d) . param
-  where
-    -- MD5 has NULL parameter, other algorithms have no parameter
-    param = case d of
-                DigestType MD5 -> gNull
-                _              -> id
-
-parseDigestType :: Monoid e => ParseASN1 e DigestType
-parseDigestType = do
-    OID oid <- getNext
-    withObjectID "digest algorithm" oid $ \alg -> do
-        _ <- getNextMaybe nullOrNothing
-        return alg
 
 
 -- Authenticated data
@@ -208,8 +194,7 @@ instance ProduceASN1Object ASN1P AuthenticatedData where
         ver = gIntVal v
         ris = asn1Container Set (asn1s adRecipientInfos)
         alg = algorithmASN1S Sequence adMACAlgorithm
-        dig = maybe id (asn1Container (Container Context 1) . digestTypeASN1S)
-                  adDigestAlgorithm
+        dig = maybe id (algorithmASN1S (Container Context 1)) adDigestAlgorithm
         ci  = encapsulatedContentInfoASN1S adContentInfo
         aa  = attributesASN1S(Container Context 2) adAuthAttrs
         tag = gOctetString (B.convert adMAC)
@@ -230,7 +215,7 @@ instance ParseASN1Object [ASN1Event] AuthenticatedData where
             oi <- parseOriginatorInfo (Container Context 0) <|> return mempty
             ris <- onNextContainer Set parse
             alg <- parseAlgorithm Sequence
-            dig <- onNextContainerMaybe (Container Context 1) parseDigestType
+            dig <- parseAlgorithmMaybe (Container Context 1)
             inner <- parseEncapsulatedContentInfo
             aAttrs <- parseAttributes (Container Context 2)
             OctetString tag <- getNext
