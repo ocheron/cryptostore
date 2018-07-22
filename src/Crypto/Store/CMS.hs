@@ -24,6 +24,21 @@ module Crypto.Store.CMS
     , getContentType
     -- * Reading and writing PEM files
     , module Crypto.Store.CMS.PEM
+    -- * Signed data
+    , SignatureValue
+    , SignatureAlg(..)
+    , SignedData(..)
+    , ProducerOfSI
+    , ConsumerOfSI
+    , signData
+    , verifySignedData
+    -- ** Signer information
+    , SignerInfo(..)
+    , SignerIdentifier(..)
+    , IssuerAndSerialNumber(..)
+    , certSigner
+    , withPublicKey
+    , withSignerKey
     -- * Enveloped data
     , EncryptedKey
     , KeyEncryptionParams(..)
@@ -87,6 +102,9 @@ module Crypto.Store.CMS
     -- * Secret-key algorithms
     , HasKeySize(..)
     , generateKey
+    -- * RSA padding modes
+    , MaskGenerationFunc(..)
+    , PSSParams(..)
     -- * CMS attributes
     , Attribute(..)
     , findAttribute
@@ -103,6 +121,7 @@ module Crypto.Store.CMS
     ) where
 
 import Data.Maybe (isJust)
+import Data.List (nub)
 import Data.List.NonEmpty (nonEmpty)
 import Data.Semigroup
 
@@ -116,6 +135,7 @@ import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Info
 import Crypto.Store.CMS.PEM
+import Crypto.Store.CMS.Signed
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
@@ -330,6 +350,42 @@ openAuthEnvelopedData devFn AuthEnvelopedData{..} =
     raw      = exactObjectRaw aeContentEncryptionParams
     aad      = encodeAuthAttrs aeAuthAttrs
     unwrap k = authContentDecrypt k params raw aad aeEncryptedContent aeMAC >>= decapsulate ct
+
+
+-- SignedData
+
+-- | Add a signed-data layer on the specified content info.  The content is
+-- processed by one or several 'ProducerOfSI' functions to create signer info
+-- elements.
+signData :: Applicative f
+         => [ProducerOfSI f] -> ContentInfo -> f (Either String ContentInfo)
+signData sigFns ci =
+    f <$> (sequence <$> traverse (\fn -> fn ct msg) sigFns)
+  where
+    msg = encapsulate ci
+    ct  = getContentType ci
+    f   = fmap (SignedDataCI . build . unzip3)
+
+    build (sis, certLists, crlLists) =
+        SignedData
+            { sdDigestAlgorithms = nub (map siDigestAlgorithm sis)
+            , sdContentInfo = ci
+            , sdCertificates = concat certLists
+            , sdCRLs = concat crlLists
+            , sdSignerInfos = sis
+            }
+
+-- | Verify a signed content info using the specified 'ConsumerOfSI' function.
+-- Verification of at least one signer info must be successful in order to
+-- return the inner content info.
+verifySignedData :: ConsumerOfSI -> SignedData -> Maybe ContentInfo
+verifySignedData verFn SignedData{..}
+    | any valid sdSignerInfos = Just sdContentInfo
+    | otherwise               = Nothing
+  where
+    msg      = encapsulate sdContentInfo
+    ct       = getContentType sdContentInfo
+    valid si = verFn ct msg si sdCertificates sdCRLs
 
 
 -- Utilities

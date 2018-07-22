@@ -3,12 +3,15 @@
 module CMS.Instances
     ( arbitraryPassword
     , arbitraryAttributes
+    , arbitraryKeyPair
+    , arbitrarySigVer
     , arbitraryEnvDev
     ) where
 
 import           Data.ASN1.Types
 import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
+import           Data.X509
 
 import Test.Tasty.QuickCheck
 
@@ -30,6 +33,7 @@ instance Arbitrary ContentInfo where
         if n == 0
             then DataCI <$> arbitraryMessage
             else oneof [ DataCI <$> arbitraryMessage
+                       , arbitrarySignedData
                        , arbitraryEnvelopedData
                        , arbitraryDigestedData
                        , arbitraryEncryptedData
@@ -39,6 +43,13 @@ instance Arbitrary ContentInfo where
       where
         arbitraryMessage :: Gen ByteString
         arbitraryMessage = resize 2048 (B.pack <$> arbitrary)
+
+        arbitrarySignedData :: Gen ContentInfo
+        arbitrarySignedData = do
+            alg   <- arbitrary
+            (sigFns, _) <- arbitrarySigVer alg
+            inner <- scale (subtract $ length sigFns) arbitrary
+            signData sigFns inner >>= either fail return
 
         arbitraryEnvelopedData :: Gen ContentInfo
         arbitraryEnvelopedData = do
@@ -115,6 +126,72 @@ instance Arbitrary DigestType where
 
 instance Arbitrary MACAlgorithm where
     arbitrary = (\(DigestType alg) -> HMAC alg) <$> arbitrary
+
+instance Arbitrary PSSParams where
+    arbitrary = do
+        alg <- arbitrary
+        mga <- MGF1 <$> arbitrary
+        len <- choose (1, 30)
+        return PSSParams { pssHashAlgorithm = alg
+                         , pssMaskGenAlgorithm = mga
+                         , pssSaltLength = len
+                         }
+
+instance Arbitrary SignatureAlg where
+    arbitrary = oneof
+        [ pure RSAAnyHash
+
+        , pure $ RSA (DigestType MD2)
+        , pure $ RSA (DigestType MD5)
+        , pure $ RSA (DigestType SHA1)
+        , pure $ RSA (DigestType SHA224)
+        , pure $ RSA (DigestType SHA256)
+        , pure $ RSA (DigestType SHA384)
+        , pure $ RSA (DigestType SHA512)
+
+        , RSAPSS <$> arbitrary
+
+        , pure $ DSA (DigestType SHA1)
+        , pure $ DSA (DigestType SHA224)
+        , pure $ DSA (DigestType SHA256)
+
+        , pure $ ECDSA (DigestType SHA1)
+        , pure $ ECDSA (DigestType SHA224)
+        , pure $ ECDSA (DigestType SHA256)
+        , pure $ ECDSA (DigestType SHA384)
+        , pure $ ECDSA (DigestType SHA512)
+        ]
+
+arbitraryKeyPair :: SignatureAlg -> Gen (PubKey, PrivKey)
+arbitraryKeyPair RSAAnyHash = do
+    (pub, priv) <- arbitraryRSA
+    return (PubKeyRSA pub, PrivKeyRSA priv)
+arbitraryKeyPair (RSA _) = do
+    (pub, priv) <- arbitraryRSA
+    return (PubKeyRSA pub, PrivKeyRSA priv)
+arbitraryKeyPair (RSAPSS _) = do
+    (pub, priv) <- arbitraryRSA
+    return (PubKeyRSA pub, PrivKeyRSA priv)
+arbitraryKeyPair (DSA _) = do
+    (pub, priv) <- arbitraryDSA
+    return (PubKeyDSA pub, PrivKeyDSA priv)
+arbitraryKeyPair (ECDSA _) = do
+    (pub, priv) <- arbitraryNamedEC
+    return (PubKeyEC pub, PrivKeyEC priv)
+
+arbitrarySigVer :: SignatureAlg -> Gen ([ProducerOfSI Gen], ConsumerOfSI)
+arbitrarySigVer alg = sized $ \n -> do
+    (sigFn, verFn) <- onePair
+    otherPairs <- resize (min (pred n) 3) $ listOf onePair
+    sigFns <- shuffle (sigFn : map fst otherPairs)
+    return (sigFns, verFn)
+  where
+    onePair = do
+        (pub, priv) <- arbitraryKeyPair alg
+        chain <- arbitraryCertificateChain pub
+        sAttrs <- oneof [ pure Nothing, Just <$> arbitraryAttributes ]
+        uAttrs <- arbitraryAttributes
+        return (certSigner alg priv chain sAttrs uAttrs, withPublicKey pub)
 
 instance Arbitrary PBKDF2_PRF where
     arbitrary = elements

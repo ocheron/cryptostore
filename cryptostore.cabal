@@ -30,6 +30,7 @@ library
                      , Crypto.Store.CMS.Info
                      , Crypto.Store.CMS.OriginatorInfo
                      , Crypto.Store.CMS.PEM
+                     , Crypto.Store.CMS.Signed
                      , Crypto.Store.CMS.Type
                      , Crypto.Store.CMS.Util
                      , Crypto.Store.PEM

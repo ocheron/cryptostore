@@ -46,6 +46,28 @@ dataTests =
   where path  = testFile "cms-data.pem"
         count = 1
 
+signedDataTests :: TestTree
+signedDataTests =
+    testCaseSteps "SignedData" $ \step -> do
+        cms <- readCMSFile path
+        assertEqual "unexpected parse count" (length names) (length cms)
+
+        forM_ (zip [0..] cms) $ \(index, ci) -> do
+            let name = names !! index
+
+            step ("verifying " ++ name)
+            assertBool "unexpected type" (hasType SignedDataType ci)
+            let SignedDataCI sd = ci
+                result = verifySignedData withSignerKey sd
+            assertJust result (verifyInnerMessage message)
+  where path  = testFile "cms-signed-data.pem"
+        names = [ "RSA"
+                , "DSA"
+                , "EC (named curve)"
+                , "EC (explicit prime curve)"
+                , "RSA-PSS"
+                ]
+
 envelopedDataTests :: TestTree
 envelopedDataTests =
     testGroup "EnvelopedData"
@@ -170,6 +192,12 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
     [ testProperty "marshalling" $ \l ->
         let bs = writeCMSFileToMemory l
         in label (sizeRange bs) $ l === readCMSFileFromMemory bs
+    , testProperty "signing" $ \alg ci ->
+        collect alg $ do
+            (sigFns, verFn) <- scale succ (arbitrarySigVer alg)
+            r <- signData sigFns ci
+            let Right (SignedDataCI sd) = r
+            return (Just ci === verifySignedData verFn sd)
     , testProperty "enveloping" $ \alg ci ->
         collect alg $ do
             (oinfo, key, envFns, devFn, attrs) <- getCommon alg
@@ -220,6 +248,7 @@ cmsTests :: TestTree
 cmsTests =
     testGroup "CMS"
         [ dataTests
+        , signedDataTests
         , envelopedDataTests
         , digestedDataTests
         , encryptedDataTests

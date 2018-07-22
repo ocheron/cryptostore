@@ -55,11 +55,22 @@ module Crypto.Store.CMS.Algorithms
     , KeyEncryptionParams(..)
     , keyEncrypt
     , keyDecrypt
+    , MaskGenerationFunc(..)
+    , mgf
+    , SignatureValue
+    , PSSParams(..)
+    , SignatureAlg(..)
+    , signatureResolveHash
+    , signatureCheckHash
+    , signatureGenerate
+    , signatureVerify
     ) where
 
 import Control.Monad (when)
 
+import           Data.ASN1.BinaryEncoding
 import           Data.ASN1.OID
+import           Data.ASN1.Encoding
 import           Data.ASN1.Types
 import           Data.Bits
 import           Data.ByteArray (ByteArray, ByteArrayAccess)
@@ -67,6 +78,8 @@ import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
 import           Data.Maybe (fromMaybe)
 import           Data.Word
+import qualified Data.X509 as X509
+import           Data.X509.EC
 
 import qualified Crypto.Cipher.AES as Cipher
 import qualified Crypto.Cipher.CAST5 as Cipher
@@ -82,6 +95,11 @@ import qualified Crypto.KDF.PBKDF2 as PBKDF2
 import qualified Crypto.KDF.Scrypt as Scrypt
 import qualified Crypto.MAC.HMAC as HMAC
 import qualified Crypto.MAC.Poly1305 as Poly1305
+import qualified Crypto.PubKey.DSA as DSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import qualified Crypto.PubKey.MaskGenFunction as MGF
+import qualified Crypto.PubKey.RSA.PSS as RSAPSS
+import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import           Crypto.Random
 
 import           Crypto.Store.ASN1.Generate
@@ -1226,3 +1244,312 @@ parseM = do
         14 -> return CCM_M14
         16 -> return CCM_M16
         i -> throwParseError ("Parsed invalid CCM parameter M: " ++ show i)
+
+
+-- Mask generation functions
+
+data MaskGenerationType = TypeMGF1
+    deriving (Show,Eq)
+
+instance Enumerable MaskGenerationType where
+    values = [ TypeMGF1
+             ]
+
+instance OIDable MaskGenerationType where
+    getObjectID TypeMGF1     = [1,2,840,113549,1,1,8]
+
+instance OIDNameable MaskGenerationType where
+    fromObjectID oid = unOIDNW <$> fromObjectID oid
+
+-- | Mask Generation Functions (MGF) and associated parameters.
+newtype MaskGenerationFunc = MGF1 DigestType
+    deriving (Show,Eq)
+
+instance AlgorithmId MaskGenerationFunc where
+    type AlgorithmType MaskGenerationFunc = MaskGenerationType
+    algorithmName _  = "mask generation function"
+
+    algorithmType (MGF1 _)   = TypeMGF1
+
+    parameterASN1S (MGF1 d)  = algorithmASN1S Sequence d
+
+    parseParameter TypeMGF1  = MGF1 <$> parseAlgorithm Sequence
+
+-- | Generate a mask with the MGF.
+mgf :: (ByteArrayAccess seed, ByteArray output)
+    => MaskGenerationFunc -> seed -> Int -> output
+mgf (MGF1 (DigestType hashAlg)) = MGF.mgf1 (hashFromProxy hashAlg)
+
+
+-- Signature algorithms
+
+-- | Signature value.
+type SignatureValue = ByteString
+
+-- | Signature parameters for RSASSA-PSS.
+data PSSParams = PSSParams
+    { pssHashAlgorithm :: DigestType            -- ^ Hash function
+    , pssMaskGenAlgorithm :: MaskGenerationFunc -- ^ Mask generation function
+    , pssSaltLength :: Int                      -- ^ Length of the salt in bytes
+    }
+    deriving (Show,Eq)
+
+withPSSParams :: forall seed output a . (ByteArrayAccess seed, ByteArray output)
+              => PSSParams
+              -> (forall hash . Hash.HashAlgorithm hash => RSAPSS.PSSParams hash seed output -> a)
+              -> a
+withPSSParams p fn =
+    case pssHashAlgorithm p of
+        DigestType hashAlg ->
+            fn RSAPSS.PSSParams
+                { RSAPSS.pssHash = hashFromProxy hashAlg
+                , RSAPSS.pssMaskGenAlg = mgf (pssMaskGenAlgorithm p)
+                , RSAPSS.pssSaltLength = pssSaltLength p
+                , RSAPSS.pssTrailerField = 0xbc
+                }
+
+instance ASN1Elem e => ProduceASN1Object e PSSParams where
+    asn1s PSSParams{..} =
+        asn1Container Sequence (h . m . s)
+      where
+        sha1  = DigestType SHA1
+        tag i = asn1Container (Container Context i)
+
+        h | pssHashAlgorithm == sha1 = id
+          | otherwise = tag 0 (algorithmASN1S Sequence pssHashAlgorithm)
+
+        m | pssMaskGenAlgorithm == MGF1 sha1 = id
+          | otherwise = tag 1 (algorithmASN1S Sequence pssMaskGenAlgorithm)
+
+        s | pssSaltLength == 20 && pssHashAlgorithm == sha1 = id
+          | otherwise = tag 2 (gIntVal $ fromIntegral pssSaltLength)
+
+instance Monoid e => ParseASN1Object e PSSParams where
+    parse = onNextContainer Sequence $ do
+        h <- tag 0 (parseAlgorithm Sequence)
+        m <- tag 1 (parseAlgorithm Sequence)
+        s <- tag 2 $ do { IntVal i <- getNext; return (fromIntegral i) }
+        _ <- tag 3 $ do { IntVal 1 <- getNext; return () }
+        return PSSParams { pssHashAlgorithm = fromMaybe sha1 h
+                         , pssMaskGenAlgorithm = fromMaybe (MGF1 sha1) m
+                         , pssSaltLength = fromMaybe 20 s
+                         }
+      where
+        sha1  = DigestType SHA1
+        tag i = onNextContainerMaybe (Container Context i)
+
+data SignatureType = TypeRSAAnyHash
+                   | TypeRSA DigestType
+                   | TypeRSAPSS
+                   | TypeDSA DigestType
+                   | TypeECDSA DigestType
+    deriving (Show,Eq)
+
+instance Enumerable SignatureType where
+    values = [ TypeRSAAnyHash
+
+             , TypeRSA (DigestType MD2)
+             , TypeRSA (DigestType MD5)
+             , TypeRSA (DigestType SHA1)
+             , TypeRSA (DigestType SHA224)
+             , TypeRSA (DigestType SHA256)
+             , TypeRSA (DigestType SHA384)
+             , TypeRSA (DigestType SHA512)
+
+             , TypeRSAPSS
+
+             , TypeDSA (DigestType SHA1)
+             , TypeDSA (DigestType SHA224)
+             , TypeDSA (DigestType SHA256)
+
+             , TypeECDSA (DigestType SHA1)
+             , TypeECDSA (DigestType SHA224)
+             , TypeECDSA (DigestType SHA256)
+             , TypeECDSA (DigestType SHA384)
+             , TypeECDSA (DigestType SHA512)
+             ]
+
+instance OIDable SignatureType where
+    getObjectID TypeRSAAnyHash                  = [1,2,840,113549,1,1,1]
+
+    getObjectID (TypeRSA (DigestType MD2))      = [1,2,840,113549,1,1,2]
+    getObjectID (TypeRSA (DigestType MD5))      = [1,2,840,113549,1,1,4]
+    getObjectID (TypeRSA (DigestType SHA1))     = [1,2,840,113549,1,1,5]
+    getObjectID (TypeRSA (DigestType SHA224))   = [1,2,840,113549,1,1,14]
+    getObjectID (TypeRSA (DigestType SHA256))   = [1,2,840,113549,1,1,11]
+    getObjectID (TypeRSA (DigestType SHA384))   = [1,2,840,113549,1,1,12]
+    getObjectID (TypeRSA (DigestType SHA512))   = [1,2,840,113549,1,1,13]
+
+    getObjectID TypeRSAPSS                      = [1,2,840,113549,1,1,10]
+
+    getObjectID (TypeDSA (DigestType SHA1))     = [1,2,840,10040,4,3]
+    getObjectID (TypeDSA (DigestType SHA224))   = [2,16,840,1,101,3,4,3,1]
+    getObjectID (TypeDSA (DigestType SHA256))   = [2,16,840,1,101,3,4,3,2]
+
+    getObjectID (TypeECDSA (DigestType SHA1))   = [1,2,840,10045,4,1]
+    getObjectID (TypeECDSA (DigestType SHA224)) = [1,2,840,10045,4,3,1]
+    getObjectID (TypeECDSA (DigestType SHA256)) = [1,2,840,10045,4,3,2]
+    getObjectID (TypeECDSA (DigestType SHA384)) = [1,2,840,10045,4,3,3]
+    getObjectID (TypeECDSA (DigestType SHA512)) = [1,2,840,10045,4,3,4]
+
+    getObjectID ty = error ("Unsupported SignatureType: " ++ show ty)
+
+instance OIDNameable SignatureType where
+    fromObjectID oid = unOIDNW <$> fromObjectID oid
+
+-- | CMS signature algorithms and associated parameters.
+data SignatureAlg = RSAAnyHash
+                  | RSA DigestType
+                  | RSAPSS PSSParams
+                  | DSA DigestType
+                  | ECDSA DigestType
+    deriving (Show,Eq)
+
+instance AlgorithmId SignatureAlg where
+    type AlgorithmType SignatureAlg = SignatureType
+    algorithmName _  = "signature algorithm"
+
+    algorithmType RSAAnyHash  = TypeRSAAnyHash
+    algorithmType (RSA alg)   = TypeRSA alg
+    algorithmType (RSAPSS _)  = TypeRSAPSS
+    algorithmType (DSA alg)   = TypeDSA alg
+    algorithmType (ECDSA alg) = TypeECDSA alg
+
+    parameterASN1S RSAAnyHash = gNull
+    parameterASN1S (RSA _)    = gNull
+    parameterASN1S (RSAPSS p) = asn1s p
+    parameterASN1S (DSA _)    = id
+    parameterASN1S (ECDSA _)  = id
+
+    parseParameter TypeRSAAnyHash   = getNextMaybe nullOrNothing >> return RSAAnyHash
+    parseParameter (TypeRSA alg)    = getNextMaybe nullOrNothing >> return (RSA alg)
+    parseParameter TypeRSAPSS       = RSAPSS <$> parse
+    parseParameter (TypeDSA alg)    = return (DSA alg)
+    parseParameter (TypeECDSA alg)  = return (ECDSA alg)
+
+-- | Sign a message using the specified algorithm and private key.
+signatureGenerate :: MonadRandom m => SignatureAlg -> X509.PrivKey -> ByteString -> m (Either String SignatureValue)
+signatureGenerate RSAAnyHash _ _ =
+    error "signatureGenerate: should call signatureResolveHash first"
+signatureGenerate (RSA alg)   (X509.PrivKeyRSA priv) msg =
+    let strErr e = Left ("signatureGenerate: " ++ show e)
+        err      = return $ Left ("signatureGenerate: invalid hash algorithm for RSA: " ++ show alg)
+     in withHashAlgorithmASN1 alg err $ \hashAlg ->
+            either strErr Right <$> RSA.signSafer (Just hashAlg) priv msg
+signatureGenerate (RSAPSS p)  (X509.PrivKeyRSA priv) msg =
+    withPSSParams p $ \params ->
+        let strErr e = Left ("signatureGenerate: " ++ show e)
+         in either strErr Right <$> RSAPSS.signSafer params priv msg
+signatureGenerate (DSA alg)   (X509.PrivKeyDSA priv) msg =
+    case alg of
+        DigestType t ->
+            Right . dsaFromSignature <$> DSA.sign priv (hashFromProxy t) msg
+signatureGenerate (ECDSA alg) (X509.PrivKeyEC priv)  msg =
+    case alg of
+        DigestType t ->
+            case ecdsaToPrivateKey priv of
+                Nothing -> return (Left "signatureGenerate: unable to use curve in PrivKeyEC")
+                Just p  ->
+                    let h = hashFromProxy t
+                     in Right . ecdsaFromSignature <$> ECDSA.sign p h msg
+signatureGenerate alg _ _ = return $ Left ("signatureGenerate: private key not compatible with " ++ show alg)
+
+-- | Verify a message signature using the specified algorithm and public key.
+signatureVerify :: SignatureAlg -> X509.PubKey -> ByteString -> SignatureValue -> Bool
+signatureVerify RSAAnyHash _ _ _ =
+    error "signatureVerify: should call signatureResolveHash first"
+signatureVerify (RSA alg)   (X509.PubKeyRSA pub) msg sig =
+    withHashAlgorithmASN1 alg False $ \hashAlg ->
+        RSA.verify (Just hashAlg) pub msg sig
+signatureVerify (RSAPSS p)  (X509.PubKeyRSA pub) msg sig =
+    withPSSParams p $ \params -> RSAPSS.verify params pub msg sig
+signatureVerify (DSA alg)   (X509.PubKeyDSA pub) msg sig = fromMaybe False $ do
+    s <- dsaToSignature sig
+    case alg of
+        DigestType t -> return $ DSA.verify (hashFromProxy t) pub s msg
+signatureVerify (ECDSA alg) (X509.PubKeyEC pub)  msg sig = fromMaybe False $ do
+    p <- ecdsaToPublicKey pub
+    s <- ecdsaToSignature sig
+    case alg of
+        DigestType t -> return $ ECDSA.verify (hashFromProxy t) p s msg
+signatureVerify _                 _                    _   _   = False
+
+withHashAlgorithmASN1 :: DigestType
+                      -> a
+                      -> (forall hashAlg . RSA.HashAlgorithmASN1 hashAlg => hashAlg -> a)
+                      -> a
+withHashAlgorithmASN1 (DigestType MD2)    _ f = f Hash.MD2
+withHashAlgorithmASN1 (DigestType MD5)    _ f = f Hash.MD5
+withHashAlgorithmASN1 (DigestType SHA1)   _ f = f Hash.SHA1
+withHashAlgorithmASN1 (DigestType SHA224) _ f = f Hash.SHA224
+withHashAlgorithmASN1 (DigestType SHA256) _ f = f Hash.SHA256
+withHashAlgorithmASN1 (DigestType SHA384) _ f = f Hash.SHA384
+withHashAlgorithmASN1 (DigestType SHA512) _ f = f Hash.SHA512
+withHashAlgorithmASN1 _                   e _ = e
+
+-- | Return on which digest algorithm the specified signature algorithm is
+-- based, as well as a substitution algorithm for when a default digest
+-- algorithm is required.
+signatureResolveHash :: DigestType -> SignatureAlg -> (DigestType, SignatureAlg)
+signatureResolveHash d RSAAnyHash     = (d, RSA d)
+signatureResolveHash _ alg@(RSA d)    = (d, alg)
+signatureResolveHash _ alg@(RSAPSS p) = (pssHashAlgorithm p, alg)
+signatureResolveHash _ alg@(DSA d)    = (d, alg)
+signatureResolveHash _ alg@(ECDSA d)  = (d, alg)
+
+-- | Check that a signature algorithm is based on the specified digest algorithm
+-- and return a substitution algorithm for when a default digest algorithm is
+-- required.
+signatureCheckHash :: DigestType -> SignatureAlg -> Maybe SignatureAlg
+signatureCheckHash expected RSAAnyHash = Just $ RSA expected
+signatureCheckHash expected alg@(RSA found)
+    | expected == found = Just alg
+    | otherwise         = Nothing
+signatureCheckHash expected alg@(RSAPSS p)
+    | expected == pssHashAlgorithm p = Just alg
+    | otherwise                      = Nothing
+signatureCheckHash expected alg@(DSA found)
+    | expected == found = Just alg
+    | otherwise         = Nothing
+signatureCheckHash expected alg@(ECDSA found)
+    | expected == found = Just alg
+    | otherwise         = Nothing
+
+dsaToSignature :: ByteString -> Maybe DSA.Signature
+dsaToSignature b = tryDecodeAndParse b $ onNextContainer Sequence $ do
+    IntVal r <- getNext
+    IntVal s <- getNext
+    return DSA.Signature { DSA.sign_r = r, DSA.sign_s = s }
+
+dsaFromSignature :: DSA.Signature -> ByteString
+dsaFromSignature sig = encodeASN1S $ asn1Container Sequence
+    (gIntVal (DSA.sign_r sig) . gIntVal (DSA.sign_s sig))
+
+ecdsaToSignature :: ByteString -> Maybe ECDSA.Signature
+ecdsaToSignature b = tryDecodeAndParse b $ onNextContainer Sequence $ do
+    IntVal r <- getNext
+    IntVal s <- getNext
+    return ECDSA.Signature { ECDSA.sign_r = r, ECDSA.sign_s = s }
+
+ecdsaFromSignature :: ECDSA.Signature -> ByteString
+ecdsaFromSignature sig = encodeASN1S $ asn1Container Sequence
+    (gIntVal (ECDSA.sign_r sig) . gIntVal (ECDSA.sign_s sig))
+
+ecdsaToPublicKey :: X509.PubKeyEC -> Maybe ECDSA.PublicKey
+ecdsaToPublicKey key = do
+    curve <- ecPubKeyCurve key
+    pt <- unserializePoint curve (X509.pubkeyEC_pub key)
+    return ECDSA.PublicKey { ECDSA.public_curve = curve, ECDSA.public_q = pt }
+
+ecdsaToPrivateKey :: X509.PrivKeyEC -> Maybe ECDSA.PrivateKey
+ecdsaToPrivateKey key = do
+    curve <- ecPrivKeyCurve key
+    let d = X509.privkeyEC_priv key
+    return ECDSA.PrivateKey { ECDSA.private_curve = curve, ECDSA.private_d = d }
+
+tryDecodeAndParse :: ByteString -> ParseASN1 () a -> Maybe a
+tryDecodeAndParse b parser =
+    either (const Nothing) Just $
+        case decodeASN1' BER b of
+            Left _     -> Left undefined -- value ignored
+            Right asn1 -> runParseASN1 parser asn1

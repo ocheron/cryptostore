@@ -16,6 +16,7 @@
 module Crypto.Store.CMS.Info
     ( ContentInfo(..)
     , getContentType
+    , SignedData(..)
     , DigestedData(..)
     , AuthenticatedData(..)
     , encapsulate
@@ -30,6 +31,7 @@ import           Data.ASN1.Encoding
 import           Data.ASN1.Types
 import           Data.ByteString (ByteString)
 import qualified Data.ByteArray as B
+import           Data.Maybe (fromMaybe)
 
 import Crypto.Cipher.Types
 import Crypto.Hash hiding (MD5)
@@ -42,12 +44,14 @@ import Crypto.Store.CMS.AuthEnveloped
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.OriginatorInfo
+import Crypto.Store.CMS.Signed
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
 -- | Get the type of a content info.
 getContentType :: ContentInfo -> ContentType
 getContentType (DataCI _)              = DataType
+getContentType (SignedDataCI _)        = SignedDataType
 getContentType (EnvelopedDataCI _)     = EnvelopedDataType
 getContentType (DigestedDataCI _)      = DigestedDataType
 getContentType (EncryptedDataCI _)     = EncryptedDataType
@@ -59,6 +63,7 @@ getContentType (AuthEnvelopedDataCI _) = AuthEnvelopedDataType
 
 -- | CMS content information.
 data ContentInfo = DataCI ByteString                     -- ^ Arbitrary octet string
+                 | SignedDataCI SignedData               -- ^ Signed content info
                  | EnvelopedDataCI EnvelopedData         -- ^ Enveloped content info
                  | DigestedDataCI DigestedData           -- ^ Content info with associated digest
                  | EncryptedDataCI EncryptedData         -- ^ Encrypted content info
@@ -73,6 +78,7 @@ instance ProduceASN1Object ASN1P ContentInfo where
             inner =
                 case ci of
                     DataCI bs              -> dataASN1S bs
+                    SignedDataCI ed        -> asn1s ed
                     EnvelopedDataCI ed     -> asn1s ed
                     DigestedDataCI dd      -> asn1s dd
                     EncryptedDataCI ed     -> asn1s ed
@@ -87,6 +93,7 @@ instance ParseASN1Object [ASN1Event] ContentInfo where
                 onNextContainer (Container Context 0) (parseInner ct)
       where
         parseInner DataType              = DataCI <$> parseData
+        parseInner SignedDataType        = SignedDataCI <$> parse
         parseInner EnvelopedDataType     = EnvelopedDataCI <$> parse
         parseInner DigestedDataType      = DigestedDataCI <$> parse
         parseInner EncryptedDataType     = EncryptedDataCI <$> parse
@@ -109,6 +116,68 @@ parseData = do
 isData :: ContentInfo -> Bool
 isData (DataCI _) = True
 isData _          = False
+
+
+-- SignedData
+
+-- | Signed content information.
+data SignedData = SignedData
+    { sdDigestAlgorithms :: [DigestType]    -- ^ Digest algorithms
+    , sdContentInfo :: ContentInfo          -- ^ Inner content info
+    , sdCertificates :: [CertificateChoice] -- ^ The collection of certificates
+    , sdCRLs  :: [RevocationInfoChoice]     -- ^ The collection of CRLs
+    , sdSignerInfos :: [SignerInfo]         -- ^ Per-signer information
+    }
+    deriving (Show,Eq)
+
+instance ProduceASN1Object ASN1P SignedData where
+    asn1s SignedData{..} =
+        asn1Container Sequence (ver . dig . ci . certs . crls . sis)
+      where
+        ver = gIntVal v
+        dig = asn1Container Set (digestTypesASN1S sdDigestAlgorithms)
+        ci  = encapsulatedContentInfoASN1S sdContentInfo
+        certs = gen 0 sdCertificates
+        crls  = gen 1 sdCRLs
+        sis = asn1Container Set (asn1s sdSignerInfos)
+
+        gen tag list
+            | null list = id
+            | otherwise = asn1Container (Container Context tag) (asn1s list)
+
+        v | hasChoiceOther sdCertificates = 5
+          | hasChoiceOther sdCRLs         = 5
+          | any isVersion3 sdSignerInfos  = 3
+          | isData sdContentInfo          = 1
+          | otherwise                     = 3
+
+
+instance ParseASN1Object [ASN1Event] SignedData where
+    parse =
+        onNextContainer Sequence $ do
+            IntVal v <- getNext
+            when (v > 5) $
+                throwParseError ("SignedData: parsed invalid version: " ++ show v)
+            dig <- onNextContainer Set parseDigestTypes
+            inner <- parseEncapsulatedContentInfo
+            certs <- parseOptList 0
+            crls  <- parseOptList 1
+            sis <- onNextContainer Set parse
+            return SignedData { sdDigestAlgorithms = dig
+                              , sdContentInfo = inner
+                              , sdCertificates = certs
+                              , sdCRLs = crls
+                              , sdSignerInfos = sis
+                              }
+      where
+        parseOptList tag =
+            fromMaybe [] <$> onNextContainerMaybe (Container Context tag) parse
+
+digestTypesASN1S :: ASN1Elem e => [DigestType] -> ASN1Stream e
+digestTypesASN1S list cont = foldr (algorithmASN1S Sequence) cont list
+
+parseDigestTypes :: Monoid e => ParseASN1 e [DigestType]
+parseDigestTypes = getMany (parseAlgorithm Sequence)
 
 
 -- DigestedData
@@ -241,6 +310,7 @@ decode parser bs = vals >>= runParseASN1_ parser
 -- | Encode the information for encapsulation in another content info.
 encapsulate :: ContentInfo -> ByteString
 encapsulate (DataCI bs)              = bs
+encapsulate (SignedDataCI ed)        = encodeASN1Object ed
 encapsulate (EnvelopedDataCI ed)     = encodeASN1Object ed
 encapsulate (DigestedDataCI dd)      = encodeASN1Object dd
 encapsulate (EncryptedDataCI ed)     = encodeASN1Object ed
@@ -250,6 +320,7 @@ encapsulate (AuthEnvelopedDataCI ae) = encodeASN1Object ae
 -- | Decode the information from encapsulated content.
 decapsulate :: ContentType -> ByteString -> Either String ContentInfo
 decapsulate DataType bs              = pure (DataCI bs)
+decapsulate SignedDataType bs        = SignedDataCI <$> decode parse bs
 decapsulate EnvelopedDataType bs     = EnvelopedDataCI <$> decode parse bs
 decapsulate DigestedDataType bs      = DigestedDataCI <$> decode parse bs
 decapsulate EncryptedDataType bs     = EncryptedDataCI <$> decode parse bs
