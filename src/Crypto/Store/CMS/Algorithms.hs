@@ -55,6 +55,10 @@ module Crypto.Store.CMS.Algorithms
     , KeyEncryptionParams(..)
     , keyEncrypt
     , keyDecrypt
+    , OAEPParams(..)
+    , KeyTransportParams(..)
+    , transportEncrypt
+    , transportDecrypt
     , MaskGenerationFunc(..)
     , mgf
     , SignatureValue
@@ -66,7 +70,7 @@ module Crypto.Store.CMS.Algorithms
     , signatureVerify
     ) where
 
-import Control.Monad (when)
+import Control.Monad (guard, when)
 
 import           Data.ASN1.BinaryEncoding
 import           Data.ASN1.OID
@@ -99,6 +103,7 @@ import qualified Crypto.PubKey.DSA as DSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.PubKey.MaskGenFunction as MGF
 import qualified Crypto.PubKey.RSA.PSS as RSAPSS
+import qualified Crypto.PubKey.RSA.OAEP as RSAOAEP
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import           Crypto.Random
 
@@ -1185,6 +1190,124 @@ wrapDecrypt decFn cipher iv input = keyUnwrap (decFn cipher iv firstPass)
     Just iv'  = makeIV (B.drop (B.length beg - sz) beg)
     Just iv'' = makeIV lastBlock
     firstPass = decFn cipher iv'' beg `B.append` lastBlock
+
+
+-- Key transport
+
+-- | Encryption parameters for RSAES-OAEP.
+data OAEPParams = OAEPParams
+    { oaepHashAlgorithm :: DigestType            -- ^ Hash function
+    , oaepMaskGenAlgorithm :: MaskGenerationFunc -- ^ Mask generation function
+    }
+    deriving (Show,Eq)
+
+withOAEPParams :: forall seed output a . (ByteArrayAccess seed, ByteArray output)
+               => OAEPParams
+               -> (forall hash . Hash.HashAlgorithm hash => RSAOAEP.OAEPParams hash seed output -> a)
+               -> a
+withOAEPParams p fn =
+    case oaepHashAlgorithm p of
+        DigestType hashAlg ->
+            fn RSAOAEP.OAEPParams
+                { RSAOAEP.oaepHash = hashFromProxy hashAlg
+                , RSAOAEP.oaepMaskGenAlg = mgf (oaepMaskGenAlgorithm p)
+                , RSAOAEP.oaepLabel = Nothing
+                }
+
+instance ASN1Elem e => ProduceASN1Object e OAEPParams where
+    asn1s OAEPParams{..} =
+        asn1Container Sequence (h . m)
+      where
+        sha1  = DigestType SHA1
+        tag i = asn1Container (Container Context i)
+
+        h | oaepHashAlgorithm == sha1 = id
+          | otherwise = tag 0 (algorithmASN1S Sequence oaepHashAlgorithm)
+
+        m | oaepMaskGenAlgorithm == MGF1 sha1 = id
+          | otherwise = tag 1 (algorithmASN1S Sequence oaepMaskGenAlgorithm)
+
+instance Monoid e => ParseASN1Object e OAEPParams where
+    parse = onNextContainer Sequence $ do
+        h <- tag 0 (parseAlgorithm Sequence)
+        m <- tag 1 (parseAlgorithm Sequence)
+        _ <- tag 2 parsePSpecified
+        return OAEPParams { oaepHashAlgorithm = fromMaybe sha1 h
+                          , oaepMaskGenAlgorithm = fromMaybe (MGF1 sha1) m
+                          }
+      where
+        sha1  = DigestType SHA1
+        tag i = onNextContainerMaybe (Container Context i)
+
+        parsePSpecified = do
+            OID [1,2,840,113549,1,1,9] <- getNext
+            OctetString p <- getNext
+            guard (B.null p)
+
+data KeyTransportType = TypeRSAES
+                      | TypeRSAESOAEP
+
+instance Enumerable KeyTransportType where
+    values = [ TypeRSAES
+             , TypeRSAESOAEP
+             ]
+
+instance OIDable KeyTransportType where
+    getObjectID TypeRSAES          = [1,2,840,113549,1,1,1]
+    getObjectID TypeRSAESOAEP      = [1,2,840,113549,1,1,7]
+
+instance OIDNameable KeyTransportType where
+    fromObjectID oid = unOIDNW <$> fromObjectID oid
+
+-- | Key transport algorithm with associated parameters.
+data KeyTransportParams = RSAES                 -- ^ RSAES-PKCS1
+                        | RSAESOAEP OAEPParams  -- ^ RSAES-OAEP
+                        deriving (Show,Eq)
+
+instance AlgorithmId KeyTransportParams where
+    type AlgorithmType KeyTransportParams = KeyTransportType
+    algorithmName _ = "key transport algorithm"
+
+    algorithmType RSAES              = TypeRSAES
+    algorithmType (RSAESOAEP _)      = TypeRSAESOAEP
+
+    parameterASN1S RSAES             = gNull
+    parameterASN1S (RSAESOAEP p)     = asn1s p
+
+    parseParameter TypeRSAES         = getNextMaybe nullOrNothing >> return RSAES
+    parseParameter TypeRSAESOAEP     = RSAESOAEP <$> parse
+
+-- | Encrypt the specified content with a key-transport algorithm and recipient
+-- public key.
+transportEncrypt :: MonadRandom m
+                 => KeyTransportParams
+                 -> X509.PubKey
+                 -> ByteString
+                 -> m (Either String ByteString)
+transportEncrypt RSAES         (X509.PubKeyRSA pub) bs =
+    let strErr e = Left ("transportEncrypt: " ++ show e)
+     in either strErr Right <$> RSA.encrypt pub bs
+transportEncrypt (RSAESOAEP p) (X509.PubKeyRSA pub) bs =
+    withOAEPParams p $ \params ->
+        let strErr e = Left ("transportEncrypt: " ++ show e)
+        in either strErr Right <$> RSAOAEP.encrypt params pub bs
+transportEncrypt alg _ _ = return $ Left ("transportEncrypt: public key not compatible with " ++ show alg)
+
+-- | Decrypt the specified content with a key-transport algorithm and recipient
+-- private key.
+transportDecrypt :: MonadRandom m
+                 => KeyTransportParams
+                 -> X509.PrivKey
+                 -> ByteString
+                 -> m (Either String ByteString)
+transportDecrypt RSAES         (X509.PrivKeyRSA priv) bs =
+    let strErr e = Left ("transportDecrypt: " ++ show e)
+     in either strErr Right <$> RSA.decryptSafer priv bs
+transportDecrypt (RSAESOAEP p) (X509.PrivKeyRSA priv) bs =
+    withOAEPParams p $ \params ->
+        let strErr e = Left ("transportDecrypt: " ++ show e)
+        in either strErr Right <$> RSAOAEP.decryptSafer params priv bs
+transportDecrypt alg _ _ = return $ Left ("transportDecrypt: private key not compatible with " ++ show alg)
 
 
 -- Utilities

@@ -15,6 +15,12 @@ module Crypto.Store.CMS.Enveloped
     , EnvelopedData(..)
     , ProducerOfRI
     , ConsumerOfRI
+    -- * Key Transport recipients
+    , KTRecipientInfo(..)
+    , RecipientIdentifier(..)
+    , IssuerAndSerialNumber(..)
+    , forKeyTransRecipient
+    , withRecipientKeyTrans
     -- * Key Encryption Key recipients
     , KeyEncryptionKey
     , KEKRecipientInfo(..)
@@ -35,6 +41,7 @@ import Control.Monad
 import Data.ASN1.Types
 import Data.ByteString (ByteString)
 import Data.Maybe (fromMaybe)
+import Data.X509
 
 import Time.Types
 
@@ -60,6 +67,49 @@ type KeyEncryptionKey = ByteString
 -- Some key-derivation functions add restrictions to what characters
 -- are supported.
 type Password = ByteString
+
+-- | Union type related to identification of the recipient.
+data RecipientIdentifier
+    = RecipientIASN IssuerAndSerialNumber  -- ^ Issuer and Serial Number
+    | RecipientSKI  ByteString             -- ^ Subject Key Identifier
+    deriving (Show,Eq)
+
+instance ASN1Elem e => ProduceASN1Object e RecipientIdentifier where
+    asn1s (RecipientIASN iasn) = asn1s iasn
+    asn1s (RecipientSKI  ski)  = asn1Container (Container Context 0)
+                                    (gOctetString ski)
+
+instance Monoid e => ParseASN1Object e RecipientIdentifier where
+    parse = parseIASN <|> parseSKI
+      where parseIASN = RecipientIASN <$> parse
+            parseSKI  = RecipientSKI  <$>
+                onNextContainer (Container Context 0) parseBS
+            parseBS = do { OctetString bs <- getNext; return bs }
+
+getKTVersion :: RecipientIdentifier -> Integer
+getKTVersion (RecipientIASN _) = 0
+getKTVersion (RecipientSKI _)  = 2
+
+-- | Identification of a certificate using the issuer DN and serial number.
+data IssuerAndSerialNumber = IssuerAndSerialNumber
+    { iasnIssuer :: DistinguishedName
+      -- ^ Distinguished name of the certificate issuer
+    , iasnSerial :: Integer
+      -- ^ Issuer-specific certificate serial number
+    }
+    deriving (Show,Eq)
+
+instance ASN1Elem e => ProduceASN1Object e IssuerAndSerialNumber where
+    asn1s IssuerAndSerialNumber{..} =
+        asn1Container Sequence (asn1s iasnIssuer . gIntVal iasnSerial)
+
+instance Monoid e => ParseASN1Object e IssuerAndSerialNumber where
+    parse = onNextContainer Sequence $ do
+        i <- parse
+        IntVal s <- getNext
+        return IssuerAndSerialNumber { iasnIssuer = i
+                                     , iasnSerial = s
+                                     }
 
 -- | Additional information in a 'KEKIdentifier'.
 data OtherKeyAttribute = OtherKeyAttribute
@@ -105,6 +155,14 @@ instance Monoid e => ParseASN1Object e KEKIdentifier where
                              , kekOther = other
                              }
 
+-- | Recipient using key transport.
+data KTRecipientInfo = KTRecipientInfo
+    { ktRid :: RecipientIdentifier                 -- ^ identifier of recipient
+    , ktKeyTransportParams :: KeyTransportParams   -- ^ key transport algorithm
+    , ktEncryptedKey :: EncryptedKey               -- ^ encrypted content-encryption key
+    }
+    deriving (Show,Eq)
+
 -- | Recipient using key encryption.
 data KEKRecipientInfo = KEKRecipientInfo
     { kekId :: KEKIdentifier                        -- ^ identifier of key encryption key
@@ -123,13 +181,23 @@ data PasswordRecipientInfo = PasswordRecipientInfo
 
 -- | Information for a recipient of an 'EnvelopedData'.  An element contains
 -- the content-encryption key in encrypted form.
-data RecipientInfo = KEKRI KEKRecipientInfo
+data RecipientInfo = KTRI KTRecipientInfo
+                     -- ^ Recipient using key transport
+                   | KEKRI KEKRecipientInfo
                      -- ^ Recipient using key encryption
                    | PasswordRI PasswordRecipientInfo
                      -- ^ Recipient using password-based protection
     deriving (Show,Eq)
 
 instance ASN1Elem e => ProduceASN1Object e RecipientInfo where
+    asn1s (KTRI KTRecipientInfo{..}) =
+        asn1Container Sequence (ver . rid . ktp . ek)
+      where
+        ver = gIntVal (getKTVersion ktRid)
+        rid = asn1s ktRid
+        ktp = algorithmASN1S Sequence ktKeyTransportParams
+        ek  = gOctetString ktEncryptedKey
+
     asn1s (KEKRI KEKRecipientInfo{..}) =
         asn1Container (Container Context 2) (ver . kid . kep . ek)
       where
@@ -148,12 +216,25 @@ instance ASN1Elem e => ProduceASN1Object e RecipientInfo where
 
 instance Monoid e => ParseASN1Object e RecipientInfo where
     parse = do
-        c <- onNextContainerMaybe (Container Context 2) parseKEK
+        c <- onNextContainerMaybe Sequence parseKT
+             `orElse` onNextContainerMaybe (Container Context 2) parseKEK
              `orElse` onNextContainerMaybe (Container Context 3) parsePassword
         case c of
             Just val -> return val
             Nothing  -> throwParseError "RecipientInfo: unable to parse"
       where
+        parseKT = KTRI <$> do
+            IntVal v <- getNext
+            when (v `notElem` [0, 2]) $
+                throwParseError ("RecipientInfo: parsed invalid KT version: " ++ show v)
+            rid <- parse
+            ktp <- parseAlgorithm Sequence
+            (OctetString ek) <- getNext
+            return KTRecipientInfo { ktRid = rid
+                                   , ktKeyTransportParams = ktp
+                                   , ktEncryptedKey = ek
+                                   }
+
         parseKEK = KEKRI <$> do
             IntVal 4 <- getNext
             kid <- parse
@@ -175,10 +256,12 @@ instance Monoid e => ParseASN1Object e RecipientInfo where
                                          }
 
 isVersion0 :: RecipientInfo -> Bool
+isVersion0 (KTRI x)       = getKTVersion (ktRid x) == 0
 isVersion0 (KEKRI _)      = False      -- because version is always 4
 isVersion0 (PasswordRI _) = True       -- because version is always 0
 
 isPwriOri :: RecipientInfo -> Bool
+isPwriOri (KTRI _)       = False
 isPwriOri (KEKRI _)      = False
 isPwriOri (PasswordRI _) = True
 
@@ -242,6 +325,34 @@ type ProducerOfRI m = ContentEncryptionKey -> m (Either String RecipientInfo)
 
 -- | Function able to consume a 'RecipientInfo'.
 type ConsumerOfRI m = RecipientInfo -> m (Either String ContentEncryptionKey)
+
+-- | Generate a Key Transport recipient from a certificate and
+-- desired algorithm.  The recipient will contain certificate identifier.
+--
+-- This function can be used as parameter to 'Crypto.Store.CMS.envelopData'.
+forKeyTransRecipient :: MonadRandom m
+                     => SignedCertificate -> KeyTransportParams -> ProducerOfRI m
+forKeyTransRecipient cert params inkey = do
+    ek <- transportEncrypt params (certPubKey obj) inkey
+    return (KTRI . build <$> ek)
+  where
+    obj = signedObject (getSigned cert)
+    isn = IssuerAndSerialNumber (certIssuerDN obj) (certSerial obj)
+
+    build ek = KTRecipientInfo
+                  { ktRid = RecipientIASN isn
+                  , ktKeyTransportParams = params
+                  , ktEncryptedKey = ek
+                  }
+
+-- | Use a Key Transport recipient, knowing the private key.
+--
+-- This function can be used as parameter to
+-- 'Crypto.Store.CMS.openEnvelopedData'.
+withRecipientKeyTrans :: MonadRandom m => PrivKey -> ConsumerOfRI m
+withRecipientKeyTrans privKey (KTRI KTRecipientInfo{..}) =
+    transportDecrypt ktKeyTransportParams privKey ktEncryptedKey
+withRecipientKeyTrans _ _ = pure (Left "Not a KT recipient")
 
 -- | Generate a Key Encryption Key recipient from a key encryption key and
 -- desired algorithm.  The recipient may identify the KEK that was used with

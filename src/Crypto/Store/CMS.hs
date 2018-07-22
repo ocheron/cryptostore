@@ -42,12 +42,18 @@ module Crypto.Store.CMS
     -- * Enveloped data
     , EncryptedKey
     , KeyEncryptionParams(..)
+    , KeyTransportParams(..)
     , RecipientInfo(..)
     , EnvelopedData(..)
     , ProducerOfRI
     , ConsumerOfRI
     , envelopData
     , openEnvelopedData
+    -- ** Key Transport recipients
+    , KTRecipientInfo(..)
+    , RecipientIdentifier(..)
+    , forKeyTransRecipient
+    , withRecipientKeyTrans
     -- ** Key Encryption Key recipients
     , KEKRecipientInfo(..)
     , KEKIdentifier(..)
@@ -104,6 +110,7 @@ module Crypto.Store.CMS
     , generateKey
     -- * RSA padding modes
     , MaskGenerationFunc(..)
+    , OAEPParams(..)
     , PSSParams(..)
     -- * CMS attributes
     , Attribute(..)

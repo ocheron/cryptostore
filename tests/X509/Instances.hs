@@ -3,6 +3,7 @@
 module X509.Instances
     ( arbitraryOID
     , arbitraryRSA
+    , arbitraryLargeRSA
     , arbitraryDSA
     , arbitraryNamedEC
     , arbitrarySignedCertificate
@@ -60,6 +61,12 @@ instance Arbitrary PrivKey where
 arbitraryRSA :: Gen (RSA.PublicKey, RSA.PrivateKey)
 arbitraryRSA = do
     n <- elements [ 768, 1024 ]     -- enough bits to sign with SHA-512
+    e <- elements [ 3, 0x10001 ]
+    RSA.generate (n `div` 8) e
+
+arbitraryLargeRSA :: Gen (RSA.PublicKey, RSA.PrivateKey)
+arbitraryLargeRSA = do
+    n <- elements [ 1792, 2048 ]    -- enough bits for RSA-OAEP with SHA-512
     e <- elements [ 3, 0x10001 ]
     RSA.generate (n `div` 8) e
 

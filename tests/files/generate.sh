@@ -159,6 +159,28 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
 ) > "$DEST_DIR"/cms-signed-data.pem
 
 
+# CMS enveloped data (key transport)
+
+(
+  for cipher_key in $CIPHER_KEYS_ENVELOPED; do
+    cipher=`expr "$cipher_key" : '\([^:]*\):[^:]*'`
+
+    for TYPE in rsa; do
+      echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
+        -stream -indef $cipher \
+        -recip "$DEST_DIR"/"$TYPE"-self-signed-cert.pem
+    done
+
+    for MODE in oaep; do
+      echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
+        -stream -indef $cipher \
+        -recip "$DEST_DIR"/rsa-self-signed-cert.pem \
+        -keyopt rsa_padding_mode:"$MODE"
+    done
+  done
+) > "$DEST_DIR"/cms-enveloped-ktri-data.pem
+
+
 # CMS enveloped data (key encryption key)
 
 (

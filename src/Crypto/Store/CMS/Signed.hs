@@ -37,6 +37,7 @@ import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.AuthEnveloped
 import Crypto.Store.CMS.Attribute
+import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
@@ -115,27 +116,6 @@ instance Monoid e => ParseASN1Object e SignerIdentifier where
             parseSKI  = SignerSKI  <$>
                 onNextContainer (Container Context 0) parseBS
             parseBS = do { OctetString bs <- getNext; return bs }
-
--- | Identification of a certificate using the issuer DN and serial number.
-data IssuerAndSerialNumber = IssuerAndSerialNumber
-    { iasnIssuer :: DistinguishedName
-      -- ^ Distinguished name of the certificate issuer
-    , iasnSerial :: Integer
-      -- ^ Issuer-specific certificate serial number
-    }
-    deriving (Show,Eq)
-
-instance ASN1Elem e => ProduceASN1Object e IssuerAndSerialNumber where
-    asn1s IssuerAndSerialNumber{..} =
-        asn1Container Sequence (asn1s iasnIssuer . gIntVal iasnSerial)
-
-instance Monoid e => ParseASN1Object e IssuerAndSerialNumber where
-    parse = onNextContainer Sequence $ do
-        i <- parse
-        IntVal s <- getNext
-        return IssuerAndSerialNumber { iasnIssuer = i
-                                     , iasnSerial = s
-                                     }
 
 -- | Try to find a certificate with the specified identifier and return its
 -- public key when found.

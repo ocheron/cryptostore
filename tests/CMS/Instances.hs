@@ -127,6 +127,14 @@ instance Arbitrary DigestType where
 instance Arbitrary MACAlgorithm where
     arbitrary = (\(DigestType alg) -> HMAC alg) <$> arbitrary
 
+instance Arbitrary OAEPParams where
+    arbitrary = do
+        alg <- arbitrary
+        mga <- MGF1 <$> arbitrary
+        return OAEPParams { oaepHashAlgorithm = alg
+                          , oaepMaskGenAlgorithm = mga
+                          }
+
 instance Arbitrary PSSParams where
     arbitrary = do
         alg <- arbitrary
@@ -294,6 +302,12 @@ instance Arbitrary KeyDerivationFunc where
                           , scryptKeyLength = Nothing
                           }
 
+instance Arbitrary KeyTransportParams where
+    arbitrary = oneof
+        [ pure RSAES
+        , RSAESOAEP <$> arbitrary
+        ]
+
 instance Arbitrary KeyEncryptionParams where
     arbitrary = oneof
         [ PWRIKEK <$> arbitrary
@@ -326,7 +340,15 @@ arbitraryEnvDev cek = sized $ \n -> do
     return (envFns, devFn)
   where
     len     = B.length cek
-    onePair = oneof [ arbitraryKEK, arbitraryPW ]
+    onePair = oneof [ arbitraryKT, arbitraryKEK, arbitraryPW ]
+
+    arbitraryKT = do
+        (pub, priv) <- arbitraryLargeRSA
+        cert <- arbitrarySignedCertificate (PubKeyRSA pub)
+        ktp  <- arbitrary
+        let envFn = forKeyTransRecipient cert ktp
+            devFn = withRecipientKeyTrans (PrivKeyRSA priv)
+        return (envFn, devFn)
 
     arbitraryKEK = do
         kid <- arbitrary

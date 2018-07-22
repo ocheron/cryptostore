@@ -12,6 +12,7 @@ import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
 import Crypto.Store.CMS
+import Crypto.Store.PKCS8
 
 import CMS.Instances
 import Util
@@ -71,7 +72,8 @@ signedDataTests =
 envelopedDataTests :: TestTree
 envelopedDataTests =
     testGroup "EnvelopedData"
-        [ test "KEKRI" path1 withRecipientKey
+        [ testKT "KTRI" path3
+        , test "KEKRI" path1 withRecipientKey
         , test "PWRI" path2 (\_ -> withRecipientPassword pwd)
         ]
   where test caseName path f = testCaseSteps caseName $ \step -> do
@@ -86,8 +88,23 @@ envelopedDataTests =
                 let EnvelopedDataCI ev = ci
                 result <- openEnvelopedData (f key) ev
                 assertRight result (verifyInnerMessage message)
+        testKT caseName path = testCaseSteps caseName $ \step -> do
+            let rsaPath = testFile "rsa-unencrypted-pkcs8.pem"
+            [Unprotected priv] <- readKeyFile rsaPath
+
+            cms <- readCMSFile path
+            assertEqual "unexpected parse count" (2 * length keys) (length cms)
+
+            let pairs = [ (c, m) | c <- map fst keys, m <- modes ]
+            forM_ (zip pairs cms) $ \((c, m), ci) -> do
+                step ("testing " ++ c ++ " with " ++ m)
+                assertBool "unexpected type" (hasType EnvelopedDataType ci)
+                let EnvelopedDataCI ev = ci
+                result <- openEnvelopedData (withRecipientKeyTrans priv) ev
+                assertRight result (verifyInnerMessage message)
         path1 = testFile "cms-enveloped-kekri-data.pem"
         path2 = testFile "cms-enveloped-pwri-data.pem"
+        path3 = testFile "cms-enveloped-ktri-data.pem"
         pwd   = fromString "dontchangeme"
         keys  = [ ("3DES_CBC",             testKey 24)
                 , ("AES128_CBC",           testKey 16)
@@ -99,6 +116,9 @@ envelopedDataTests =
                 , ("AES192_ECB",           testKey 24)
                 , ("AES256_ECB",           testKey 32)
                 , ("Camellia128_ECB",      testKey 16)
+                ]
+        modes = [ "RSAES-PKCS1"
+                , "RSAES-OAEP"
                 ]
 
 
