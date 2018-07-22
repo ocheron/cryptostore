@@ -121,9 +121,7 @@ module Crypto.Store.CMS
     ) where
 
 import Data.Maybe (isJust)
-import Data.List (nub)
-import Data.List.NonEmpty (nonEmpty)
-import Data.Semigroup
+import Data.List (nub, unzip3)
 
 import Crypto.Hash
 
@@ -220,13 +218,17 @@ envelopData oinfo key params envFns attrs ci =
 
 -- | Recover an enveloped content info using the specified 'ConsumerOfRI'
 -- function.
-openEnvelopedData :: ConsumerOfRI -> EnvelopedData -> Either String ContentInfo
-openEnvelopedData devFn EnvelopedData{..} =
-    riAttempts (map devFn evRecipientInfos) >>= unwrap
+openEnvelopedData :: Monad m
+                  => ConsumerOfRI m
+                  -> EnvelopedData
+                  -> m (Either String ContentInfo)
+openEnvelopedData devFn EnvelopedData{..} = do
+    r <- riAttempts (map (fmap (>>= decr) . devFn) evRecipientInfos)
+    return (r >>= decapsulate ct)
   where
     ct       = evContentType
     params   = evContentEncryptionParams
-    unwrap k = contentDecrypt k params evEncryptedContent >>= decapsulate ct
+    decr k   = contentDecrypt k params evEncryptedContent
 
 
 -- AuthenticatedData
@@ -280,9 +282,12 @@ generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
 -- | Verify the integrity of an authenticated content info using the specified
 -- 'ConsumerOfRI' function.  The inner content info is returned only if the MAC
 -- could be verified.
-verifyAuthenticatedData :: ConsumerOfRI -> AuthenticatedData -> Either String ContentInfo
+verifyAuthenticatedData :: Monad m
+                        => ConsumerOfRI m
+                        -> AuthenticatedData
+                        -> m (Either String ContentInfo)
 verifyAuthenticatedData devFn AuthenticatedData{..} =
-    riAttempts (map devFn adRecipientInfos) >>= unwrap
+    riAttempts (map (fmap (>>= unwrap) . devFn) adRecipientInfos)
   where
     msg = encapsulate adContentInfo
     ct  = getContentType adContentInfo
@@ -341,15 +346,19 @@ authEnvelopData oinfo key params envFns aAttrs uAttrs ci =
 
 -- | Recover an authenticated-enveloped content info using the specified
 -- 'ConsumerOfRI' function.
-openAuthEnvelopedData :: ConsumerOfRI -> AuthEnvelopedData -> Either String ContentInfo
-openAuthEnvelopedData devFn AuthEnvelopedData{..} =
-    riAttempts (map devFn aeRecipientInfos) >>= unwrap
+openAuthEnvelopedData :: Monad m
+                      => ConsumerOfRI m
+                      -> AuthEnvelopedData
+                      -> m (Either String ContentInfo)
+openAuthEnvelopedData devFn AuthEnvelopedData{..} = do
+    r <- riAttempts (map (fmap (>>= decr) . devFn) aeRecipientInfos)
+    return (r >>= decapsulate ct)
   where
     ct       = aeContentType
     params   = exactObject aeContentEncryptionParams
     raw      = exactObjectRaw aeContentEncryptionParams
     aad      = encodeAuthAttrs aeAuthAttrs
-    unwrap k = authContentDecrypt k params raw aad aeEncryptedContent aeMAC >>= decapsulate ct
+    decr k   = authContentDecrypt k params raw aad aeEncryptedContent aeMAC
 
 
 -- SignedData
@@ -390,8 +399,13 @@ verifySignedData verFn SignedData{..}
 
 -- Utilities
 
-riAttempts :: [Either String b] -> Either String b
-riAttempts list =
-    case nonEmpty list of
-        Just ne -> sconcat ne <> Left "No recipient info matched"
-        Nothing -> Left "No recipient info found"
+riAttempts :: Monad m => [m (Either String b)] -> m (Either String b)
+riAttempts []       = return (Left "No recipient info found")
+riAttempts [single] = single
+riAttempts list     = loop list
+  where
+    loop []     = return (Left "No recipient info matched")
+    loop (x:xs) = x >>= orTail xs
+
+    orTail xs (Left _)  = loop xs
+    orTail _  success   = return success

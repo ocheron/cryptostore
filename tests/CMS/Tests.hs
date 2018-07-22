@@ -84,7 +84,7 @@ envelopedDataTests =
                 step ("testing " ++ name)
                 assertBool "unexpected type" (hasType EnvelopedDataType ci)
                 let EnvelopedDataCI ev = ci
-                    result = openEnvelopedData (f key) ev
+                result <- openEnvelopedData (f key) ev
                 assertRight result (verifyInnerMessage message)
         path1 = testFile "cms-enveloped-kekri-data.pem"
         path2 = testFile "cms-enveloped-pwri-data.pem"
@@ -174,13 +174,13 @@ authEnvelopedDataTests =
             step ("testing vector " ++ show (index :: Int))
             assertBool "unexpected type" (hasType AuthEnvelopedDataType ci)
             let AuthEnvelopedDataCI ae = ci
-                result = openAuthEnvelopedData (withRecipientPassword pwd) ae
+            result <- openAuthEnvelopedData (withRecipientPassword pwd) ae
             assertRight result (verifyInnerMessage msg)
 
             step ("testing encoded vector " ++ show index)
             let [Just ci'] = pemToContentInfo [] (contentInfoToPEM ci)
                 AuthEnvelopedDataCI ae' = ci'
-                result' = openAuthEnvelopedData (withRecipientPassword pwd) ae'
+            result' <- openAuthEnvelopedData (withRecipientPassword pwd) ae'
             assertRight result' (verifyInnerMessage msg)
   where path  = testFile "cms-auth-enveloped-data-rfc6476.pem"
         pwd   = fromString "password"
@@ -203,7 +203,8 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
             (oinfo, key, envFns, devFn, attrs) <- getCommon alg
             r <- envelopData oinfo key alg envFns attrs ci
             let Right (EnvelopedDataCI ev) = r
-            return (Right ci === openEnvelopedData devFn ev)
+            r' <- openEnvelopedData devFn ev
+            return (Right ci === r')
     , testProperty "digesting" $ \alg ci ->
         collect alg $
             let DigestedDataCI dd = digestData alg ci
@@ -220,14 +221,16 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
             aAttrs <- if isNothing dig then pure [] else arbitraryAttributes
             r <- generateAuthenticatedData oinfo key alg dig envFns aAttrs uAttrs ci
             let Right (AuthenticatedDataCI ad) = r
-            return (Right ci === verifyAuthenticatedData devFn ad)
+            r' <- verifyAuthenticatedData devFn ad
+            return (Right ci === r')
     , testProperty "enveloping with authentication" $ \alg ci ->
         collect alg $ do
             (oinfo, key, envFns, devFn, uAttrs) <- getCommon alg
             aAttrs <- arbitraryAttributes
             r <- authEnvelopData oinfo key alg envFns aAttrs uAttrs ci
             let Right (AuthEnvelopedDataCI ae) = r
-            return (Right ci === openAuthEnvelopedData devFn ae)
+            r' <- openAuthEnvelopedData devFn ae
+            return (Right ci === r')
     ]
   where
     sizeRange bs =
@@ -236,7 +239,7 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
 
 getCommon :: HasKeySize params
           => params
-          -> Gen (OriginatorInfo, B.ByteString, [ProducerOfRI Gen], ConsumerOfRI, [Attribute])
+          -> Gen (OriginatorInfo, B.ByteString, [ProducerOfRI Gen], ConsumerOfRI Gen, [Attribute])
 getCommon alg = do
     oinfo <- arbitrary
     key <- generateKey alg

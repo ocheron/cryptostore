@@ -318,7 +318,7 @@ instance Arbitrary KEKIdentifier where
         KEKIdentifier kid Nothing <$> arbitrary
 
 arbitraryEnvDev :: ContentEncryptionKey
-                -> Gen ([ProducerOfRI Gen], ConsumerOfRI)
+                -> Gen ([ProducerOfRI Gen], ConsumerOfRI Gen)
 arbitraryEnvDev cek = sized $ \n -> do
     (envFn, devFn) <- onePair
     otherPairs <- resize (min (pred n) 3) $ listOf onePair

@@ -241,7 +241,7 @@ instance ParseASN1Object [ASN1Event] EnvelopedData where
 type ProducerOfRI m = ContentEncryptionKey -> m (Either String RecipientInfo)
 
 -- | Function able to consume a 'RecipientInfo'.
-type ConsumerOfRI = RecipientInfo -> Either String ContentEncryptionKey
+type ConsumerOfRI m = RecipientInfo -> m (Either String ContentEncryptionKey)
 
 -- | Generate a Key Encryption Key recipient from a key encryption key and
 -- desired algorithm.  The recipient may identify the KEK that was used with
@@ -267,10 +267,10 @@ forKeyRecipient key kid params inkey = do
 --
 -- This function can be used as parameter to
 -- 'Crypto.Store.CMS.openEnvelopedData'.
-withRecipientKey :: KeyEncryptionKey -> ConsumerOfRI
+withRecipientKey :: Applicative f => KeyEncryptionKey -> ConsumerOfRI f
 withRecipientKey key (KEKRI KEKRecipientInfo{..}) =
-    keyDecrypt key kekKeyEncryptionParams kekEncryptedKey
-withRecipientKey _ _ = Left "Not a KEK recipient"
+    pure (keyDecrypt key kekKeyEncryptionParams kekEncryptedKey)
+withRecipientKey _ _ = pure (Left "Not a KEK recipient")
 
 -- | Generate a password recipient from a password.
 --
@@ -296,11 +296,11 @@ forPasswordRecipient pwd kdf params inkey = do
 --
 -- This function can be used as parameter to
 -- 'Crypto.Store.CMS.openEnvelopedData'.
-withRecipientPassword :: Password -> ConsumerOfRI
+withRecipientPassword :: Applicative f => Password -> ConsumerOfRI f
 withRecipientPassword pwd (PasswordRI PasswordRecipientInfo{..}) =
-    keyDecrypt derived priKeyEncryptionParams priEncryptedKey
+    pure (keyDecrypt derived priKeyEncryptionParams priEncryptedKey)
   where
     derived = kdfDerive priKeyDerivationFunc len pwd :: EncryptedKey
     len = fromMaybe (getMaximumKeySize priKeyEncryptionParams)
                     (kdfKeyLength priKeyDerivationFunc)
-withRecipientPassword _ _ = Left "Not a password recipient"
+withRecipientPassword _ _ = pure (Left "Not a password recipient")
