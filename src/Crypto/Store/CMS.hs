@@ -43,6 +43,7 @@ module Crypto.Store.CMS
     , EncryptedKey
     , KeyEncryptionParams(..)
     , KeyTransportParams(..)
+    , KeyAgreementParams(..)
     , RecipientInfo(..)
     , EnvelopedData(..)
     , ProducerOfRI
@@ -54,6 +55,15 @@ module Crypto.Store.CMS
     , RecipientIdentifier(..)
     , forKeyTransRecipient
     , withRecipientKeyTrans
+    -- ** Key Agreement recipients
+    , KARecipientInfo(..)
+    , OriginatorIdentifierOrKey(..)
+    , OriginatorPublicKey
+    , RecipientEncryptedKey(..)
+    , KeyAgreeRecipientIdentifier(..)
+    , UserKeyingMaterial
+    , forKeyAgreeRecipient
+    , withRecipientKeyAgree
     -- ** Key Encryption Key recipients
     , KEKRecipientInfo(..)
     , KeyIdentifier(..)

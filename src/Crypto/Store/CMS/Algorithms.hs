@@ -59,6 +59,10 @@ module Crypto.Store.CMS.Algorithms
     , KeyTransportParams(..)
     , transportEncrypt
     , transportDecrypt
+    , KeyAgreementParams(..)
+    , ecdhGenerate
+    , ecdhEncrypt
+    , ecdhDecrypt
     , MaskGenerationFunc(..)
     , mgf
     , SignatureValue
@@ -99,8 +103,11 @@ import qualified Crypto.KDF.PBKDF2 as PBKDF2
 import qualified Crypto.KDF.Scrypt as Scrypt
 import qualified Crypto.MAC.HMAC as HMAC
 import qualified Crypto.MAC.Poly1305 as Poly1305
+import           Crypto.Number.Serialize
 import qualified Crypto.PubKey.DSA as DSA
+import qualified Crypto.PubKey.ECC.DH as ECDH
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import qualified Crypto.PubKey.ECC.Types as ECC
 import qualified Crypto.PubKey.MaskGenFunction as MGF
 import qualified Crypto.PubKey.RSA.PSS as RSAPSS
 import qualified Crypto.PubKey.RSA.OAEP as RSAOAEP
@@ -1308,6 +1315,150 @@ transportDecrypt (RSAESOAEP p) (X509.PrivKeyRSA priv) bs =
         let strErr e = Left ("transportDecrypt: " ++ show e)
         in either strErr Right <$> RSAOAEP.decryptSafer params priv bs
 transportDecrypt alg _ _ = return $ Left ("transportDecrypt: private key not compatible with " ++ show alg)
+
+
+-- Key agreement
+
+data KeyAgreementType = TypeStdDH DigestType
+                      | TypeCofactorDH DigestType
+                      deriving (Show,Eq)
+
+instance Enumerable KeyAgreementType where
+    values = [ TypeStdDH (DigestType SHA1)
+             , TypeStdDH (DigestType SHA224)
+             , TypeStdDH (DigestType SHA256)
+             , TypeStdDH (DigestType SHA384)
+             , TypeStdDH (DigestType SHA512)
+
+             , TypeCofactorDH (DigestType SHA1)
+             , TypeCofactorDH (DigestType SHA224)
+             , TypeCofactorDH (DigestType SHA256)
+             , TypeCofactorDH (DigestType SHA384)
+             , TypeCofactorDH (DigestType SHA512)
+             ]
+
+instance OIDable KeyAgreementType where
+    getObjectID (TypeStdDH (DigestType SHA1))        = [1,3,133,16,840,63,0,2]
+    getObjectID (TypeStdDH (DigestType SHA224))      = [1,3,132,1,11,0]
+    getObjectID (TypeStdDH (DigestType SHA256))      = [1,3,132,1,11,1]
+    getObjectID (TypeStdDH (DigestType SHA384))      = [1,3,132,1,11,2]
+    getObjectID (TypeStdDH (DigestType SHA512))      = [1,3,132,1,11,3]
+
+    getObjectID (TypeCofactorDH (DigestType SHA1))   = [1,3,133,16,840,63,0,3]
+    getObjectID (TypeCofactorDH (DigestType SHA224)) = [1,3,132,1,14,0]
+    getObjectID (TypeCofactorDH (DigestType SHA256)) = [1,3,132,1,14,1]
+    getObjectID (TypeCofactorDH (DigestType SHA384)) = [1,3,132,1,14,2]
+    getObjectID (TypeCofactorDH (DigestType SHA512)) = [1,3,132,1,14,3]
+
+    getObjectID ty = error ("Unsupported KeyAgreementType: " ++ show ty)
+
+instance OIDNameable KeyAgreementType where
+    fromObjectID oid = unOIDNW <$> fromObjectID oid
+
+-- | Key agreement algorithm with associated parameters.
+data KeyAgreementParams = StdDH DigestType KeyEncryptionParams
+                          -- ^ 1-Pass D-H with Stardard ECDH
+                        | CofactorDH DigestType KeyEncryptionParams
+                          -- ^ 1-Pass D-H with Cofactor ECDH
+                        deriving (Show,Eq)
+
+instance AlgorithmId KeyAgreementParams where
+    type AlgorithmType KeyAgreementParams = KeyAgreementType
+    algorithmName _ = "key agreement algorithm"
+
+    algorithmType (StdDH d _)         = TypeStdDH d
+    algorithmType (CofactorDH d _)    = TypeCofactorDH d
+
+    parameterASN1S (StdDH _ p)        = algorithmASN1S Sequence p
+    parameterASN1S (CofactorDH _ p)   = algorithmASN1S Sequence p
+
+    parseParameter (TypeStdDH d)      = StdDH d <$> parseAlgorithm Sequence
+    parseParameter (TypeCofactorDH d) = CofactorDH d <$> parseAlgorithm Sequence
+
+ecdhKeyMaterial :: (ByteArrayAccess bin, ByteArray bout)
+              => DigestType -> KeyEncryptionParams -> Maybe ByteString -> bin -> bout
+ecdhKeyMaterial (DigestType hashAlg) kep ukm zz
+    | r == 0    = B.concat (map chunk [1..d])
+    | otherwise = B.concat (map chunk [1..d]) `B.append` B.take r (chunk $ succ d)
+  where
+    (d, r)   = outLen `divMod` Hash.hashDigestSize prx
+
+    prx      = hashFromProxy hashAlg
+    outLen   = getMaximumKeySize kep
+    outBits  = 8 * outLen
+    toWord32 = i2ospOf_ 4 . fromIntegral
+
+    chunk     = B.convert . Hash.hashFinalize . hashCtx
+    hashCtx'  = Hash.hashInitWith prx
+    hashCtx i = Hash.hashUpdate (Hash.hashUpdate (Hash.hashUpdate hashCtx' zz) (toWord32 i)) otherInfo
+    otherInfo =
+        let ki  = algorithmASN1S Sequence kep
+            eui = case ukm of
+                    Nothing -> id
+                    Just bs -> asn1Container (Container Context 0)
+                                   (gOctetString bs)
+            spi = asn1Container (Container Context 2)
+                      (gOctetString $ toWord32 outBits)
+         in encodeASN1S $ asn1Container Sequence (ki . eui . spi)
+
+-- | Generate an ephemeral ECDH key.
+ecdhGenerate :: MonadRandom m => X509.PubKey -> m (Either String (ECC.Curve, ECC.PrivateNumber, X509.SerializedPoint))
+ecdhGenerate (X509.PubKeyEC pub) =
+    case ecPubKeyCurveName pub of
+        Nothing -> return $ Left "ecdhGenerate: not a named curve"
+        Just n  -> do
+            let curve = ECC.getCurveByName n
+            priv <- ECDH.generatePrivate curve
+            return $ Right (curve, priv, X509.pubkeyEC_pub pub)
+ecdhGenerate _ = return $ Left "ecdhGenerate: not an EC public key"
+
+-- | Encrypt the specified content with an ECDH key pair and key-agreement
+-- algorithm.
+ecdhEncrypt :: (MonadRandom m, ByteArray ba)
+            => KeyAgreementParams -> Maybe ByteString -> ECC.Curve -> ECC.PrivateNumber -> X509.SerializedPoint -> ba -> m (Either String ba)
+ecdhEncrypt (StdDH dig kep) ukm curve d pt bs =
+    case unserializePoint curve pt of
+        Nothing  -> return $ Left "ecdhEncrypt: invalid serialized point"
+        Just pub -> do
+            let s = ECDH.getShared curve d pub
+                k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+            keyEncrypt k kep bs
+ecdhEncrypt (CofactorDH dig kep) ukm curve d pt bs =
+    case unserializePoint curve pt of
+        Nothing  -> return $ Left "ecdhEncrypt: invalid serialized point"
+        Just pub -> do
+            let h = ECC.ecc_h (ECC.common_curve curve)
+                s = ECDH.getShared curve (h * d) pub
+                k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+            keyEncrypt k kep bs
+
+-- | Decrypt the specified content with an ECDH key pair and key-agreement
+-- algorithm.
+ecdhDecrypt :: ByteArray ba
+            => KeyAgreementParams -> Maybe ByteString -> X509.PrivKeyEC -> X509.SerializedPoint -> ba -> Either String ba
+ecdhDecrypt (StdDH dig kep) ukm priv pt bs =
+    case ecPrivKeyCurve priv of
+        Nothing    -> Left "ecdhDecrypt: invalid curve"
+        Just curve ->
+            case unserializePoint curve pt of
+                Nothing  -> Left "ecdhDecrypt: invalid serialized point"
+                Just pub -> do
+                    let d = X509.privkeyEC_priv priv
+                        s = ECDH.getShared curve d pub
+                        k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+                    keyDecrypt k kep bs
+ecdhDecrypt (CofactorDH dig kep) ukm priv pt bs =
+    case ecPrivKeyCurve priv of
+        Nothing    -> Left "ecdhDecrypt: invalid curve"
+        Just curve ->
+            case unserializePoint curve pt of
+                Nothing  -> Left "ecdhDecrypt: invalid serialized point"
+                Just pub -> do
+                    let h = ECC.ecc_h (ECC.common_curve curve)
+                        d = X509.privkeyEC_priv priv
+                        s = ECDH.getShared curve (h * d) pub
+                        k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+                    keyDecrypt k kep bs
 
 
 -- Utilities

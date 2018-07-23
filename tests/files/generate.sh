@@ -181,6 +181,24 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
 ) > "$DEST_DIR"/cms-enveloped-ktri-data.pem
 
 
+# CMS enveloped data (key agreement)
+
+(
+  for cipher_key in $CIPHER_KEYS_ENVELOPED; do
+    cipher=`expr "$cipher_key" : '\([^:]*\):[^:]*'`
+
+    for TYPE in ecdsa-p256; do
+      for MD in sha1 sha224 sha256 sha384 sha512; do
+        echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
+          -stream -indef $cipher \
+          -recip "$DEST_DIR"/"$TYPE"-self-signed-cert.pem \
+          -keyopt ecdh_kdf_md:"$MD" -keyopt ecdh_cofactor_mode:0
+      done
+    done
+  done
+) > "$DEST_DIR"/cms-enveloped-kari-data.pem
+
+
 # CMS enveloped data (key encryption key)
 
 (

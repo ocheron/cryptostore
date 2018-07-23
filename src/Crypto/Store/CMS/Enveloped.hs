@@ -11,6 +11,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.Store.CMS.Enveloped
     ( EncryptedKey
+    , UserKeyingMaterial
     , RecipientInfo(..)
     , EnvelopedData(..)
     , ProducerOfRI
@@ -21,6 +22,14 @@ module Crypto.Store.CMS.Enveloped
     , IssuerAndSerialNumber(..)
     , forKeyTransRecipient
     , withRecipientKeyTrans
+    -- * Key Agreement recipients
+    , KARecipientInfo(..)
+    , OriginatorIdentifierOrKey(..)
+    , OriginatorPublicKey
+    , RecipientEncryptedKey(..)
+    , KeyAgreeRecipientIdentifier(..)
+    , forKeyAgreeRecipient
+    , withRecipientKeyAgree
     -- * Key Encryption Key recipients
     , KeyEncryptionKey
     , KEKRecipientInfo(..)
@@ -38,8 +47,10 @@ module Crypto.Store.CMS.Enveloped
 import Control.Applicative
 import Control.Monad
 
+import Data.ASN1.BitArray
 import Data.ASN1.Types
 import Data.ByteString (ByteString)
+import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Data.X509
 
@@ -55,9 +66,13 @@ import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
+import Crypto.Store.PKCS8.EC
 
 -- | Encrypted key.
 type EncryptedKey = ByteString
+
+-- | User keying material.
+type UserKeyingMaterial = ByteString
 
 -- | Key used for key encryption.
 type KeyEncryptionKey = ByteString
@@ -111,6 +126,109 @@ instance Monoid e => ParseASN1Object e IssuerAndSerialNumber where
                                      , iasnSerial = s
                                      }
 
+idEcPublicKey :: OID
+idEcPublicKey = [1,2,840,10045,2,1]
+
+-- | Originator public key used for key-agreement.  Contrary to 'PubKey' the
+-- domain parameters are not used and may be left empty.
+data OriginatorPublicKey = OriginatorPublicKeyEC [ASN1] BitArray
+    deriving (Show,Eq)
+
+originatorPublicKeyASN1S :: ASN1Elem e
+                         => ASN1ConstructionType
+                         -> OriginatorPublicKey
+                         -> ASN1Stream e
+originatorPublicKeyASN1S ty (OriginatorPublicKeyEC asn1 ba) =
+    asn1Container ty (alg . gBitString ba)
+  where
+    alg = asn1Container Sequence (gOID idEcPublicKey . gMany asn1)
+
+parseOriginatorPublicKey :: Monoid e
+                         => ASN1ConstructionType
+                         -> ParseASN1 e OriginatorPublicKey
+parseOriginatorPublicKey ty =
+    onNextContainer ty $ do
+        asn1 <- onNextContainer Sequence $ do
+                    OID oid <- getNext
+                    guard (oid == idEcPublicKey)
+                    getMany getNext
+        BitString ba <- getNext
+        return (OriginatorPublicKeyEC asn1 ba)
+
+-- | Union type related to identification of the originator.
+data OriginatorIdentifierOrKey
+    = OriginatorIASN IssuerAndSerialNumber  -- ^ Issuer and Serial Number
+    | OriginatorSKI  ByteString             -- ^ Subject Key Identifier
+    | OriginatorPublic OriginatorPublicKey  -- ^ Anonymous public key
+    deriving (Show,Eq)
+
+instance ASN1Elem e => ProduceASN1Object e OriginatorIdentifierOrKey where
+    asn1s (OriginatorIASN iasn)   = asn1s iasn
+    asn1s (OriginatorSKI  ski)    = asn1Container (Container Context 0)
+                                       (gOctetString ski)
+    asn1s (OriginatorPublic pub)  =
+        originatorPublicKeyASN1S (Container Context 1) pub
+
+instance Monoid e => ParseASN1Object e OriginatorIdentifierOrKey where
+    parse = parseIASN <|> parseSKI <|> parsePublic
+      where parseIASN = OriginatorIASN <$> parse
+            parseSKI  = OriginatorSKI  <$>
+                onNextContainer (Container Context 0) parseBS
+            parseBS = do { OctetString bs <- getNext; return bs }
+            parsePublic  = OriginatorPublic <$>
+                parseOriginatorPublicKey (Container Context 1)
+
+-- | Union type related to identification of a key-agreement recipient.
+data KeyAgreeRecipientIdentifier
+    = KeyAgreeRecipientIASN IssuerAndSerialNumber  -- ^ Issuer and Serial Number
+    | KeyAgreeRecipientKI   KeyIdentifier          -- ^ Key identifier
+    deriving (Show,Eq)
+
+instance ASN1Elem e => ProduceASN1Object e KeyAgreeRecipientIdentifier where
+    asn1s (KeyAgreeRecipientIASN iasn) = asn1s iasn
+    asn1s (KeyAgreeRecipientKI   ki)   = asn1Container (Container Context 0)
+                                            (asn1s ki)
+
+instance Monoid e => ParseASN1Object e KeyAgreeRecipientIdentifier where
+    parse = parseIASN <|> parseKI
+      where parseIASN = KeyAgreeRecipientIASN <$> parse
+            parseKI   = KeyAgreeRecipientKI   <$>
+                onNextContainer (Container Context 0) parse
+
+-- | Encrypted key for a recipient in a key-agreement RI.
+data RecipientEncryptedKey = RecipientEncryptedKey
+    { rekRid :: KeyAgreeRecipientIdentifier -- ^ identifier of recipient
+    , rekEncryptedKey :: EncryptedKey       -- ^ encrypted content-encryption key
+    }
+    deriving (Show,Eq)
+
+instance ASN1Elem e => ProduceASN1Object e RecipientEncryptedKey where
+    asn1s RecipientEncryptedKey{..} = asn1Container Sequence (rid . ek)
+      where rid = asn1s rekRid
+            ek  = gOctetString rekEncryptedKey
+
+instance Monoid e => ParseASN1Object e RecipientEncryptedKey where
+    parse = onNextContainer Sequence $ do
+        rid <- parse
+        OctetString ek <- getNext
+        return RecipientEncryptedKey { rekRid = rid, rekEncryptedKey = ek }
+
+findRecipientEncryptedKey :: SignedCertificate
+                          -> [RecipientEncryptedKey]
+                          -> Maybe EncryptedKey
+findRecipientEncryptedKey cert list = rekEncryptedKey <$> find fn list
+  where
+    c = signedObject (getSigned cert)
+    matchIASN iasn =
+        (iasnIssuer iasn, iasnSerial iasn) == (certIssuerDN c, certSerial c)
+    matchSKI ski   =
+        case extensionGet (certExtensions c) of
+            Just (ExtSubjectKeyId idBs) -> idBs == ski
+            Nothing                     -> False
+    fn rek = case rekRid rek of
+                 KeyAgreeRecipientIASN iasn -> matchIASN iasn
+                 KeyAgreeRecipientKI   ki   -> matchSKI (keyIdentifier ki)
+
 -- | Additional information in a 'KeyIdentifier'.
 data OtherKeyAttribute = OtherKeyAttribute
     { keyAttrId :: OID    -- ^ attribute identifier
@@ -163,6 +281,15 @@ data KTRecipientInfo = KTRecipientInfo
     }
     deriving (Show,Eq)
 
+-- | Recipient using key agreement.
+data KARecipientInfo = KARecipientInfo
+    { kaOriginator :: OriginatorIdentifierOrKey           -- ^ identifier of orginator or anonymous key
+    , kaUkm        :: Maybe UserKeyingMaterial            -- ^ user keying material
+    , kaKeyAgreementParams :: KeyAgreementParams          -- ^ key agreement algorithm
+    , kaRecipientEncryptedKeys :: [RecipientEncryptedKey] -- ^ encrypted content-encryption key for one or multiple recipients
+    }
+    deriving (Show,Eq)
+
 -- | Recipient using key encryption.
 data KEKRecipientInfo = KEKRecipientInfo
     { kekId :: KeyIdentifier                        -- ^ identifier of key encryption key
@@ -183,6 +310,8 @@ data PasswordRecipientInfo = PasswordRecipientInfo
 -- the content-encryption key in encrypted form.
 data RecipientInfo = KTRI KTRecipientInfo
                      -- ^ Recipient using key transport
+                   | KARI KARecipientInfo
+                     -- ^ Recipient using key agreement
                    | KEKRI KEKRecipientInfo
                      -- ^ Recipient using key encryption
                    | PasswordRI PasswordRecipientInfo
@@ -197,6 +326,18 @@ instance ASN1Elem e => ProduceASN1Object e RecipientInfo where
         rid = asn1s ktRid
         ktp = algorithmASN1S Sequence ktKeyTransportParams
         ek  = gOctetString ktEncryptedKey
+
+    asn1s (KARI KARecipientInfo{..}) =
+        asn1Container (Container Context 1) (ver . ori . ukm . kap . reks)
+      where
+        ver  = gIntVal 3
+        ori  = asn1Container (Container Context 0) (asn1s kaOriginator)
+        kap  = algorithmASN1S Sequence kaKeyAgreementParams
+        reks = asn1Container Sequence (asn1s kaRecipientEncryptedKeys)
+
+        ukm = case kaUkm of
+                  Nothing -> id
+                  Just bs -> asn1Container (Container Context 1) (gOctetString bs)
 
     asn1s (KEKRI KEKRecipientInfo{..}) =
         asn1Container (Container Context 2) (ver . kid . kep . ek)
@@ -217,6 +358,7 @@ instance ASN1Elem e => ProduceASN1Object e RecipientInfo where
 instance Monoid e => ParseASN1Object e RecipientInfo where
     parse = do
         c <- onNextContainerMaybe Sequence parseKT
+             `orElse` onNextContainerMaybe (Container Context 1) parseKA
              `orElse` onNextContainerMaybe (Container Context 2) parseKEK
              `orElse` onNextContainerMaybe (Container Context 3) parsePassword
         case c of
@@ -233,6 +375,19 @@ instance Monoid e => ParseASN1Object e RecipientInfo where
             return KTRecipientInfo { ktRid = rid
                                    , ktKeyTransportParams = ktp
                                    , ktEncryptedKey = ek
+                                   }
+
+        parseKA = KARI <$> do
+            IntVal 3 <- getNext
+            ori <- onNextContainer (Container Context 0) parse
+            ukm <- onNextContainerMaybe (Container Context 1) $
+                       do { OctetString bs <- getNext; return bs }
+            kap <- parseAlgorithm Sequence
+            reks <- onNextContainer Sequence parse
+            return KARecipientInfo { kaOriginator = ori
+                                   , kaUkm = ukm
+                                   , kaKeyAgreementParams = kap
+                                   , kaRecipientEncryptedKeys = reks
                                    }
 
         parseKEK = KEKRI <$> do
@@ -257,11 +412,13 @@ instance Monoid e => ParseASN1Object e RecipientInfo where
 
 isVersion0 :: RecipientInfo -> Bool
 isVersion0 (KTRI x)       = getKTVersion (ktRid x) == 0
+isVersion0 (KARI _)       = False      -- because version is always 3
 isVersion0 (KEKRI _)      = False      -- because version is always 4
 isVersion0 (PasswordRI _) = True       -- because version is always 0
 
 isPwriOri :: RecipientInfo -> Bool
 isPwriOri (KTRI _)       = False
+isPwriOri (KARI _)       = False
 isPwriOri (KEKRI _)      = False
 isPwriOri (PasswordRI _) = True
 
@@ -354,11 +511,67 @@ withRecipientKeyTrans privKey (KTRI KTRecipientInfo{..}) =
     transportDecrypt ktKeyTransportParams privKey ktEncryptedKey
 withRecipientKeyTrans _ _ = pure (Left "Not a KT recipient")
 
+-- | Generate a Key Agreement recipient from a certificate and
+-- desired algorithm.  The recipient info will contain an ephemeral public key.
+--
+-- This function can be used as parameter to 'Crypto.Store.CMS.envelopData'.
+--
+-- To avoid decreasing the security strength, Key Encryption parameters should
+-- use a key size equal or greater than the content encryption key.
+forKeyAgreeRecipient :: MonadRandom m
+                     => SignedCertificate -> KeyAgreementParams -> ProducerOfRI m
+forKeyAgreeRecipient cert params inkey = do
+    ephemeral <- ecdhGenerate (certPubKey obj)
+    case ephemeral of
+        Right (curve, d, sp) -> do
+            let SerializedPoint pt = getSerializedPoint curve d
+                aPub = OriginatorPublicKeyEC [] (toBitArray pt 0)
+            ek <- ecdhEncrypt params Nothing curve d sp inkey
+            return (KARI . build aPub <$> ek)
+        Left err -> return $ Left err
+  where
+    obj = signedObject (getSigned cert)
+    isn = IssuerAndSerialNumber (certIssuerDN obj) (certSerial obj)
+
+    makeREK ek = RecipientEncryptedKey
+                     { rekRid = KeyAgreeRecipientIASN isn
+                     , rekEncryptedKey = ek
+                     }
+
+    build aPub ek =
+        KARecipientInfo
+            { kaOriginator = OriginatorPublic aPub
+            , kaUkm = Nothing
+            , kaKeyAgreementParams = params
+            , kaRecipientEncryptedKeys = [ makeREK ek ]
+            }
+
+-- | Use a Key Agreement recipient, knowing the recipient private key.  The
+-- recipient certificate is also required to locate which encrypted key to use.
+--
+-- This function can be used as parameter to
+-- 'Crypto.Store.CMS.openEnvelopedData'.
+withRecipientKeyAgree :: MonadRandom m => PrivKey -> SignedCertificate -> ConsumerOfRI m
+withRecipientKeyAgree (PrivKeyEC priv) cert (KARI KARecipientInfo{..}) =
+    case kaOriginator of
+        OriginatorPublic (OriginatorPublicKeyEC _ ba) ->
+            case findRecipientEncryptedKey cert kaRecipientEncryptedKeys of
+                Nothing -> pure (Left "Recipient key not found")
+                Just ek ->
+                    let pub = SerializedPoint (bitArrayGetData ba)
+                     in pure (ecdhDecrypt kaKeyAgreementParams kaUkm priv pub ek)
+        _ -> pure (Left "Unsupported KA originator format")
+withRecipientKeyAgree _ _ (KARI _) = pure (Left "Unsupported private key")
+withRecipientKeyAgree _ _ _        = pure (Left "Not a KA recipient")
+
 -- | Generate a Key Encryption Key recipient from a key encryption key and
 -- desired algorithm.  The recipient may identify the KEK that was used with
 -- the supplied identifier.
 --
 -- This function can be used as parameter to 'Crypto.Store.CMS.envelopData'.
+--
+-- To avoid decreasing the security strength, Key Encryption parameters should
+-- use a key size equal or greater than the content encryption key.
 forKeyRecipient :: MonadRandom m
                 => KeyEncryptionKey
                 -> KeyIdentifier

@@ -331,6 +331,21 @@ instance Arbitrary KeyIdentifier where
         kid <- arbitrarySmall
         KeyIdentifier kid Nothing <$> arbitrary
 
+arbitraryAgreeParams :: KeyEncryptionParams -> Gen KeyAgreementParams
+arbitraryAgreeParams alg = oneof
+    [ flip StdDH alg <$> arbitraryDigest
+    , flip CofactorDH alg <$> arbitraryDigest
+    ]
+  where
+    arbitraryDigest =
+        elements
+            [ DigestType SHA1
+            , DigestType SHA224
+            , DigestType SHA256
+            , DigestType SHA384
+            , DigestType SHA512
+            ]
+
 arbitraryEnvDev :: ContentEncryptionKey
                 -> Gen ([ProducerOfRI Gen], ConsumerOfRI Gen)
 arbitraryEnvDev cek = sized $ \n -> do
@@ -340,7 +355,7 @@ arbitraryEnvDev cek = sized $ \n -> do
     return (envFns, devFn)
   where
     len     = B.length cek
-    onePair = oneof [ arbitraryKT, arbitraryKEK, arbitraryPW ]
+    onePair = oneof [ arbitraryKT, arbitraryKA, arbitraryKEK, arbitraryPW ]
 
     arbitraryKT = do
         (pub, priv) <- arbitraryLargeRSA
@@ -348,6 +363,14 @@ arbitraryEnvDev cek = sized $ \n -> do
         ktp  <- arbitrary
         let envFn = forKeyTransRecipient cert ktp
             devFn = withRecipientKeyTrans (PrivKeyRSA priv)
+        return (envFn, devFn)
+
+    arbitraryKA = do
+        (pub, priv) <- arbitraryNamedEC
+        cert <- arbitrarySignedCertificate (PubKeyEC pub)
+        kap  <- arbitraryAlg >>= arbitraryAgreeParams
+        let envFn = forKeyAgreeRecipient cert kap
+            devFn = withRecipientKeyAgree (PrivKeyEC priv) cert
         return (envFn, devFn)
 
     arbitraryKEK = do

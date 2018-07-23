@@ -6,6 +6,7 @@ import Control.Monad
 import qualified Data.ByteString as B
 import           Data.String (fromString)
 import           Data.Maybe (isNothing)
+import           Data.X509.File (readSignedObject)
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -73,6 +74,7 @@ envelopedDataTests :: TestTree
 envelopedDataTests =
     testGroup "EnvelopedData"
         [ testKT "KTRI" path3
+        , testKA "KARI" path4
         , test "KEKRI" path1 withRecipientKey
         , test "PWRI" path2 (\_ -> withRecipientPassword pwd)
         ]
@@ -93,7 +95,7 @@ envelopedDataTests =
             [Unprotected priv] <- readKeyFile rsaPath
 
             cms <- readCMSFile path
-            assertEqual "unexpected parse count" (2 * length keys) (length cms)
+            assertEqual "unexpected parse count" (length modes * length keys) (length cms)
 
             let pairs = [ (c, m) | c <- map fst keys, m <- modes ]
             forM_ (zip pairs cms) $ \((c, m), ci) -> do
@@ -102,9 +104,26 @@ envelopedDataTests =
                 let EnvelopedDataCI ev = ci
                 result <- openEnvelopedData (withRecipientKeyTrans priv) ev
                 assertRight result (verifyInnerMessage message)
+        testKA caseName path = testCaseSteps caseName $ \step -> do
+            let ecdsaKeyPath  = testFile "ecdsa-p256-unencrypted-pkcs8.pem"
+                ecdsaCertPath = testFile "ecdsa-p256-self-signed-cert.pem"
+            [Unprotected priv] <- readKeyFile ecdsaKeyPath
+            [cert] <- readSignedObject ecdsaCertPath
+
+            cms <- readCMSFile path
+            assertEqual "unexpected parse count" (length mds * length keys) (length cms)
+
+            let pairs = [ (c, h) | c <- map fst keys, h <- mds ]
+            forM_ (zip pairs cms) $ \((c, h), ci) -> do
+                step ("testing " ++ c ++ " with " ++ h)
+                assertBool "unexpected type" (hasType EnvelopedDataType ci)
+                let EnvelopedDataCI ev = ci
+                result <- openEnvelopedData (withRecipientKeyAgree priv cert) ev
+                assertRight result (verifyInnerMessage message)
         path1 = testFile "cms-enveloped-kekri-data.pem"
         path2 = testFile "cms-enveloped-pwri-data.pem"
         path3 = testFile "cms-enveloped-ktri-data.pem"
+        path4 = testFile "cms-enveloped-kari-data.pem"
         pwd   = fromString "dontchangeme"
         keys  = [ ("3DES_CBC",             testKey 24)
                 , ("AES128_CBC",           testKey 16)
@@ -120,7 +139,12 @@ envelopedDataTests =
         modes = [ "RSAES-PKCS1"
                 , "RSAES-OAEP"
                 ]
-
+        mds   = [ "SHA1"
+                , "SHA224"
+                , "SHA256"
+                , "SHA384"
+                , "SHA512"
+                ]
 
 digestedDataTests :: TestTree
 digestedDataTests =
