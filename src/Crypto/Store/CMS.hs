@@ -56,7 +56,7 @@ module Crypto.Store.CMS
     , withRecipientKeyTrans
     -- ** Key Encryption Key recipients
     , KEKRecipientInfo(..)
-    , KEKIdentifier(..)
+    , KeyIdentifier(..)
     , OtherKeyAttribute(..)
     , KeyEncryptionKey
     , forKeyRecipient

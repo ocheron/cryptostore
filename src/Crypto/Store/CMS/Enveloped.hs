@@ -24,7 +24,7 @@ module Crypto.Store.CMS.Enveloped
     -- * Key Encryption Key recipients
     , KeyEncryptionKey
     , KEKRecipientInfo(..)
-    , KEKIdentifier(..)
+    , KeyIdentifier(..)
     , OtherKeyAttribute(..)
     , forKeyRecipient
     , withRecipientKey
@@ -111,7 +111,7 @@ instance Monoid e => ParseASN1Object e IssuerAndSerialNumber where
                                      , iasnSerial = s
                                      }
 
--- | Additional information in a 'KEKIdentifier'.
+-- | Additional information in a 'KeyIdentifier'.
 data OtherKeyAttribute = OtherKeyAttribute
     { keyAttrId :: OID    -- ^ attribute identifier
     , keyAttr   :: [ASN1] -- ^ attribute value
@@ -129,30 +129,30 @@ instance Monoid e => ParseASN1Object e OtherKeyAttribute where
         attr <- getMany getNext
         return OtherKeyAttribute { keyAttrId = attrId, keyAttr = attr }
 
--- | Key Encryption Key identifier and optional attributes.
-data KEKIdentifier = KEKIdentifier
-    { kekKeyIdentifier :: ByteString      -- ^ identifier of the key
-    , kekDate :: Maybe DateTime           -- ^ optional timestamp
-    , kekOther :: Maybe OtherKeyAttribute -- ^ optional information
+-- | Key identifier and optional attributes.
+data KeyIdentifier = KeyIdentifier
+    { keyIdentifier :: ByteString         -- ^ identifier of the key
+    , keyDate :: Maybe DateTime           -- ^ optional timestamp
+    , keyOther :: Maybe OtherKeyAttribute -- ^ optional information
     }
     deriving (Show,Eq)
 
-instance ASN1Elem e => ProduceASN1Object e KEKIdentifier where
-    asn1s KEKIdentifier{..} = asn1Container Sequence (keyId . date . other)
+instance ASN1Elem e => ProduceASN1Object e KeyIdentifier where
+    asn1s KeyIdentifier{..} = asn1Container Sequence (keyId . date . other)
       where
-        keyId = gOctetString kekKeyIdentifier
-        date  = optASN1S kekDate $ \v -> gASN1Time TimeGeneralized v Nothing
-        other = optASN1S kekOther asn1s
+        keyId = gOctetString keyIdentifier
+        date  = optASN1S keyDate $ \v -> gASN1Time TimeGeneralized v Nothing
+        other = optASN1S keyOther asn1s
 
-instance Monoid e => ParseASN1Object e KEKIdentifier where
+instance Monoid e => ParseASN1Object e KeyIdentifier where
     parse = onNextContainer Sequence $ do
         OctetString keyId <- getNext
         date <- getNextMaybe dateTimeOrNothing
         b <- hasNext
         other <- if b then Just <$> parse else return Nothing
-        return KEKIdentifier { kekKeyIdentifier = keyId
-                             , kekDate = date
-                             , kekOther = other
+        return KeyIdentifier { keyIdentifier = keyId
+                             , keyDate = date
+                             , keyOther = other
                              }
 
 -- | Recipient using key transport.
@@ -165,7 +165,7 @@ data KTRecipientInfo = KTRecipientInfo
 
 -- | Recipient using key encryption.
 data KEKRecipientInfo = KEKRecipientInfo
-    { kekId :: KEKIdentifier                        -- ^ identifier of key encryption key
+    { kekId :: KeyIdentifier                        -- ^ identifier of key encryption key
     , kekKeyEncryptionParams :: KeyEncryptionParams -- ^ key encryption algorithm
     , kekEncryptedKey :: EncryptedKey               -- ^ encrypted content-encryption key
     }
@@ -361,7 +361,7 @@ withRecipientKeyTrans _ _ = pure (Left "Not a KT recipient")
 -- This function can be used as parameter to 'Crypto.Store.CMS.envelopData'.
 forKeyRecipient :: MonadRandom m
                 => KeyEncryptionKey
-                -> KEKIdentifier
+                -> KeyIdentifier
                 -> KeyEncryptionParams
                 -> ProducerOfRI m
 forKeyRecipient key kid params inkey = do

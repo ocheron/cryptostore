@@ -326,10 +326,10 @@ instance Arbitrary OtherKeyAttribute where
         vals <- resize 3 $ listOf1 (OctetString <$> arbitrarySmall)
         return OtherKeyAttribute { keyAttrId = oid, keyAttr = vals }
 
-instance Arbitrary KEKIdentifier where
+instance Arbitrary KeyIdentifier where
     arbitrary = do
         kid <- arbitrarySmall
-        KEKIdentifier kid Nothing <$> arbitrary
+        KeyIdentifier kid Nothing <$> arbitrary
 
 arbitraryEnvDev :: ContentEncryptionKey
                 -> Gen ([ProducerOfRI Gen], ConsumerOfRI Gen)
