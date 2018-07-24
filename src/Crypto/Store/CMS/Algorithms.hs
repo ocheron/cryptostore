@@ -1182,7 +1182,7 @@ wrapEncrypt encFn cipher iv input = do
     sz = blockSize cipher
     fn formatted =
         let firstPass = encFn cipher iv formatted
-            lastBlock = B.drop (B.length firstPass - sz) firstPass
+            lastBlock = B.dropView firstPass (B.length firstPass - sz)
             Just iv'  = makeIV lastBlock
          in encFn cipher iv' firstPass
 
@@ -1194,7 +1194,7 @@ wrapDecrypt decFn cipher iv input = keyUnwrap (decFn cipher iv firstPass)
     sz = blockSize cipher
     (beg, lb) = B.splitAt (B.length input - sz) input
     lastBlock = decFn cipher iv' lb
-    Just iv'  = makeIV (B.drop (B.length beg - sz) beg)
+    Just iv'  = makeIV (B.dropView beg (B.length beg - sz))
     Just iv'' = makeIV lastBlock
     firstPass = decFn cipher iv'' beg `B.append` lastBlock
 
