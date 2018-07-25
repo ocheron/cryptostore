@@ -199,6 +199,7 @@ instance AlgorithmId DigestType where
 
     parseParameter p = getNextMaybe nullOrNothing >> return p
 
+-- | Compute the digest of a message.
 digest :: ByteArrayAccess message => DigestType -> message -> ByteString
 digest (DigestType hashAlg) message = B.convert (doHash hashAlg message)
 

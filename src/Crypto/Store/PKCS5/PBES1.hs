@@ -13,7 +13,6 @@ module Crypto.Store.PKCS5.PBES1
     ( PBEParameter(..)
     , Key
     , pkcs5
-    , pbkdf1
     , pkcs12
     , pkcs12stream
     , rc4Combine
@@ -45,6 +44,7 @@ import Crypto.Store.ASN1.Generate
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Util
 
+-- | Secret key.
 type Key = B.ScrubbedBytes
 
 -- | PBES1 parameters.
@@ -93,6 +93,8 @@ toUCS2 pwdUTF8
 
 -- PBES1, RFC 8018 section 6.1.2
 
+-- | Apply PBKDF1 on the specified password and run an encryption or decryption
+-- function on some input using derived key and IV.
 pkcs5 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
       => (String -> result)
       -> (Key -> ContentEncryptionParams -> ByteString -> result)
@@ -131,6 +133,8 @@ pbkdf1 hashAlg pwd PBEParameter{..} dkLen
 
 -- PKCS#12 encryption, RFC 7292 appendix B.2
 
+-- | Apply PKCS #12 derivation on the specified password and run an encryption
+-- or decryption function on some input using derived key and IV.
 pkcs12 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
        => (String -> result)
        -> (Key -> ContentEncryptionParams -> ByteString -> result)
@@ -151,6 +155,9 @@ pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
                 key     = pkcs12Derive hashAlg pbeParam 1 pwdUCS2 keyLen :: Key
             in encdec key eScheme bs
 
+-- | Apply PKCS #12 derivation on the specified password and run an encryption
+-- or decryption function on some input using derived key.  This variant does
+-- not derive any IV and is required for RC4.
 pkcs12stream :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
              => (String -> result)
              -> (Key -> ByteString -> result)
