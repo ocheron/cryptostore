@@ -6,6 +6,7 @@
 -- Portability : unknown
 --
 -- Password-Based Encryption Schemes
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -26,18 +27,18 @@ import qualified Basement.String as S
 import           Crypto.Cipher.Types
 import qualified Crypto.Cipher.RC4 as RC4
 import qualified Crypto.Hash as Hash
-import           Crypto.Number.Serialize (i2ospOf_, os2ip)
 
 import           Data.ASN1.Types
+import           Data.Bits
 import           Data.ByteArray (ByteArray, ByteArrayAccess)
 import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import           Data.Maybe (fromMaybe)
 import           Data.Memory.PtrMethods
 import           Data.Word
 
 import           Foreign.Ptr (plusPtr)
+import           Foreign.Storable
 
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.ASN1.Generate
@@ -194,9 +195,6 @@ pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
     p = pwdUCS2 `extendedToMult` v
     s = pbeSalt `extendedToMult` v
 
-    add1 :: ByteString -> ByteString -> ByteString
-    x `add1` y = BS.tail $ i2ospOf_ (v + 1) (os2ip x + os2ip y + 1)
-
     loop :: Hash.HashAlgorithm hash => hash -> ByteString -> [Hash.Digest hash]
     loop h i = let z  = Hash.hashFinalize (Hash.hashUpdate (Hash.hashUpdate (Hash.hashInitWith h) d) i)
                    ai = iterate (Hash.hashWith h) z !! pred pbeIterationCount
@@ -241,3 +239,48 @@ bs `extendedToMult` n
     | otherwise = B.empty
   where
     len = B.length bs
+
+-- Add two bytearrays (considered as big-endian integers) and increment the
+-- result.  Output has size of the first bytearray.
+add1 :: ByteString -> ByteString -> ByteString
+add1 a b =
+    B.allocAndFreeze alen $ \pc ->
+        B.withByteArray a $ \pa ->
+        B.withByteArray b $ \pb ->
+            loop3 pa pb pc alen blen 1
+  where
+    alen = B.length a
+    blen = B.length b
+
+    -- main loop when both 'a' and 'b' have remaining bytes
+    loop3 !pa !pb !pc !ma !mb !c 
+        | ma == 0   = return ()
+        | mb == 0   = loop2 pa pc ma c
+        | otherwise = do
+            let na = pred ma
+                nb = pred mb
+            ba <- peekElemOff pa na
+            bb <- peekElemOff pb nb
+            let (cc, bc) = carryAdd3 c ba bb
+            pokeElemOff pc na bc
+            loop3 pa pb pc na nb cc
+
+    -- when 'b' is smaller and bytes are exhausted we propagate
+    -- carry on 'a' alone
+    loop2 !pa !pc !ma !c
+        | ma == 0   = return ()
+        | otherwise = do
+            let na = pred ma
+            ba <- peekElemOff pa na
+            let (cc, bc) = carryAdd2 c ba
+            pokeElemOff pc na bc
+            loop2 pa pc na cc
+
+split16 :: Word16 -> (Word8, Word8)
+split16 x = (fromIntegral (shiftR x 8), fromIntegral x)
+
+carryAdd2 :: Word8 -> Word8 -> (Word8, Word8)
+carryAdd2 a b = split16 (fromIntegral a + fromIntegral b)
+
+carryAdd3 :: Word8 -> Word8 -> Word8 -> (Word8, Word8)
+carryAdd3 a b c = split16 (fromIntegral a + fromIntegral b + fromIntegral c)
