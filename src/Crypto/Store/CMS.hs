@@ -39,6 +39,7 @@ module Crypto.Store.CMS
     , certSigner
     , withPublicKey
     , withSignerKey
+    , withSignerCertificate
     -- * Enveloped data
     , EncryptedKey
     , KeyEncryptionParams(..)

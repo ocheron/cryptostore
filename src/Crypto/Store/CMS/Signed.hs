@@ -19,6 +19,7 @@ module Crypto.Store.CMS.Signed
     , certSigner
     , withPublicKey
     , withSignerKey
+    , withSignerCertificate
     ) where
 
 import Control.Applicative
@@ -117,21 +118,28 @@ instance Monoid e => ParseASN1Object e SignerIdentifier where
                 onNextContainer (Container Context 0) parseBS
             parseBS = do { OctetString bs <- getNext; return bs }
 
--- | Try to find a certificate with the specified identifier and return its
--- public key when found.
-findSigner :: SignerIdentifier -> [SignedCertificate] -> Maybe PubKey
+-- | Try to find a certificate with the specified identifier.
+findSigner :: SignerIdentifier
+           -> [SignedCertificate]
+           -> Maybe (SignedCertificate, [SignedCertificate])
 findSigner (SignerIASN iasn) certs =
-    certPubKey <$> find matchIASN (map (signedObject . getSigned) certs)
+    partitionHead (matchIASN . signedObject . getSigned) certs
   where
     matchIASN c =
         (iasnIssuer iasn, iasnSerial iasn) == (certIssuerDN c, certSerial c)
 findSigner (SignerSKI  ski) certs =
-    certPubKey <$> find matchSKI (map (signedObject . getSigned) certs)
+    partitionHead (matchSKI. signedObject . getSigned) certs
   where
     matchSKI c =
         case extensionGet (certExtensions c) of
             Just (ExtSubjectKeyId idBs) -> idBs == ski
             Nothing                     -> False
+
+partitionHead :: (a -> Bool) -> [a] -> Maybe (a, [a])
+partitionHead p l =
+    case partition p l of
+        (x : _, r) -> Just (x, r)
+        ([]   , _)    -> Nothing
 
 -- | Function able to produce a 'SignerInfo'.
 type ProducerOfSI m = ContentType -> ByteString -> m (Either String (SignerInfo, [CertificateChoice], [RevocationInfoChoice]))
@@ -206,11 +214,25 @@ withPublicKey pub ct msg SignerInfo{..} _ _ = pure $
 -- valid.  All transmitted certificates are implicitely trusted and all CRLs are
 -- ignored.
 withSignerKey :: Applicative f => ConsumerOfSI f
-withSignerKey ct msg SignerInfo{..} certs crls =
-    case findSigner siSignerId x509Certificates of
-        Just pub -> withPublicKey pub ct msg SignerInfo{..} certs crls
-        Nothing  -> pure False
+withSignerKey = withSignerCertificate (\_ -> pure True)
+
+-- | Verify that the signature is valid with one of the X.509 certificates
+-- contained in the signed data, and verify that the signer certificate is valid
+-- using the validation function supplied.  All CRLs are ignored.
+withSignerCertificate :: Applicative f
+                      => (CertificateChain -> f Bool) -> ConsumerOfSI f
+withSignerCertificate validate ct msg SignerInfo{..} certs crls =
+    case getCertificateChain of
+        Just chain -> validate chain
+        Nothing    -> pure False
   where
+    getCertificateChain = do
+        (cert, others) <- findSigner siSignerId x509Certificates
+        let pub = certPubKey $ signedObject $ getSigned cert
+        validSignature <- withPublicKey pub ct msg SignerInfo{..} certs crls
+        guard validSignature
+        return $ CertificateChain (cert : others)
+
     x509Certificates = mapMaybe asX509 certs
 
     asX509 (CertificateCertificate c) = Just c
