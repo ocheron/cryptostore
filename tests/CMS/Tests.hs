@@ -60,7 +60,7 @@ signedDataTests =
             step ("verifying " ++ name)
             assertBool "unexpected type" (hasType SignedDataType ci)
             let SignedDataCI sd = ci
-                result = verifySignedData withSignerKey sd
+            result <- verifySignedData withSignerKey sd
             assertJust result (verifyInnerMessage message)
   where path  = testFile "cms-signed-data.pem"
         names = [ "RSA"
@@ -241,7 +241,8 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
             (sigFns, verFn) <- scale succ (arbitrarySigVer alg)
             r <- signData sigFns ci
             let Right (SignedDataCI sd) = r
-            return (Just ci === verifySignedData verFn sd)
+            r' <- verifySignedData verFn sd
+            return (Just ci === r')
     , testProperty "enveloping" $ \alg ci ->
         collect alg $ do
             (oinfo, key, envFns, devFn, attrs) <- getCommon alg

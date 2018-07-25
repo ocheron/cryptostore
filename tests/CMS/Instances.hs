@@ -187,7 +187,7 @@ arbitraryKeyPair (ECDSA _) = do
     (pub, priv) <- arbitraryNamedEC
     return (PubKeyEC pub, PrivKeyEC priv)
 
-arbitrarySigVer :: SignatureAlg -> Gen ([ProducerOfSI Gen], ConsumerOfSI)
+arbitrarySigVer :: SignatureAlg -> Gen ([ProducerOfSI Gen], ConsumerOfSI Gen)
 arbitrarySigVer alg = sized $ \n -> do
     (sigFn, verFn) <- onePair
     otherPairs <- resize (min (pred n) 3) $ listOf onePair

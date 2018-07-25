@@ -404,14 +404,15 @@ signData sigFns ci =
 -- | Verify a signed content info using the specified 'ConsumerOfSI' function.
 -- Verification of at least one signer info must be successful in order to
 -- return the inner content info.
-verifySignedData :: ConsumerOfSI -> SignedData -> Maybe ContentInfo
-verifySignedData verFn SignedData{..}
-    | any valid sdSignerInfos = Just sdContentInfo
-    | otherwise               = Nothing
+verifySignedData :: Monad m
+                 => ConsumerOfSI m -> SignedData -> m (Maybe ContentInfo)
+verifySignedData verFn SignedData{..} =
+    f <$> siAttemps valid sdSignerInfos
   where
     msg      = encapsulate sdContentInfo
     ct       = getContentType sdContentInfo
     valid si = verFn ct msg si sdCertificates sdCRLs
+    f bool   = if bool then Just sdContentInfo else Nothing
 
 
 -- Utilities
@@ -426,3 +427,8 @@ riAttempts list     = loop list
 
     orTail xs (Left _)  = loop xs
     orTail _  success   = return success
+
+siAttemps :: Monad m => (a -> m Bool) -> [a] -> m Bool
+siAttemps _ []     = pure False
+siAttemps f (x:xs) = f x >>= orTail
+  where orTail bool = if bool then return True else siAttemps f xs

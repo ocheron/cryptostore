@@ -137,7 +137,7 @@ findSigner (SignerSKI  ski) certs =
 type ProducerOfSI m = ContentType -> ByteString -> m (Either String (SignerInfo, [CertificateChoice], [RevocationInfoChoice]))
 
 -- | Function able to consume a 'SignerInfo'.
-type ConsumerOfSI = ContentType -> ByteString -> SignerInfo -> [CertificateChoice] -> [RevocationInfoChoice] -> Bool
+type ConsumerOfSI m = ContentType -> ByteString -> SignerInfo -> [CertificateChoice] -> [RevocationInfoChoice] -> m Bool
 
 -- | Create a signer info with the specified signature algorithm and
 -- credentials.
@@ -187,8 +187,8 @@ certSigner alg priv (CertificateChain chain) sAttrsM uAttrs ct msg =
 
 -- | Verify that the signature was produced from the specified public key.
 -- Ignores all certificates and CRLs contained in the signed data.
-withPublicKey :: PubKey -> ConsumerOfSI
-withPublicKey pub ct msg SignerInfo{..} _ _ =
+withPublicKey :: Applicative f => PubKey -> ConsumerOfSI f
+withPublicKey pub ct msg SignerInfo{..} _ _ = pure $
     fromMaybe False $ do
         guard (noAttr || attrMatch)
         alg <- signatureCheckHash siDigestAlgorithm siSignatureAlg
@@ -205,11 +205,11 @@ withPublicKey pub ct msg SignerInfo{..} _ _ =
 -- contained in the signed data, but does not validate that the certificates are
 -- valid.  All transmitted certificates are implicitely trusted and all CRLs are
 -- ignored.
-withSignerKey :: ConsumerOfSI
+withSignerKey :: Applicative f => ConsumerOfSI f
 withSignerKey ct msg SignerInfo{..} certs crls =
-    fromMaybe False $ do
-        pub <- findSigner siSignerId x509Certificates
-        return (withPublicKey pub ct msg SignerInfo{..} certs crls)
+    case findSigner siSignerId x509Certificates of
+        Just pub -> withPublicKey pub ct msg SignerInfo{..} certs crls
+        Nothing  -> pure False
   where
     x509Certificates = mapMaybe asX509 certs
 
