@@ -183,7 +183,7 @@ pkcs12Derive :: (Hash.HashAlgorithm hash, ByteArray bout)
              -> Int
              -> bout
 pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
-    B.take n $ B.concat $ take c $ loop a (s `B.append` p)
+    B.take n $ B.concat $ take c $ loop t (s `B.append` p)
   where
     a = hashFromProxy hashAlg
     v = 64 -- always 512 bits, we're using only SHA1
@@ -191,16 +191,18 @@ pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
 
     c = (n + u - 1) `div` u
     d = B.replicate v idByte :: B.Bytes
+    t = Hash.hashUpdate (Hash.hashInitWith a) d
 
     p = pwdUCS2 `extendedToMult` v
     s = pbeSalt `extendedToMult` v
 
-    loop :: Hash.HashAlgorithm hash => hash -> ByteString -> [Hash.Digest hash]
-    loop h i = let z  = Hash.hashFinalize (Hash.hashUpdate (Hash.hashUpdate (Hash.hashInitWith h) d) i)
-                   ai = iterate (Hash.hashWith h) z !! pred pbeIterationCount
+    loop :: Hash.HashAlgorithm hash
+         => Hash.Context hash -> ByteString -> [Hash.Digest hash]
+    loop x i = let z  = Hash.hashFinalize (Hash.hashUpdate x i)
+                   ai = iterate Hash.hash z !! pred pbeIterationCount
                    b  = ai `extendedTo` v
                    j  = B.concat $ map (add1 b) (chunks v i)
-                in ai : loop h j
+                in ai : loop x j
 
 hashFromProxy :: proxy a -> a
 hashFromProxy _ = undefined
