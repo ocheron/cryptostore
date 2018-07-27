@@ -8,10 +8,16 @@ license-file:        LICENSE
 author:              Olivier Chéron
 maintainer:          olivier.cheron@gmail.com
 copyright:           Olivier Chéron
-category:            Cryptography
+category:            Cryptography, Codec
+homepage:            https://github.com/ocheron/cryptostore
+bug-reports:         https://github.com/ocheron/cryptostore/issues
 build-type:          Simple
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/ocheron/cryptostore
 
 library
   hs-source-dirs:      src
