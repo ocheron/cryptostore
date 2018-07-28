@@ -263,7 +263,7 @@ instance ProduceASN1Object ASN1P AuthenticatedData where
         ver = gIntVal v
         ris = asn1Container Set (asn1s adRecipientInfos)
         alg = algorithmASN1S Sequence adMACAlgorithm
-        dig = maybe id (algorithmASN1S (Container Context 1)) adDigestAlgorithm
+        dig = algorithmMaybeASN1S (Container Context 1) adDigestAlgorithm
         ci  = encapsulatedContentInfoASN1S adContentInfo
         aa  = attributesASN1S(Container Context 2) adAuthAttrs
         tag = gOctetString (B.convert adMAC)

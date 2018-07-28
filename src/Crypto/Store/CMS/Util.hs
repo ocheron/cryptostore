@@ -21,7 +21,6 @@ module Crypto.Store.CMS.Util
     -- * Object Identifiers
     , OIDTable
     , lookupOID
-    , lookupByOID
     , Enumerable(..)
     , OIDNameableWrapper(..)
     , withObjectID

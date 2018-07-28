@@ -70,7 +70,6 @@ test-suite test-cryptostore
                      , X509.Instances
   build-depends:       base >= 4.9 && < 5
                      , bytestring
-                     , basement
                      , asn1-types >= 0.3.1 && < 0.4
                      , cryptonite >= 0.25
                      , memory

@@ -36,13 +36,12 @@ module Crypto.Store.CMS.Algorithms
     , contentEncrypt
     , contentDecrypt
     , AuthContentEncryptionAlg(..)
-    , AuthContentEncryptionParams(..)
+    , AuthContentEncryptionParams
     , generateAuthEnc128Params
     , generateAuthEnc256Params
     , generateChaChaPoly1305Params
     , generateCCMParams
     , generateGCMParams
-    , getAuthContentEncryptionAlg
     , authContentEncrypt
     , authContentDecrypt
     , PBKDF2_PRF(..)

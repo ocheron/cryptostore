@@ -3,7 +3,6 @@
 module CMS.Instances
     ( arbitraryPassword
     , arbitraryAttributes
-    , arbitraryKeyPair
     , arbitrarySigVer
     , arbitraryEnvDev
     ) where
