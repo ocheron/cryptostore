@@ -32,3 +32,6 @@ instance Arbitrary EncryptionScheme where
 
 instance Arbitrary PrivateKeyFormat where
     arbitrary = elements [ TraditionalFormat, PKCS8Format ]
+
+instance Arbitrary a => Arbitrary (FormattedKey a) where
+    arbitrary = FormattedKey <$> arbitrary <*> arbitrary

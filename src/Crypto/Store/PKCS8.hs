@@ -17,6 +17,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Crypto.Store.PKCS8
     ( readKeyFile
     , readKeyFileFromMemory
@@ -29,6 +30,7 @@ module Crypto.Store.PKCS8
     , encryptKeyToPEM
     -- * Serialization formats
     , PrivateKeyFormat(..)
+    , FormattedKey(..)
     -- * Password-based protection
     , Password
     , OptProtected(..)
@@ -114,12 +116,11 @@ pemToKey acc pem =
 
   where
     run p = either (const Nothing) Just . runParseASN1 p
-    both build = build <$> parseBoth
 
-    allTypes  = rsa <|> dsa <|> ecdsa
-    rsa       = both X509.PrivKeyRSA
-    dsa       = both (X509.PrivKeyDSA . DSA.toPrivateKey)
-    ecdsa     = both X509.PrivKeyEC
+    allTypes  = unFormat <$> parse
+    rsa       = X509.PrivKeyRSA . unFormat <$> parse
+    dsa       = X509.PrivKeyDSA . DSA.toPrivateKey . unFormat <$> parse
+    ecdsa     = X509.PrivKeyEC . unFormat <$> parse
     encrypted = inner . decrypt <$> parse
 
     getParser "PRIVATE KEY"           = Unprotected <$> allTypes
@@ -182,22 +183,28 @@ keyToPEM PKCS8Format       = keyToModernPEM
 keyToTraditionalPEM :: X509.PrivKey -> PEM
 keyToTraditionalPEM privKey =
     mkPEM (typeTag ++ " PRIVATE KEY") (encodeASN1S asn1)
+  where (typeTag, asn1) = traditionalPrivKeyASN1S privKey
+
+traditionalPrivKeyASN1S :: ASN1Elem e => X509.PrivKey -> (String, ASN1Stream e)
+traditionalPrivKeyASN1S privKey =
+    case privKey of
+        X509.PrivKeyRSA k -> ("RSA", traditional k)
+        X509.PrivKeyDSA k -> ("DSA", traditional (dsaPrivToPair k))
+        X509.PrivKeyEC  k -> ("EC",  traditional k)
   where
-    (typeTag, asn1)  =
-        case privKey of
-            X509.PrivKeyRSA k -> ("RSA", traditional k)
-            X509.PrivKeyDSA k -> ("DSA", traditional (dsaPrivToPair k))
-            X509.PrivKeyEC  k -> ("EC",  traditional k)
     traditional a = asn1s (Traditional a)
 
 keyToModernPEM :: X509.PrivKey -> PEM
 keyToModernPEM privKey = mkPEM "PRIVATE KEY" (encodeASN1S asn1)
+  where asn1 = modernPrivKeyASN1S privKey
+
+modernPrivKeyASN1S :: ASN1Elem e => X509.PrivKey -> ASN1Stream e
+modernPrivKeyASN1S privKey =
+    case privKey of
+        X509.PrivKeyRSA k -> modern k
+        X509.PrivKeyDSA k -> modern (dsaPrivToPair k)
+        X509.PrivKeyEC  k -> modern k
   where
-    asn1 =
-        case privKey of
-            X509.PrivKeyRSA k -> modern k
-            X509.PrivKeyDSA k -> modern (dsaPrivToPair k)
-            X509.PrivKeyEC  k -> modern k
     modern a = asn1s (Modern a)
 
 -- | Generate a PKCS #8 encrypted PEM for a private key.
@@ -232,12 +239,59 @@ parseTraditional = unTraditional <$> parse
 parseModern :: ParseASN1Object e (Modern a) => ParseASN1 e a
 parseModern = unModern <$> parse
 
-parseBoth :: (ParseASN1Object e (Traditional a), ParseASN1Object e (Modern a))
-          => ParseASN1 e a
-parseBoth = parseTraditional <|> parseModern
+-- | A key associated with format.  Allows to implement 'ASN1Object' instances.
+data FormattedKey a = FormattedKey PrivateKeyFormat a
+    deriving (Show,Eq)
+
+instance Functor FormattedKey where
+    fmap f (FormattedKey fmt a) = FormattedKey fmt (f a)
+
+instance (ProduceASN1Object e (Traditional a), ProduceASN1Object e (Modern a)) => ProduceASN1Object e (FormattedKey a) where
+    asn1s (FormattedKey TraditionalFormat k) = asn1s (Traditional k)
+    asn1s (FormattedKey PKCS8Format k)       = asn1s (Modern k)
+
+instance (Monoid e, ParseASN1Object e (Traditional a), ParseASN1Object e (Modern a)) => ParseASN1Object e (FormattedKey a) where
+    parse = (traditional <$> parseTraditional) <|> (modern <$> parseModern)
+      where
+        traditional = FormattedKey TraditionalFormat
+        modern      = FormattedKey PKCS8Format
+
+unFormat :: FormattedKey a -> a
+unFormat (FormattedKey _ a) = a
+
+
+-- Private Keys
+
+instance ASN1Object (FormattedKey X509.PrivKey) where
+    toASN1   = asn1s
+    fromASN1 = runParseASN1State parse
+
+instance ASN1Elem e => ProduceASN1Object e (Traditional X509.PrivKey) where
+    asn1s (Traditional privKey) = snd $ traditionalPrivKeyASN1S privKey
+
+instance Monoid e => ParseASN1Object e (Traditional X509.PrivKey) where
+    parse = rsa <|> dsa <|> ecdsa
+      where
+        rsa   = Traditional . X509.PrivKeyRSA . unTraditional <$> parse
+        dsa   = Traditional . X509.PrivKeyDSA . DSA.toPrivateKey . unTraditional <$> parse
+        ecdsa = Traditional . X509.PrivKeyEC . unTraditional <$> parse
+
+instance ASN1Elem e => ProduceASN1Object e (Modern X509.PrivKey) where
+    asn1s (Modern privKey) = modernPrivKeyASN1S privKey
+
+instance Monoid e => ParseASN1Object e (Modern X509.PrivKey) where
+    parse = rsa <|> dsa <|> ecdsa
+      where
+        rsa   = Modern . X509.PrivKeyRSA . unModern <$> parse
+        dsa   = Modern . X509.PrivKeyDSA . DSA.toPrivateKey . unModern <$> parse
+        ecdsa = Modern . X509.PrivKeyEC . unModern <$> parse
 
 
 -- RSA
+
+instance ASN1Object (FormattedKey RSA.PrivateKey) where
+    toASN1   = asn1s
+    fromASN1 = runParseASN1State parse
 
 instance ASN1Elem e => ProduceASN1Object e (Traditional RSA.PrivateKey) where
     asn1s (Traditional privKey) =
@@ -309,6 +363,10 @@ instance Monoid e => ParseASN1Object e (Modern RSA.PrivateKey) where
 
 -- DSA
 
+instance ASN1Object (FormattedKey DSA.KeyPair) where
+    toASN1   = asn1s
+    fromASN1 = runParseASN1State parse
+
 instance ASN1Elem e => ProduceASN1Object e (Traditional DSA.KeyPair) where
     asn1s (Traditional (DSA.KeyPair params pub priv)) =
         asn1Container Sequence (v . pqgASN1S params . pub' . priv')
@@ -373,6 +431,10 @@ dsaPrivToPair k = DSA.KeyPair params pub x
 
 
 -- ECDSA
+
+instance ASN1Object (FormattedKey X509.PrivKeyEC) where
+    toASN1   = asn1s
+    fromASN1 = runParseASN1State parse
 
 instance ASN1Elem e => ProduceASN1Object e (Traditional X509.PrivKeyEC) where
     asn1s = innerEcdsaASN1S True . unTraditional
