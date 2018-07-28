@@ -255,7 +255,7 @@ add1 a b =
     blen = B.length b
 
     -- main loop when both 'a' and 'b' have remaining bytes
-    loop3 !pa !pb !pc !ma !mb !c 
+    loop3 !pa !pb !pc !ma !mb !c
         | ma == 0   = return ()
         | mb == 0   = loop2 pa pc ma c
         | otherwise = do
