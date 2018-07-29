@@ -22,6 +22,7 @@ source-repository head
 library
   hs-source-dirs:      src
   exposed-modules:     Crypto.Store.CMS
+                     , Crypto.Store.Cipher.RC2
                      , Crypto.Store.PKCS5
                      , Crypto.Store.KeyWrap.AES
                      , Crypto.Store.KeyWrap.TripleDES
@@ -39,6 +40,7 @@ library
                      , Crypto.Store.CMS.Signed
                      , Crypto.Store.CMS.Type
                      , Crypto.Store.CMS.Util
+                     , Crypto.Store.Cipher.RC2.Primitive
                      , Crypto.Store.PEM
                      , Crypto.Store.PKCS5.PBES1
                      , Crypto.Store.PKCS8.EC
@@ -64,6 +66,7 @@ test-suite test-cryptostore
                      , KeyWrap.TripleDES
                      , CMS.Instances
                      , CMS.Tests
+                     , Cipher.RC2
                      , PKCS8.Instances
                      , PKCS8.Tests
                      , Util

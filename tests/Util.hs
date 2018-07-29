@@ -30,9 +30,12 @@ testFile name = "tests/files/" ++ name
 newtype TestKey cipher = Key ByteString deriving (Show, Eq)
 
 instance Cipher cipher => Arbitrary (TestKey cipher) where
-    arbitrary = Key . pack <$> vector len
-      where KeySizeFixed len = cipherKeySize cipher
-            cipher = undefined :: cipher
+    arbitrary = Key . pack <$>
+        case cipherKeySize cipher of
+            KeySizeFixed len -> vector len
+            KeySizeRange a b -> choose (a, b) >>= vector
+            KeySizeEnum list -> elements list >>= vector
+      where cipher = undefined :: cipher
 
 newtype TestIV cipher = IV ByteString deriving (Show, Eq)
 

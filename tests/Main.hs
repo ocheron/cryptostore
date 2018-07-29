@@ -5,6 +5,7 @@ import Test.Tasty
 
 import KeyWrap.AES
 import KeyWrap.TripleDES
+import Cipher.RC2
 import CMS.Tests
 import PKCS8.Tests
 
@@ -13,6 +14,7 @@ main :: IO ()
 main = defaultMain $ testGroup "cryptostore"
     [ aeskwTests
     , tripledeskwTests
+    , rc2Tests
     , cmsTests
     , pkcs8Tests
     ]
