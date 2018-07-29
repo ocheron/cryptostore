@@ -57,6 +57,8 @@ data EncryptionSchemeType = Type_PBES2
                           | Type_PBE_SHA1_RC4_40
                           | Type_PBE_SHA1_DES_EDE3_CBC
                           | Type_PBE_SHA1_DES_EDE2_CBC
+                          | Type_PBE_SHA1_RC2_128
+                          | Type_PBE_SHA1_RC2_40
 
 instance Enumerable EncryptionSchemeType where
     values = [ Type_PBES2
@@ -66,6 +68,8 @@ instance Enumerable EncryptionSchemeType where
              , Type_PBE_SHA1_RC4_40
              , Type_PBE_SHA1_DES_EDE3_CBC
              , Type_PBE_SHA1_DES_EDE2_CBC
+             , Type_PBE_SHA1_RC2_128
+             , Type_PBE_SHA1_RC2_40
              ]
 
 instance OIDable EncryptionSchemeType where
@@ -76,6 +80,8 @@ instance OIDable EncryptionSchemeType where
     getObjectID Type_PBE_SHA1_RC4_40       = [1,2,840,113549,1,12,1,2]
     getObjectID Type_PBE_SHA1_DES_EDE3_CBC = [1,2,840,113549,1,12,1,3]
     getObjectID Type_PBE_SHA1_DES_EDE2_CBC = [1,2,840,113549,1,12,1,4]
+    getObjectID Type_PBE_SHA1_RC2_128      = [1,2,840,113549,1,12,1,5]
+    getObjectID Type_PBE_SHA1_RC2_40       = [1,2,840,113549,1,12,1,6]
 
 instance OIDNameable EncryptionSchemeType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
@@ -88,6 +94,8 @@ data EncryptionScheme = PBES2 PBES2Parameter               -- ^ PBES2
                       | PBE_SHA1_RC4_40 PBEParameter       -- ^ pbeWithSHAAnd40BitRC4
                       | PBE_SHA1_DES_EDE3_CBC PBEParameter -- ^ pbeWithSHAAnd3-KeyTripleDES-CBC
                       | PBE_SHA1_DES_EDE2_CBC PBEParameter -- ^ pbeWithSHAAnd2-KeyTripleDES-CBC
+                      | PBE_SHA1_RC2_128 PBEParameter      -- ^ pbeWithSHAAnd128BitRC2-CBC
+                      | PBE_SHA1_RC2_40 PBEParameter       -- ^ pbewithSHAAnd40BitRC2-CBC
                       deriving (Show,Eq)
 
 -- | PBES2 parameters.
@@ -125,6 +133,8 @@ instance AlgorithmId EncryptionScheme where
     algorithmType (PBE_SHA1_RC4_40 _)       = Type_PBE_SHA1_RC4_40
     algorithmType (PBE_SHA1_DES_EDE3_CBC _) = Type_PBE_SHA1_DES_EDE3_CBC
     algorithmType (PBE_SHA1_DES_EDE2_CBC _) = Type_PBE_SHA1_DES_EDE2_CBC
+    algorithmType (PBE_SHA1_RC2_128 _)      = Type_PBE_SHA1_RC2_128
+    algorithmType (PBE_SHA1_RC2_40 _)       = Type_PBE_SHA1_RC2_40
 
     parameterASN1S (PBES2 p)                 = asn1s p
     parameterASN1S (PBE_MD5_DES_CBC p)       = asn1s p
@@ -133,6 +143,8 @@ instance AlgorithmId EncryptionScheme where
     parameterASN1S (PBE_SHA1_RC4_40 p)       = asn1s p
     parameterASN1S (PBE_SHA1_DES_EDE3_CBC p) = asn1s p
     parameterASN1S (PBE_SHA1_DES_EDE2_CBC p) = asn1s p
+    parameterASN1S (PBE_SHA1_RC2_128 p)      = asn1s p
+    parameterASN1S (PBE_SHA1_RC2_40 p)       = asn1s p
 
     parseParameter Type_PBES2                 = PBES2 <$> parse
     parseParameter Type_PBE_MD5_DES_CBC       = PBE_MD5_DES_CBC <$> parse
@@ -141,6 +153,8 @@ instance AlgorithmId EncryptionScheme where
     parseParameter Type_PBE_SHA1_RC4_40       = PBE_SHA1_RC4_40 <$> parse
     parseParameter Type_PBE_SHA1_DES_EDE3_CBC = PBE_SHA1_DES_EDE3_CBC <$> parse
     parseParameter Type_PBE_SHA1_DES_EDE2_CBC = PBE_SHA1_DES_EDE2_CBC <$> parse
+    parseParameter Type_PBE_SHA1_RC2_128      = PBE_SHA1_RC2_128 <$> parse
+    parseParameter Type_PBE_SHA1_RC2_40       = PBE_SHA1_RC2_40 <$> parse
 
 instance ASN1Elem e => ProduceASN1Object e EncryptionScheme where
     asn1s = algorithmASN1S Sequence
@@ -199,6 +213,8 @@ pbEncrypt (PBE_SHA1_RC4_128 p)      = pkcs12stream Left rc4Combine SHA1 16 p
 pbEncrypt (PBE_SHA1_RC4_40 p)       = pkcs12stream Left rc4Combine SHA1 5 p
 pbEncrypt (PBE_SHA1_DES_EDE3_CBC p) = pkcs12 Left contentEncrypt SHA1 DES_EDE3 p
 pbEncrypt (PBE_SHA1_DES_EDE2_CBC p) = pkcs12 Left contentEncrypt SHA1 DES_EDE2 p
+pbEncrypt (PBE_SHA1_RC2_128 p)      = pkcs12rc2 Left contentEncrypt SHA1 128 p
+pbEncrypt (PBE_SHA1_RC2_40 p)       = pkcs12rc2 Left contentEncrypt SHA1 40 p
 
 -- | Decrypt an encrypted bytestring with the specified encryption scheme and
 -- password.
@@ -210,6 +226,8 @@ pbDecrypt (PBE_SHA1_RC4_128 p)      = pkcs12stream Left rc4Combine SHA1 16 p
 pbDecrypt (PBE_SHA1_RC4_40 p)       = pkcs12stream Left rc4Combine SHA1 5 p
 pbDecrypt (PBE_SHA1_DES_EDE3_CBC p) = pkcs12 Left contentDecrypt SHA1 DES_EDE3 p
 pbDecrypt (PBE_SHA1_DES_EDE2_CBC p) = pkcs12 Left contentDecrypt SHA1 DES_EDE2 p
+pbDecrypt (PBE_SHA1_RC2_128 p)      = pkcs12rc2 Left contentDecrypt SHA1 128 p
+pbDecrypt (PBE_SHA1_RC2_40 p)       = pkcs12rc2 Left contentDecrypt SHA1 40 p
 
 pbes2 :: ByteArrayAccess password
       => (Key -> ContentEncryptionParams -> ByteString -> result)

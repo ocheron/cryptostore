@@ -16,6 +16,7 @@ CIPHER_KEYS_ENVELOPED=" \
   -aes-256-cbc:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
   -cast5-cbc:000102030405060708090a0b0c0d0e0f \
   -camellia-128-cbc:000102030405060708090a0b0c0d0e0f \
+  -rc2-cbc:000102030405060708090a0b0c0d0e0f \
   -aes-128-ecb:000102030405060708090a0b0c0d0e0f \
   -aes-192-ecb:000102030405060708090a0b0c0d0e0f1011121314151617 \
   -aes-256-ecb:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
@@ -30,6 +31,9 @@ CIPHER_KEYS_ENCRYPTED=" \
   -cast5-cbc:0001020304 \
   -cast5-cbc:000102030405060708090a0b0c0d0e0f \
   -camellia-128-cbc:000102030405060708090a0b0c0d0e0f \
+  -rc2-40-cbc:0001020304 \
+  -rc2-64-cbc:0001020304050607 \
+  -rc2-cbc:000102030405060708090a0b0c0d0e0f \
   -des-ecb:0001020304050607 \
   -aes-128-ecb:000102030405060708090a0b0c0d0e0f \
   -aes-192-ecb:000102030405060708090a0b0c0d0e0f1011121314151617 \
@@ -52,7 +56,9 @@ function encrypt() {
                   PBE-SHA1-RC4-128 \
                   PBE-SHA1-RC4-40 \
                   pbeWithSHA1And3-KeyTripleDES-CBC \
-                  pbeWithSHA1And2-KeyTripleDES-CBC; do
+                  pbeWithSHA1And2-KeyTripleDES-CBC \
+                  PBE-SHA1-RC2-128 \
+                  PBE-SHA1-RC2-40; do
       "$OPENSSL" pkcs8 -topk8 -in "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
         -v1 $cipher -passout pass:"$PASSWORD"
     done
@@ -60,7 +66,7 @@ function encrypt() {
 
   # PBES2 with PBKDF2
   (
-    for cipher in des des3 cast camellia128; do
+    for cipher in des des3 cast camellia128 rc2 rc2-40-cbc rc2-64-cbc; do
       "$OPENSSL" pkcs8 -topk8 -in "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
         -v2 $cipher -passout pass:"$PASSWORD"
     done

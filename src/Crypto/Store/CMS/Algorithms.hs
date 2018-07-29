@@ -31,6 +31,7 @@ module Crypto.Store.CMS.Algorithms
     , ContentEncryptionAlg(..)
     , ContentEncryptionParams(..)
     , generateEncryptionParams
+    , generateRC2EncryptionParams
     , getContentEncryptionAlg
     , proxyBlockSize
     , contentEncrypt
@@ -73,6 +74,7 @@ module Crypto.Store.CMS.Algorithms
     , signatureVerify
     ) where
 
+import Control.Applicative
 import Control.Monad (guard, when)
 
 import           Data.ASN1.BinaryEncoding
@@ -113,9 +115,13 @@ import qualified Crypto.PubKey.RSA.OAEP as RSAOAEP
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import           Crypto.Random
 
+import Foreign.Ptr (Ptr)
+import Foreign.Storable
+
 import           Crypto.Store.ASN1.Generate
 import           Crypto.Store.ASN1.Parse
 import           Crypto.Store.CMS.Util
+import           Crypto.Store.Cipher.RC2
 import qualified Crypto.Store.KeyWrap.AES as AES_KW
 import qualified Crypto.Store.KeyWrap.TripleDES as TripleDES_KW
 
@@ -345,6 +351,8 @@ data ContentEncryptionAlg
       -- ^ Electronic Codebook
     | forall c . BlockCipher c => CBC (ContentEncryptionCipher c)
       -- ^ Cipher Block Chaining
+    | CBC_RC2
+      -- ^ RC2 in CBC mode
     | forall c . BlockCipher c => CFB (ContentEncryptionCipher c)
       -- ^ Cipher Feedback
     | forall c . BlockCipher c => CTR (ContentEncryptionCipher c)
@@ -353,6 +361,7 @@ data ContentEncryptionAlg
 instance Show ContentEncryptionAlg where
     show (ECB c) = shows c "_ECB"
     show (CBC c) = shows c "_CBC"
+    show CBC_RC2 = "RC2_CBC"
     show (CFB c) = shows c "_CFB"
     show (CTR c) = shows c "_CTR"
 
@@ -364,6 +373,7 @@ instance Enumerable ContentEncryptionAlg where
              , CBC AES256
              , CBC CAST5
              , CBC Camellia128
+             , CBC_RC2
 
              , ECB DES
              , ECB AES128
@@ -388,6 +398,7 @@ instance OIDable ContentEncryptionAlg where
     getObjectID (CBC AES256)       = [2,16,840,1,101,3,4,1,42]
     getObjectID (CBC CAST5)        = [1,2,840,113533,7,66,10]
     getObjectID (CBC Camellia128)  = [1,2,392,200011,61,1,1,1,2]
+    getObjectID CBC_RC2            = [1,2,840,113549,3,2]
 
     getObjectID (ECB DES)          = [1,3,14,3,2,6]
     getObjectID (ECB AES128)       = [2,16,840,1,101,3,4,1,1]
@@ -417,6 +428,8 @@ data ContentEncryptionParams
       -- ^ Electronic Codebook
     | forall c . BlockCipher c => ParamsCBC (ContentEncryptionCipher c) (IV c)
       -- ^ Cipher Block Chaining
+    | ParamsCBCRC2 Int (IV RC2)
+      -- ^ RC2 in CBC mode
     | forall c . BlockCipher c => ParamsCFB (ContentEncryptionCipher c) (IV c)
       -- ^ Cipher Feedback
     | forall c . BlockCipher c => ParamsCTR (ContentEncryptionCipher c) (IV c)
@@ -426,17 +439,19 @@ instance Show ContentEncryptionParams where
     show = show . getContentEncryptionAlg
 
 instance Eq ContentEncryptionParams where
-    ParamsECB c1     == ParamsECB c2     = cecI c1 == cecI c2
-    ParamsCBC c1 iv1 == ParamsCBC c2 iv2 = cecI c1 == cecI c2 && iv1 `eqBA` iv2
-    ParamsCFB c1 iv1 == ParamsCFB c2 iv2 = cecI c1 == cecI c2 && iv1 `eqBA` iv2
-    ParamsCTR c1 iv1 == ParamsCTR c2 iv2 = cecI c1 == cecI c2 && iv1 `eqBA` iv2
-    _               == _               = False
+    ParamsECB c1        == ParamsECB c2        = cecI c1 == cecI c2
+    ParamsCBC c1 iv1    == ParamsCBC c2 iv2    = cecI c1 == cecI c2 && iv1 `eqBA` iv2
+    ParamsCBCRC2 i1 iv1 == ParamsCBCRC2 i2 iv2 = i1 == i2 && iv1 `eqBA` iv2
+    ParamsCFB c1 iv1    == ParamsCFB c2 iv2    = cecI c1 == cecI c2 && iv1 `eqBA` iv2
+    ParamsCTR c1 iv1    == ParamsCTR c2 iv2    = cecI c1 == cecI c2 && iv1 `eqBA` iv2
+    _                   == _                   = False
 
 instance HasKeySize ContentEncryptionParams where
-    getKeySizeSpecifier (ParamsECB c)   = getCipherKeySizeSpecifier c
-    getKeySizeSpecifier (ParamsCBC c _) = getCipherKeySizeSpecifier c
-    getKeySizeSpecifier (ParamsCFB c _) = getCipherKeySizeSpecifier c
-    getKeySizeSpecifier (ParamsCTR c _) = getCipherKeySizeSpecifier c
+    getKeySizeSpecifier (ParamsECB c)      = getCipherKeySizeSpecifier c
+    getKeySizeSpecifier (ParamsCBC c _)    = getCipherKeySizeSpecifier c
+    getKeySizeSpecifier (ParamsCBCRC2 i _) = KeySizeFixed $ (i + 7) `div` 8
+    getKeySizeSpecifier (ParamsCFB c _)    = getCipherKeySizeSpecifier c
+    getKeySizeSpecifier (ParamsCTR c _)    = getCipherKeySizeSpecifier c
 
 instance ASN1Elem e => ProduceASN1Object e ContentEncryptionParams where
     asn1s param =
@@ -451,15 +466,17 @@ instance Monoid e => ParseASN1Object e ContentEncryptionParams where
         withObjectID "content encryption algorithm" oid parseCEParameter
 
 ceParameterASN1S :: ASN1Elem e => ContentEncryptionParams -> ASN1Stream e
-ceParameterASN1S (ParamsECB _)    = id
-ceParameterASN1S (ParamsCBC _ iv) = gOctetString (B.convert iv)
-ceParameterASN1S (ParamsCFB _ iv) = gOctetString (B.convert iv)
-ceParameterASN1S (ParamsCTR _ iv) = gOctetString (B.convert iv)
+ceParameterASN1S (ParamsECB _)         = id
+ceParameterASN1S (ParamsCBC _ iv)      = gOctetString (B.convert iv)
+ceParameterASN1S (ParamsCBCRC2 len iv) = rc2ParameterASN1S len iv
+ceParameterASN1S (ParamsCFB _ iv)      = gOctetString (B.convert iv)
+ceParameterASN1S (ParamsCTR _ iv)      = gOctetString (B.convert iv)
 
 parseCEParameter :: Monoid e
                  => ContentEncryptionAlg -> ParseASN1 e ContentEncryptionParams
 parseCEParameter (ECB c) = getMany getNext >> return (ParamsECB c)
 parseCEParameter (CBC c) = ParamsCBC c <$> (getNext >>= getIV)
+parseCEParameter CBC_RC2 = parseRC2Parameter
 parseCEParameter (CFB c) = ParamsCFB c <$> (getNext >>= getIV)
 parseCEParameter (CTR c) = ParamsCTR c <$> (getNext >>= getIV)
 
@@ -470,20 +487,41 @@ getIV (OctetString ivBs) =
         Just v  -> return v
 getIV _ = throwParseError "No IV in parsed parameter or incorrect format"
 
+rc2ParameterASN1S :: ASN1Elem e => Int -> IV RC2 -> ASN1Stream e
+rc2ParameterASN1S len iv
+    | len == 32 = gIV
+    | otherwise = asn1Container Sequence (rc2VersionASN1 len . gIV)
+  where gIV = gOctetString (B.convert iv)
+
+parseRC2Parameter :: Monoid e => ParseASN1 e ContentEncryptionParams
+parseRC2Parameter = parseOnlyIV 32 <|> parseFullParams
+  where
+    parseOnlyIV len = ParamsCBCRC2 len <$> (getNext >>= getIV)
+    parseFullParams = onNextContainer Sequence $
+        parseRC2Version >>= parseOnlyIV
+
 -- | Get the content encryption algorithm.
 getContentEncryptionAlg :: ContentEncryptionParams -> ContentEncryptionAlg
-getContentEncryptionAlg (ParamsECB c)   = ECB c
-getContentEncryptionAlg (ParamsCBC c _) = CBC c
-getContentEncryptionAlg (ParamsCFB c _) = CFB c
-getContentEncryptionAlg (ParamsCTR c _) = CTR c
+getContentEncryptionAlg (ParamsECB c)      = ECB c
+getContentEncryptionAlg (ParamsCBC c _)    = CBC c
+getContentEncryptionAlg (ParamsCBCRC2 _ _) = CBC_RC2
+getContentEncryptionAlg (ParamsCFB c _)    = CFB c
+getContentEncryptionAlg (ParamsCTR c _)    = CTR c
 
 -- | Generate random parameters for the specified content encryption algorithm.
 generateEncryptionParams :: MonadRandom m
                          => ContentEncryptionAlg -> m ContentEncryptionParams
 generateEncryptionParams (ECB c) = return (ParamsECB c)
 generateEncryptionParams (CBC c) = ParamsCBC c <$> ivGenerate undefined
+generateEncryptionParams CBC_RC2 = ParamsCBCRC2 128 <$> ivGenerate undefined
 generateEncryptionParams (CFB c) = ParamsCFB c <$> ivGenerate undefined
 generateEncryptionParams (CTR c) = ParamsCTR c <$> ivGenerate undefined
+
+-- | Generate random RC2 parameters with the specified effective key length (in
+-- bits).
+generateRC2EncryptionParams :: MonadRandom m
+                            => Int -> m ContentEncryptionParams
+generateRC2EncryptionParams len = ParamsCBCRC2 len <$> ivGenerate undefined
 
 -- | Encrypt a bytearray with the specified content encryption key and
 -- algorithm.
@@ -495,6 +533,7 @@ contentEncrypt key params bs =
     case params of
         ParamsECB cipher    -> getCipher cipher key >>= (\c -> force $ ecbEncrypt c    $ padded c bs)
         ParamsCBC cipher iv -> getCipher cipher key >>= (\c -> force $ cbcEncrypt c iv $ padded c bs)
+        ParamsCBCRC2 len iv -> getRC2Cipher len key >>= (\c -> force $ cbcEncrypt c iv $ padded c bs)
         ParamsCFB cipher iv -> getCipher cipher key >>= (\c -> force $ cfbEncrypt c iv $ padded c bs)
         ParamsCTR cipher iv -> getCipher cipher key >>= (\c -> force $ ctrCombine c iv $ padded c bs)
   where
@@ -511,6 +550,7 @@ contentDecrypt key params bs =
     case params of
         ParamsECB cipher    -> getCipher cipher key >>= (\c -> unpadded c (ecbDecrypt c    bs))
         ParamsCBC cipher iv -> getCipher cipher key >>= (\c -> unpadded c (cbcDecrypt c iv bs))
+        ParamsCBCRC2 len iv -> getRC2Cipher len key >>= (\c -> unpadded c (cbcDecrypt c iv bs))
         ParamsCFB cipher iv -> getCipher cipher key >>= (\c -> unpadded c (cfbDecrypt c iv bs))
         ParamsCTR cipher iv -> getCipher cipher key >>= (\c -> unpadded c (ctrCombine c iv bs))
   where
@@ -518,6 +558,51 @@ contentDecrypt key params bs =
         case unpad (PKCS7 $ blockSize c) decrypted of
             Nothing  -> Left "Decryption failed, incorrect key or password?"
             Just out -> Right out
+
+-- from RFC 2268 section 6
+rc2Table :: [Word8]
+rc2Table =
+    [ 0xbd, 0x56, 0xea, 0xf2, 0xa2, 0xf1, 0xac, 0x2a, 0xb0, 0x93, 0xd1, 0x9c, 0x1b, 0x33, 0xfd, 0xd0
+    , 0x30, 0x04, 0xb6, 0xdc, 0x7d, 0xdf, 0x32, 0x4b, 0xf7, 0xcb, 0x45, 0x9b, 0x31, 0xbb, 0x21, 0x5a
+    , 0x41, 0x9f, 0xe1, 0xd9, 0x4a, 0x4d, 0x9e, 0xda, 0xa0, 0x68, 0x2c, 0xc3, 0x27, 0x5f, 0x80, 0x36
+    , 0x3e, 0xee, 0xfb, 0x95, 0x1a, 0xfe, 0xce, 0xa8, 0x34, 0xa9, 0x13, 0xf0, 0xa6, 0x3f, 0xd8, 0x0c
+    , 0x78, 0x24, 0xaf, 0x23, 0x52, 0xc1, 0x67, 0x17, 0xf5, 0x66, 0x90, 0xe7, 0xe8, 0x07, 0xb8, 0x60
+    , 0x48, 0xe6, 0x1e, 0x53, 0xf3, 0x92, 0xa4, 0x72, 0x8c, 0x08, 0x15, 0x6e, 0x86, 0x00, 0x84, 0xfa
+    , 0xf4, 0x7f, 0x8a, 0x42, 0x19, 0xf6, 0xdb, 0xcd, 0x14, 0x8d, 0x50, 0x12, 0xba, 0x3c, 0x06, 0x4e
+    , 0xec, 0xb3, 0x35, 0x11, 0xa1, 0x88, 0x8e, 0x2b, 0x94, 0x99, 0xb7, 0x71, 0x74, 0xd3, 0xe4, 0xbf
+    , 0x3a, 0xde, 0x96, 0x0e, 0xbc, 0x0a, 0xed, 0x77, 0xfc, 0x37, 0x6b, 0x03, 0x79, 0x89, 0x62, 0xc6
+    , 0xd7, 0xc0, 0xd2, 0x7c, 0x6a, 0x8b, 0x22, 0xa3, 0x5b, 0x05, 0x5d, 0x02, 0x75, 0xd5, 0x61, 0xe3
+    , 0x18, 0x8f, 0x55, 0x51, 0xad, 0x1f, 0x0b, 0x5e, 0x85, 0xe5, 0xc2, 0x57, 0x63, 0xca, 0x3d, 0x6c
+    , 0xb4, 0xc5, 0xcc, 0x70, 0xb2, 0x91, 0x59, 0x0d, 0x47, 0x20, 0xc8, 0x4f, 0x58, 0xe0, 0x01, 0xe2
+    , 0x16, 0x38, 0xc4, 0x6f, 0x3b, 0x0f, 0x65, 0x46, 0xbe, 0x7e, 0x2d, 0x7b, 0x82, 0xf9, 0x40, 0xb5
+    , 0x1d, 0x73, 0xf8, 0xeb, 0x26, 0xc7, 0x87, 0x97, 0x25, 0x54, 0xb1, 0x28, 0xaa, 0x98, 0x9d, 0xa5
+    , 0x64, 0x6d, 0x7a, 0xd4, 0x10, 0x81, 0x44, 0xef, 0x49, 0xd6, 0xae, 0x2e, 0xdd, 0x76, 0x5c, 0x2f
+    , 0xa7, 0x1c, 0xc9, 0x09, 0x69, 0x9a, 0x83, 0xcf, 0x29, 0x39, 0xb9, 0xe9, 0x4c, 0xff, 0x43, 0xab
+    ]
+
+rc2Forward :: B.Bytes
+rc2Forward = B.pack rc2Table
+
+rc2Reverse :: B.Bytes
+rc2Reverse = B.allocAndFreeze (length rc2Table) (loop $ zip [0..] rc2Table)
+  where
+    loop :: [(Word8, Word8)] -> Ptr Word8 -> IO ()
+    loop []         _ = return ()
+    loop ((a,b):ts) p = pokeElemOff p (fromIntegral b) a >> loop ts p
+
+rc2VersionASN1 :: ASN1Elem e => Int -> ASN1Stream e
+rc2VersionASN1 len = gIntVal v
+  where
+    v | len < 0    = error "invalid RC2 effective key length"
+      | len >= 256 = fromIntegral len
+      | otherwise  = fromIntegral (B.index rc2Forward len)
+
+parseRC2Version :: Monoid e => ParseASN1 e Int
+parseRC2Version = do
+    IntVal i <- getNext
+    when (i < 0) $ throwParseError "Parsed invalid RC2 effective key length"
+    let j = fromIntegral i
+    return $ if i >= 256 then j else fromIntegral (B.index rc2Reverse j)
 
 
 -- Authenticated-content encryption
@@ -1116,6 +1201,7 @@ keyEncrypt key (PWRIKEK params) bs =
     case params of
         ParamsECB cipher    -> let cc = getCipher cipher key in either (return . Left) (\c -> wrapEncrypt (const . ecbEncrypt) c undefined bs) cc
         ParamsCBC cipher iv -> let cc = getCipher cipher key in either (return . Left) (\c -> wrapEncrypt cbcEncrypt c iv bs) cc
+        ParamsCBCRC2 len iv -> let cc = getRC2Cipher len key in either (return . Left) (\c -> wrapEncrypt cbcEncrypt c iv bs) cc
         ParamsCFB cipher iv -> let cc = getCipher cipher key in either (return . Left) (\c -> wrapEncrypt cfbEncrypt c iv bs) cc
         ParamsCTR _ _       -> return (Left "Unable to wrap key in CTR mode")
 keyEncrypt key AES128_WRAP      bs = return (getCipher AES128 key >>= (`AES_KW.wrap` bs))
@@ -1134,6 +1220,7 @@ keyDecrypt key (PWRIKEK params) bs =
     case params of
         ParamsECB cipher    -> getCipher cipher key >>= (\c -> wrapDecrypt (const . ecbDecrypt) c undefined bs)
         ParamsCBC cipher iv -> getCipher cipher key >>= (\c -> wrapDecrypt cbcDecrypt c iv bs)
+        ParamsCBCRC2 len iv -> getRC2Cipher len key >>= (\c -> wrapDecrypt cbcDecrypt c iv bs)
         ParamsCFB cipher iv -> getCipher cipher key >>= (\c -> wrapDecrypt cfbDecrypt c iv bs)
         ParamsCTR _ _       -> Left "Unable to unwrap key in CTR mode"
 keyDecrypt key AES128_WRAP      bs = getCipher AES128   key >>= (`AES_KW.unwrap` bs)
@@ -1469,6 +1556,12 @@ getCipher _ key =
     case cipherInit key of
         CryptoPassed c -> Right c
         CryptoFailed e -> Left ("Unable to use key: " ++ show e)
+
+getRC2Cipher :: ByteArray key => Int -> key -> Either String RC2
+getRC2Cipher len key =
+    case rc2WithEffectiveKeyLength len key of
+        CryptoPassed c -> Right c
+        CryptoFailed e -> Left ("Unable to use RC2 key: " ++ show e)
 
 ivGenerate :: (BlockCipher cipher, MonadRandom m) => cipher -> m (IV cipher)
 ivGenerate cipher = do

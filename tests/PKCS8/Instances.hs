@@ -28,6 +28,8 @@ instance Arbitrary EncryptionScheme where
                       , PBE_SHA1_RC4_40 <$> arbitrary
                       , PBE_SHA1_DES_EDE3_CBC <$> arbitrary
                       , PBE_SHA1_DES_EDE2_CBC <$> arbitrary
+                      , PBE_SHA1_RC2_128 <$> arbitrary
+                      , PBE_SHA1_RC2_40 <$> arbitrary
                       ]
 
 instance Arbitrary PrivateKeyFormat where

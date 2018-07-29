@@ -216,6 +216,7 @@ instance Arbitrary ContentEncryptionAlg where
         , CBC AES256
         , CBC CAST5
         , CBC Camellia128
+        , CBC_RC2
 
         , ECB DES
         , ECB AES128
@@ -233,7 +234,10 @@ instance Arbitrary ContentEncryptionAlg where
         ]
 
 instance Arbitrary ContentEncryptionParams where
-    arbitrary = arbitrary >>= generateEncryptionParams
+    arbitrary = arbitrary >>= gen
+      where
+        gen CBC_RC2 = choose (24, 512) >>= generateRC2EncryptionParams
+        gen alg     = generateEncryptionParams alg
 
 instance Arbitrary AuthContentEncryptionAlg where
     arbitrary = elements

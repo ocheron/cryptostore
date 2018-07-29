@@ -47,8 +47,8 @@ keyTests prefix =
 encryptedKeyTests :: String -> TestTree
 encryptedKeyTests prefix =
     testGroup "EncryptedPrivateKey"
-        [ keyTest "PBES1"  "pbes1"  6
-        , keyTest "PBKDF2" "pbkdf2" 4
+        [ keyTest "PBES1"  "pbes1"  8
+        , keyTest "PBKDF2" "pbkdf2" 7
         , keyTest "Scrypt" "scrypt" 3
         ]
   where

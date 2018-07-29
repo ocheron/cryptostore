@@ -92,6 +92,7 @@ module Crypto.Store.CMS
     , EncryptedContent
     , EncryptedData(..)
     , generateEncryptionParams
+    , generateRC2EncryptionParams
     , getContentEncryptionAlg
     , encryptData
     , decryptData

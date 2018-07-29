@@ -16,6 +16,7 @@ module Crypto.Store.PKCS5.PBES1
     , Key
     , pkcs5
     , pkcs12
+    , pkcs12rc2
     , pkcs12stream
     , rc4Combine
     ) where
@@ -74,6 +75,11 @@ cbcWith :: (BlockCipher cipher, ByteArrayAccess iv)
 cbcWith cipher iv = ParamsCBC cipher getIV
   where
     getIV = fromMaybe (error "PKCS5: bad initialization vector") (makeIV iv)
+
+rc2cbcWith :: ByteArrayAccess iv => Int -> iv -> ContentEncryptionParams
+rc2cbcWith len iv = ParamsCBCRC2 len getIV
+  where
+    getIV = fromMaybe (error "PKCS5: bad RC2 initialization vector") (makeIV iv)
 
 -- | RC4 encryption or decryption.
 rc4Combine :: (ByteArrayAccess key, ByteArray ba) => key -> ba -> Either String ba
@@ -153,6 +159,29 @@ pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
             let ivLen   = proxyBlockSize cec
                 iv      = pkcs12Derive hashAlg pbeParam 2 pwdUCS2 ivLen :: B.Bytes
                 eScheme = cbcWith cec iv
+                keyLen  = getMaximumKeySize eScheme
+                key     = pkcs12Derive hashAlg pbeParam 1 pwdUCS2 keyLen :: Key
+            in encdec key eScheme bs
+
+-- | Apply PKCS #12 derivation on the specified password and run an encryption
+-- or decryption function on some input using derived key and IV.  This variant
+-- uses an RC2 cipher with the EKL specified (effective key length). 
+pkcs12rc2 :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
+          => (String -> result)
+          -> (Key -> ContentEncryptionParams -> ByteString -> result)
+          -> DigestAlgorithm hash
+          -> Int
+          -> PBEParameter
+          -> ByteString
+          -> password
+          -> result
+pkcs12rc2 failure encdec hashAlg len pbeParam bs pwdUTF8 =
+    case toUCS2 pwdUTF8 of
+        Nothing      -> failure "Provided password is not valid UTF-8"
+        Just pwdUCS2 ->
+            let ivLen   = 8
+                iv      = pkcs12Derive hashAlg pbeParam 2 pwdUCS2 ivLen :: B.Bytes
+                eScheme = rc2cbcWith len iv
                 keyLen  = getMaximumKeySize eScheme
                 key     = pkcs12Derive hashAlg pbeParam 1 pwdUCS2 keyLen :: Key
             in encdec key eScheme bs
