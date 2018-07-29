@@ -142,6 +142,12 @@ instance AlgorithmId EncryptionScheme where
     parseParameter Type_PBE_SHA1_DES_EDE3_CBC = PBE_SHA1_DES_EDE3_CBC <$> parse
     parseParameter Type_PBE_SHA1_DES_EDE2_CBC = PBE_SHA1_DES_EDE2_CBC <$> parse
 
+instance ASN1Elem e => ProduceASN1Object e EncryptionScheme where
+    asn1s = algorithmASN1S Sequence
+
+instance Monoid e => ParseASN1Object e EncryptionScheme where
+    parse = parseAlgorithm Sequence
+
 
 -- High-level API
 
@@ -157,12 +163,12 @@ data PKCS5 = PKCS5
 
 instance ASN1Elem e => ProduceASN1Object e PKCS5 where
     asn1s PKCS5{..} = asn1Container Sequence (alg . bs)
-      where alg = algorithmASN1S Sequence encryptionAlgorithm
+      where alg = asn1s encryptionAlgorithm
             bs  = gOctetString encryptedData
 
 instance Monoid e => ParseASN1Object e PKCS5 where
     parse = onNextContainer Sequence $ do
-        alg <- parseAlgorithm Sequence
+        alg <- parse
         OctetString bs <- getNext
         return PKCS5 { encryptionAlgorithm = alg, encryptedData = bs }
 
