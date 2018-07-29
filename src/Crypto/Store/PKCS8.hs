@@ -42,6 +42,7 @@ module Crypto.Store.PKCS8
     ) where
 
 import Control.Applicative
+import Control.Monad (void, when)
 
 import Data.ASN1.Types
 import Data.ASN1.BinaryEncoding
@@ -57,6 +58,7 @@ import qualified Crypto.PubKey.RSA as RSA
 
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
+import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Util
 import Crypto.Store.PEM
 import Crypto.Store.PKCS5
@@ -196,16 +198,16 @@ traditionalPrivKeyASN1S privKey =
 
 keyToModernPEM :: X509.PrivKey -> PEM
 keyToModernPEM privKey = mkPEM "PRIVATE KEY" (encodeASN1S asn1)
-  where asn1 = modernPrivKeyASN1S privKey
+  where asn1 = modernPrivKeyASN1S [] privKey
 
-modernPrivKeyASN1S :: ASN1Elem e => X509.PrivKey -> ASN1Stream e
-modernPrivKeyASN1S privKey =
+modernPrivKeyASN1S :: ASN1Elem e => [Attribute] -> X509.PrivKey -> ASN1Stream e
+modernPrivKeyASN1S attrs privKey =
     case privKey of
         X509.PrivKeyRSA k -> modern k
         X509.PrivKeyDSA k -> modern (dsaPrivToPair k)
         X509.PrivKeyEC  k -> modern k
   where
-    modern a = asn1s (Modern a)
+    modern a = asn1s (Modern attrs a)
 
 -- | Generate a PKCS #8 encrypted PEM for a private key.
 --
@@ -231,13 +233,18 @@ data PrivateKeyFormat = TraditionalFormat -- ^ SSLeay compatible
                       deriving (Show,Eq)
 
 newtype Traditional a = Traditional { unTraditional :: a }
-newtype Modern a = Modern { unModern :: a }
 
 parseTraditional :: ParseASN1Object e (Traditional a) => ParseASN1 e a
 parseTraditional = unTraditional <$> parse
 
+data Modern a = Modern [Attribute] a
+
+instance Functor Modern where
+    fmap f (Modern attrs a) = Modern attrs (f a)
+
 parseModern :: ParseASN1Object e (Modern a) => ParseASN1 e a
 parseModern = unModern <$> parse
+  where unModern (Modern _ a) = a
 
 -- | A key associated with format.  Allows to implement 'ASN1Object' instances.
 data FormattedKey a = FormattedKey PrivateKeyFormat a
@@ -248,7 +255,7 @@ instance Functor FormattedKey where
 
 instance (ProduceASN1Object e (Traditional a), ProduceASN1Object e (Modern a)) => ProduceASN1Object e (FormattedKey a) where
     asn1s (FormattedKey TraditionalFormat k) = asn1s (Traditional k)
-    asn1s (FormattedKey PKCS8Format k)       = asn1s (Modern k)
+    asn1s (FormattedKey PKCS8Format k)       = asn1s (Modern [] k)
 
 instance (Monoid e, ParseASN1Object e (Traditional a), ParseASN1Object e (Modern a)) => ParseASN1Object e (FormattedKey a) where
     parse = (traditional <$> parseTraditional) <|> (modern <$> parseModern)
@@ -277,14 +284,31 @@ instance Monoid e => ParseASN1Object e (Traditional X509.PrivKey) where
         ecdsa = Traditional . X509.PrivKeyEC . unTraditional <$> parse
 
 instance ASN1Elem e => ProduceASN1Object e (Modern X509.PrivKey) where
-    asn1s (Modern privKey) = modernPrivKeyASN1S privKey
+    asn1s (Modern attrs privKey) = modernPrivKeyASN1S attrs privKey
 
 instance Monoid e => ParseASN1Object e (Modern X509.PrivKey) where
     parse = rsa <|> dsa <|> ecdsa
       where
-        rsa   = Modern . X509.PrivKeyRSA . unModern <$> parse
-        dsa   = Modern . X509.PrivKeyDSA . DSA.toPrivateKey . unModern <$> parse
-        ecdsa = Modern . X509.PrivKeyEC . unModern <$> parse
+        rsa   = fmap X509.PrivKeyRSA  <$> parse
+        dsa   = fmap (X509.PrivKeyDSA . DSA.toPrivateKey) <$> parse
+        ecdsa = fmap X509.PrivKeyEC <$> parse
+
+skipVersion :: Monoid e => ParseASN1 e ()
+skipVersion = do
+    IntVal v <- getNext
+    when (v /= 0 && v /= 1) $
+        throwParseError ("PKCS8: parsed invalid version: " ++ show v)
+
+skipPublicKey :: Monoid e => ParseASN1 e ()
+skipPublicKey = void (fmap Just parseTaggedPrimitive <|> return Nothing)
+  where parseTaggedPrimitive = do { Other _ 1 bs <- getNext; return bs }
+
+parseAttrKeys :: Monoid e => ParseASN1 e ([Attribute], B.ByteString)
+parseAttrKeys = do
+    OctetString bs <- getNext
+    attrs <- parseAttributes (Container Context 0)
+    skipPublicKey
+    return (attrs, bs)
 
 
 -- RSA
@@ -339,26 +363,27 @@ instance Monoid e => ParseASN1Object e (Traditional RSA.PrivateKey) where
         return (Traditional privKey)
 
 instance ASN1Elem e => ProduceASN1Object e (Modern RSA.PrivateKey) where
-    asn1s (Modern privKey) =
-        asn1Container Sequence (v . alg . bs)
+    asn1s (Modern attrs privKey) =
+        asn1Container Sequence (v . alg . bs . att)
       where
         v     = gIntVal 0
         alg   = asn1Container Sequence (oid . gNull)
         oid   = gOID [1,2,840,113549,1,1,1]
         bs    = gOctetString (encodeASN1Object $ Traditional privKey)
+        att   = attributesASN1S (Container Context 0) attrs
 
 instance Monoid e => ParseASN1Object e (Modern RSA.PrivateKey) where
     parse = onNextContainer Sequence $ do
-        IntVal 0 <- getNext
+        skipVersion
         Null <- onNextContainer Sequence $ do
                     OID [1,2,840,113549,1,1,1] <- getNext
                     getNext
-        OctetString bs <- getNext
+        (attrs, bs) <- parseAttrKeys
         let inner = decodeASN1' BER bs
             strError = Left .  ("PKCS8: error decoding inner RSA: " ++) . show
         case either strError (runParseASN1 parseTraditional) inner of
              Left err -> throwParseError ("PKCS8: error parsing inner RSA: " ++ err)
-             Right privKey -> return (Modern privKey)
+             Right privKey -> return (Modern attrs privKey)
 
 
 -- DSA
@@ -384,26 +409,27 @@ instance Monoid e => ParseASN1Object e (Traditional DSA.KeyPair) where
         return (Traditional $ DSA.KeyPair params pub priv)
 
 instance ASN1Elem e => ProduceASN1Object e (Modern DSA.KeyPair) where
-    asn1s (Modern (DSA.KeyPair params _ priv)) =
-        asn1Container Sequence (v . alg . bs)
+    asn1s (Modern attrs (DSA.KeyPair params _ priv)) =
+        asn1Container Sequence (v . alg . bs . att)
       where
         v     = gIntVal 0
         alg   = asn1Container Sequence (oid . pr)
         oid   = gOID [1,2,840,10040,4,1]
         pr    = asn1Container Sequence (pqgASN1S params)
         bs    = gOctetString (encodeASN1S $ gIntVal priv)
+        att   = attributesASN1S (Container Context 0) attrs
 
 instance Monoid e => ParseASN1Object e (Modern DSA.KeyPair) where
     parse = onNextContainer Sequence $ do
-        IntVal 0 <- getNext
+        skipVersion
         params <- onNextContainer Sequence $ do
                       OID [1,2,840,10040,4,1] <- getNext
                       onNextContainer Sequence parsePQG
-        OctetString bs <- getNext
+        (attrs, bs) <- parseAttrKeys
         case decodeASN1' BER bs of
             Right [IntVal priv] ->
                 let pub = DSA.calculatePublic params priv
-                 in return (Modern $ DSA.KeyPair params pub priv)
+                 in return (Modern attrs $ DSA.KeyPair params pub priv)
             Right _ -> throwParseError "PKCS8: invalid format when parsing inner DSA"
             Left  e -> throwParseError ("PKCS8: error parsing inner DSA: " ++ show e)
 
@@ -443,26 +469,27 @@ instance Monoid e => ParseASN1Object e (Traditional X509.PrivKeyEC) where
     parse = Traditional <$> parseInnerEcdsa Nothing
 
 instance ASN1Elem e => ProduceASN1Object e (Modern X509.PrivKeyEC) where
-    asn1s (Modern privKey) = asn1Container Sequence (v . f . bs)
+    asn1s (Modern attrs privKey) = asn1Container Sequence (v . f . bs . att)
       where
         v     = gIntVal 0
         f     = asn1Container Sequence (oid . curveFnASN1S privKey)
         oid   = gOID [1,2,840,10045,2,1]
         bs    = gOctetString (encodeASN1S inner)
         inner = innerEcdsaASN1S False privKey
+        att   = attributesASN1S (Container Context 0) attrs
 
 instance Monoid e => ParseASN1Object e (Modern X509.PrivKeyEC) where
     parse = onNextContainer Sequence $ do
-        IntVal 0 <- getNext
+        skipVersion
         f <- onNextContainer Sequence $ do
             OID [1,2,840,10045,2,1] <- getNext
             parseCurveFn
-        OctetString bs <- getNext
+        (attrs, bs) <- parseAttrKeys
         let inner = decodeASN1' BER bs
             strError = Left .  ("PKCS8: error decoding inner EC: " ++) . show
         case either strError (runParseASN1 $ parseInnerEcdsa $ Just f) inner of
             Left err -> throwParseError ("PKCS8: error parsing inner EC: " ++ err)
-            Right privKey -> return (Modern privKey)
+            Right privKey -> return (Modern attrs privKey)
 
 innerEcdsaASN1S :: ASN1Elem e => Bool -> X509.PrivKeyEC -> ASN1Stream e
 innerEcdsaASN1S addC k
