@@ -9,6 +9,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Crypto.Store.PKCS5.PBES1
     ( PBEParameter(..)
@@ -186,7 +187,7 @@ pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
     B.take n $ B.concat $ take c $ loop t (s `B.append` p)
   where
     a = hashFromProxy hashAlg
-    v = 64 -- always 512 bits, we're using only SHA1
+    v = getV (DigestType hashAlg)
     u = Hash.hashDigestSize a
 
     c = (n + u - 1) `div` u
@@ -203,6 +204,16 @@ pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
                    b  = ai `extendedTo` v
                    j  = B.concat $ map (add1 b) (chunks v i)
                 in ai : loop x j
+
+getV :: DigestType -> Int
+getV (DigestType MD2)    = 64
+getV (DigestType MD4)    = 64
+getV (DigestType MD5)    = 64
+getV (DigestType SHA1)   = 64
+getV (DigestType SHA224) = 64
+getV (DigestType SHA256) = 64
+getV (DigestType SHA384) = 128
+getV (DigestType SHA512) = 128
 
 hashFromProxy :: proxy a -> a
 hashFromProxy _ = undefined
