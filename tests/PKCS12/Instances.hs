@@ -7,6 +7,7 @@ module PKCS12.Instances
 
 import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
+import           Data.Semigroup
 
 import Test.Tasty.QuickCheck
 
