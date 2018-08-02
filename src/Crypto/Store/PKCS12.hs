@@ -56,6 +56,7 @@ import           Data.ASN1.Encoding
 import qualified Data.ByteArray as B
 import qualified Data.ByteString as BS
 import           Data.Maybe (fromMaybe)
+import           Data.Semigroup
 import qualified Data.X509 as X509
 
 import Crypto.Cipher.Types
