@@ -7,6 +7,7 @@ import KeyWrap.AES
 import KeyWrap.TripleDES
 import Cipher.RC2
 import CMS.Tests
+import PKCS12.Tests
 import PKCS8.Tests
 
 -- | Run the test suite.
@@ -17,4 +18,5 @@ main = defaultMain $ testGroup "cryptostore"
     , rc2Tests
     , cmsTests
     , pkcs8Tests
+    , pkcs12Tests
     ]

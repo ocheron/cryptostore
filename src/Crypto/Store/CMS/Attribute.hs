@@ -33,7 +33,7 @@ import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
--- | An attribute extending the CMS structure with arbitrary data.
+-- | An attribute extending the parent structure with arbitrary data.
 data Attribute = Attribute
     { attrType   :: OID    -- ^ Attribute type
     , attrValues :: [ASN1] -- ^ Attribute values

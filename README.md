@@ -11,6 +11,8 @@ Currently the following is implemented:
 * Reading and writing private keys with optional encryption (this extends
   [x509-store](https://hackage.haskell.org/package/x509-store) API)
 
+* PKCS #12 container format (password-based only)
+
 * Many parts of Cryptographic Message Syntax
 
 ## Private Keys
@@ -54,6 +56,55 @@ Right ()
 Parameters used in this example are AES-256-CBC as cipher, PBKDF2 as
 key-derivation function, with an 8-byte salt, 2048 iterations and SHA-256 as
 pseudorandom function.
+
+## PKCS #12
+
+PKCS #12 is a complex format with multiple layers of protection, providing
+usually both privacy and integrity, with a single password for all or not.  The
+API to read PKCS #12 files requires some password at each layer.  This API is
+available in module `Crypto.Store.PKCS12`.
+
+Reading a binary PKCS #12 file using distinct integrity and privacy passwords:
+
+```haskell
+> :set -XOverloadedStrings
+> :m Crypto.Store.PKCS12
+> Right p12 <- readP12File "/path/to/file.p12"
+> let Right pkcs12 = recover "myintegrityassword" p12
+> let Right contents = recover "myprivacypassword" (unPKCS12 pkcs12)
+> concatMap getSafeX509Certs contents
+[SignedExact {getSigned = ...}]
+> concat <$> mapM (recover "myprivacypassword" . getSafeKeys) contents
+Right [PrivKeyRSA ...]
+```
+
+Generating a PKCS #12 file containing a private key:
+
+```haskell
+> :set -XOverloadedStrings
+
+-- Generate a private key
+> :m Crypto.PubKey.RSA Data.X509
+> privKey <- PrivKeyRSA . snd <$> generate (2048 `div` 8) 0x10001
+
+-- Put the key inside a bag
+> :m Crypto.Store.PKCS12 Crypto.Store.PKCS8 Crypto.Store.PKCS5 Crypto.Store.CMS
+> let keyBag = Bag (KeyBag $ FormattedKey PKCS8Format privKey) []
+>     contents = SafeContents [keyBag]
+
+-- Encrypt the contents
+> salt <- generateSalt 8
+> let kdf = PBKDF2 salt 2048 Nothing PBKDF2_SHA256
+> encParams <- generateEncryptionParams (CBC AES256)
+> let pbes = PBES2 (PBES2Parameter kdf encParams)
+>     Right pkcs12 = encrypted pbes "mypassword" contents
+
+-- Save to PKCS #12 with integrity protection (same password)
+> salt' <- generateSalt 8
+> let iParams = (DigestType SHA256, PBEParameter salt' 2048)
+> writeP12File "/path/to/privkey.p12" iParams "mypassword" pkcs12
+Right ()
+```
 
 ## Cryptographic Message Syntax
 

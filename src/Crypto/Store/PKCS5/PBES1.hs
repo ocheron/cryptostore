@@ -18,6 +18,7 @@ module Crypto.Store.PKCS5.PBES1
     , pkcs12
     , pkcs12rc2
     , pkcs12stream
+    , pkcs12mac
     , rc4Combine
     ) where
 
@@ -204,6 +205,25 @@ pkcs12stream failure encdec hashAlg keyLen pbeParam bs pwdUTF8 =
         Just pwdUCS2 ->
             let key = pkcs12Derive hashAlg pbeParam 1 pwdUCS2 keyLen :: Key
              in encdec key bs
+
+-- | Apply PKCS #12 derivation on the specified password and run a MAC function
+-- on some input using derived key.
+pkcs12mac :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
+          => (String -> result)
+          -> (Key -> MACAlgorithm -> ByteString -> result)
+          -> DigestAlgorithm hash
+          -> PBEParameter
+          -> ByteString
+          -> password
+          -> result
+pkcs12mac failure macFn hashAlg pbeParam bs pwdUTF8 =
+    case toUCS2 pwdUTF8 of
+        Nothing      -> failure "Provided password is not valid UTF-8"
+        Just pwdUCS2 ->
+            let macAlg = HMAC hashAlg
+                keyLen = getMaximumKeySize macAlg
+                key    = pkcs12Derive hashAlg pbeParam 3 pwdUCS2 keyLen :: Key
+            in macFn key macAlg bs
 
 pkcs12Derive :: (Hash.HashAlgorithm hash, ByteArray bout)
              => DigestAlgorithm hash
