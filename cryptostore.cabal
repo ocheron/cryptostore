@@ -26,6 +26,7 @@ library
                      , Crypto.Store.PKCS5
                      , Crypto.Store.KeyWrap.AES
                      , Crypto.Store.KeyWrap.TripleDES
+                     , Crypto.Store.KeyWrap.RC2
                      , Crypto.Store.PKCS12
                      , Crypto.Store.PKCS8
   other-modules:       Crypto.Store.ASN1.Generate
@@ -65,6 +66,7 @@ test-suite test-cryptostore
   main-is:             Main.hs
   other-modules:       KeyWrap.AES
                      , KeyWrap.TripleDES
+                     , KeyWrap.RC2
                      , CMS.Instances
                      , CMS.Tests
                      , Cipher.RC2

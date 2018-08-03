@@ -124,6 +124,7 @@ import           Crypto.Store.CMS.Util
 import           Crypto.Store.Cipher.RC2
 import qualified Crypto.Store.KeyWrap.AES as AES_KW
 import qualified Crypto.Store.KeyWrap.TripleDES as TripleDES_KW
+import qualified Crypto.Store.KeyWrap.RC2 as RC2_KW
 
 
 -- Hash functions
@@ -1118,6 +1119,7 @@ data KeyEncryptionType = TypePWRIKEK
                        | TypeAES192_WRAP_PAD
                        | TypeAES256_WRAP_PAD
                        | TypeDES_EDE3_WRAP
+                       | TypeRC2_WRAP
 
 instance Enumerable KeyEncryptionType where
     values = [ TypePWRIKEK
@@ -1128,6 +1130,7 @@ instance Enumerable KeyEncryptionType where
              , TypeAES192_WRAP_PAD
              , TypeAES256_WRAP_PAD
              , TypeDES_EDE3_WRAP
+             , TypeRC2_WRAP
              ]
 
 instance OIDable KeyEncryptionType where
@@ -1142,6 +1145,7 @@ instance OIDable KeyEncryptionType where
     getObjectID TypeAES256_WRAP_PAD = [2,16,840,1,101,3,4,1,48]
 
     getObjectID TypeDES_EDE3_WRAP   = [1,2,840,113549,1,9,16,3,6]
+    getObjectID TypeRC2_WRAP        = [1,2,840,113549,1,9,16,3,7]
 
 instance OIDNameable KeyEncryptionType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
@@ -1156,6 +1160,7 @@ data KeyEncryptionParams = PWRIKEK ContentEncryptionParams  -- ^ PWRI-KEK key wr
                          | AES192_WRAP_PAD                  -- ^ AES-192 extended key wrap
                          | AES256_WRAP_PAD                  -- ^ AES-256 extended key wrap
                          | DES_EDE3_WRAP                    -- ^ Triple-DES key wrap
+                         | RC2_WRAP Int                     -- ^ RC2 key wrap with effective key length
                          deriving (Show,Eq)
 
 instance AlgorithmId KeyEncryptionParams where
@@ -1170,9 +1175,11 @@ instance AlgorithmId KeyEncryptionParams where
     algorithmType AES192_WRAP_PAD  = TypeAES192_WRAP_PAD
     algorithmType AES256_WRAP_PAD  = TypeAES256_WRAP_PAD
     algorithmType DES_EDE3_WRAP    = TypeDES_EDE3_WRAP
+    algorithmType (RC2_WRAP _)     = TypeRC2_WRAP
 
     parameterASN1S (PWRIKEK cep)  = asn1s cep
     parameterASN1S DES_EDE3_WRAP  = gNull
+    parameterASN1S (RC2_WRAP ekl) = rc2VersionASN1 ekl
     parameterASN1S _              = id
 
     parseParameter TypePWRIKEK          = PWRIKEK <$> parse
@@ -1183,6 +1190,7 @@ instance AlgorithmId KeyEncryptionParams where
     parseParameter TypeAES192_WRAP_PAD  = return AES192_WRAP_PAD
     parseParameter TypeAES256_WRAP_PAD  = return AES256_WRAP_PAD
     parseParameter TypeDES_EDE3_WRAP    = getNextMaybe nullOrNothing >> return DES_EDE3_WRAP
+    parseParameter TypeRC2_WRAP         = RC2_WRAP <$> parseRC2Version
 
 instance HasKeySize KeyEncryptionParams where
     getKeySizeSpecifier (PWRIKEK cep)   = getKeySizeSpecifier cep
@@ -1193,6 +1201,7 @@ instance HasKeySize KeyEncryptionParams where
     getKeySizeSpecifier AES192_WRAP_PAD = getCipherKeySizeSpecifier AES192
     getKeySizeSpecifier AES256_WRAP_PAD = getCipherKeySizeSpecifier AES256
     getKeySizeSpecifier DES_EDE3_WRAP   = getCipherKeySizeSpecifier DES_EDE3
+    getKeySizeSpecifier (RC2_WRAP _)    = KeySizeFixed 16
 
 -- | Encrypt a key with the specified key encryption key and algorithm.
 keyEncrypt :: (MonadRandom m, ByteArray kek, ByteArray ba)
@@ -1212,6 +1221,8 @@ keyEncrypt key AES192_WRAP_PAD  bs = return (getCipher AES192 key >>= (`AES_KW.w
 keyEncrypt key AES256_WRAP_PAD  bs = return (getCipher AES256 key >>= (`AES_KW.wrapPad` bs))
 keyEncrypt key DES_EDE3_WRAP    bs = either (return . Left) (wrap3DES bs) (getCipher DES_EDE3 key)
   where wrap3DES b c = (\iv -> TripleDES_KW.wrap c iv b) <$> ivGenerate c
+keyEncrypt key (RC2_WRAP ekl)   bs = either (return . Left) (wrapRC2 bs) (getRC2Cipher ekl key)
+  where wrapRC2 b c = do iv <- ivGenerate c; RC2_KW.wrap c iv b
 
 -- | Decrypt a key with the specified key encryption key and algorithm.
 keyDecrypt :: (ByteArray kek, ByteArray ba)
@@ -1230,6 +1241,7 @@ keyDecrypt key AES128_WRAP_PAD  bs = getCipher AES128   key >>= (`AES_KW.unwrapP
 keyDecrypt key AES192_WRAP_PAD  bs = getCipher AES192   key >>= (`AES_KW.unwrapPad` bs)
 keyDecrypt key AES256_WRAP_PAD  bs = getCipher AES256   key >>= (`AES_KW.unwrapPad` bs)
 keyDecrypt key DES_EDE3_WRAP    bs = getCipher DES_EDE3 key >>= (`TripleDES_KW.unwrap` bs)
+keyDecrypt key (RC2_WRAP ekl)   bs = getRC2Cipher ekl key >>= (`RC2_KW.unwrap` bs)
 
 keyWrap :: (MonadRandom m, ByteArray ba)
         => Int -> ba -> m (Either String ba)

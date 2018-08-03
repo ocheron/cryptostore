@@ -321,6 +321,7 @@ instance Arbitrary KeyEncryptionParams where
         , return AES192_WRAP_PAD
         , return AES256_WRAP_PAD
         , return DES_EDE3_WRAP
+        , RC2_WRAP <$> choose (1, 1024)
         ]
 
 instance Arbitrary OtherKeyAttribute where
@@ -397,6 +398,7 @@ arbitraryEnvDev cek = sized $ \n -> do
                                  , return AES192_WRAP_PAD
                                  , return AES256_WRAP_PAD
                                  , return DES_EDE3_WRAP
+                                 , RC2_WRAP <$> choose (1, 1024)
                                  ]
         | mod len 8 == 0 = oneof [ return AES128_WRAP
                                  , return AES192_WRAP
@@ -404,10 +406,12 @@ arbitraryEnvDev cek = sized $ \n -> do
                                  , return AES128_WRAP_PAD
                                  , return AES192_WRAP_PAD
                                  , return AES256_WRAP_PAD
+                                 , RC2_WRAP <$> choose (1, 1024)
                                  ]
         | otherwise      = oneof [ return AES128_WRAP_PAD
                                  , return AES192_WRAP_PAD
                                  , return AES256_WRAP_PAD
+                                 , RC2_WRAP <$> choose (1, 1024)
                                  ]
 
     -- key wrapping in PWRIKEK is incompatible with CTR mode so we must never
