@@ -41,6 +41,14 @@ module Crypto.Store.PKCS12
     , getSafeKeys'
     , getSafeX509Certs
     , getSafeX509CRLs
+    -- * PKCS #12 attributes
+    , findAttribute
+    , setAttribute
+    , filterAttributes
+    , getFriendlyName
+    , setFriendlyName
+    , getLocalKeyId
+    , setLocalKeyId
     -- * Password-based protection
     , Password
     , OptProtected(..)
@@ -65,6 +73,7 @@ import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS
 import Crypto.Store.CMS.Algorithms
+import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Util
 import Crypto.Store.PKCS5
@@ -477,6 +486,39 @@ getSafeX509CRLs (SafeContents scs) = loop scs
             CRLBag (Bag (CRLX509 c) _) -> c : loop bags
             SafeContentsBag inner      -> getSafeX509CRLs inner ++ loop bags
             _                          -> loop bags
+
+
+-- Standard attributes
+
+friendlyName :: OID
+friendlyName = [1,2,840,113549,1,9,20]
+
+-- | Return the value of the @friendlyName@ attribute.
+getFriendlyName :: [Attribute] -> Maybe String
+getFriendlyName attrs = runParseAttribute friendlyName attrs $ do
+    ASN1String str <- getNext
+    case asn1CharacterToString str of
+        Nothing -> throwParseError "Invalid friendlyName value"
+        Just s  -> return s
+
+-- | Add or replace the @friendlyName@ attribute in a list of attributes.
+setFriendlyName :: String -> [Attribute] -> [Attribute]
+setFriendlyName name attrs =
+    setAttributeASN1S friendlyName attrs (gBMPString name)
+
+localKeyId :: OID
+localKeyId = [1,2,840,113549,1,9,21]
+
+-- | Return the value of the @localKeyId@ attribute.
+getLocalKeyId :: [Attribute] -> Maybe BS.ByteString
+getLocalKeyId attrs = runParseAttribute localKeyId attrs $ do
+    OctetString d <- getNext
+    return d
+
+-- | Add or replace the @localKeyId@ attribute in a list of attributes.
+setLocalKeyId :: BS.ByteString -> [Attribute] -> [Attribute]
+setLocalKeyId d attrs =
+    setAttributeASN1S localKeyId attrs (gOctetString d)
 
 
 -- Utilities

@@ -17,6 +17,9 @@ module Crypto.Store.CMS.Attribute
     , findAttribute
     , setAttribute
     , filterAttributes
+    -- * Implementing attributes
+    , setAttributeASN1S
+    , runParseAttribute
     -- * Standard attributes
     , getContentTypeAttr
     , setContentTypeAttr

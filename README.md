@@ -89,7 +89,8 @@ Generating a PKCS #12 file containing a private key:
 
 -- Put the key inside a bag
 > :m Crypto.Store.PKCS12 Crypto.Store.PKCS8 Crypto.Store.PKCS5 Crypto.Store.CMS
-> let keyBag = Bag (KeyBag $ FormattedKey PKCS8Format privKey) []
+> let attrs = setFriendlyName "Some Key" []
+>     keyBag = Bag (KeyBag $ FormattedKey PKCS8Format privKey) attrs
 >     contents = SafeContents [keyBag]
 
 -- Encrypt the contents
