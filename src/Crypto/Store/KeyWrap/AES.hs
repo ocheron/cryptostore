@@ -26,6 +26,8 @@ import Crypto.Cipher.Types
 
 import Foreign.Storable
 
+import Crypto.Store.Util
+
 type Chunked ba = [ba]
 type Pair ba = (ba, ba)
 
@@ -73,7 +75,7 @@ unwrap :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either String ba
 unwrap cipher bs = unchunks <$> (check =<< unwrapc cipher =<< chunks bs)
   where
     check (iiv, out)
-        | B.all (== 0xA6) iiv = Right out
+        | constAllEq 0xA6 iiv = Right out
         | otherwise           = Left "KeyWrap.AES: invalid input"
 
 chunks :: ByteArray ba => ba -> Either String (Chunked ba)
@@ -97,7 +99,7 @@ pad inlen bs | inlen  == 0 = Left "KeyWrap.AES: input is empty"
 unpad :: ByteArray ba => Int -> Pair ba -> Either String ba
 unpad inlen (aiv, b)
     | badlen         = Left "KeyWrap.AES: invalid input"
-    | B.all (== 0) p = Right bs
+    | constAllEq 0 p = Right bs
     | otherwise      = Left "KeyWrap.AES: invalid input"
   where aivlen = fromIntegral (unxor padMask aiv)
         badlen = inlen < aivlen + 8 || inlen >= aivlen + 16

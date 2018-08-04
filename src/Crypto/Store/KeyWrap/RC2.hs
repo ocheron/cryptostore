@@ -14,12 +14,14 @@ module Crypto.Store.KeyWrap.RC2
     , unwrap
     ) where
 
-import           Data.ByteArray (ByteArray, ByteArrayAccess)
+import           Data.ByteArray (ByteArray)
 import qualified Data.ByteArray as B
 
 import Crypto.Cipher.Types
 import Crypto.Hash
 import Crypto.Random
+
+import Crypto.Store.Util
 
 checksum :: ByteArray ba => ba -> ba
 checksum bs = B.convert $ B.takeView (hashWith SHA1 bs) 8
@@ -66,11 +68,10 @@ wrap' failure withRandomPad cipher iv cek
 unwrap :: (BlockCipher cipher, ByteArray ba)
        => cipher -> ba -> Either String ba
 unwrap cipher wrapped
-    | inLen <= 16              = invalid
-    | inLen `mod` 8 /= 0       = invalid
-    | icv /= checksum lcekpad  = invalid
-    | padlen < 0 || padlen > 7 = invalid
-    | otherwise                = Right cek
+    | inLen <= 16        = invalid
+    | inLen `mod` 8 /= 0 = invalid
+    | checksumPadValid   = Right cek
+    | otherwise          = invalid
   where
     inLen            = B.length wrapped
     Just iv'         = makeIV iv4adda22c79e82105
@@ -85,6 +86,5 @@ unwrap cipher wrapped
     padlen           = inLen - 16 - len - 1
     cek              = B.take len cekpad
     invalid          = Left "KeyWrap.RC2: invalid checksum"
-
-reverseBytes :: (ByteArrayAccess bin, ByteArray bout) => bin -> bout
-reverseBytes = B.pack . reverse . B.unpack
+    checksumPadValid = B.constEq icv (checksum lcekpad)
+                           &&! padlen >=0 &&! padlen < 8

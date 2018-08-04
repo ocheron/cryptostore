@@ -46,6 +46,7 @@ library
                      , Crypto.Store.PEM
                      , Crypto.Store.PKCS5.PBES1
                      , Crypto.Store.PKCS8.EC
+                     , Crypto.Store.Util
   -- other-extensions:
   build-depends:       base >= 4.9 && < 5
                      , bytestring

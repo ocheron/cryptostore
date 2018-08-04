@@ -13,11 +13,13 @@ module Crypto.Store.KeyWrap.TripleDES
     , unwrap
     ) where
 
-import           Data.ByteArray (ByteArray, ByteArrayAccess)
+import           Data.ByteArray (ByteArray)
 import qualified Data.ByteArray as B
 
 import Crypto.Cipher.Types
 import Crypto.Hash
+
+import Crypto.Store.Util
 
 checksum :: ByteArray ba => ba -> ba
 checksum bs = B.convert $ B.takeView (hashWith SHA1 bs) 8
@@ -48,9 +50,9 @@ wrap cipher iv cek
 unwrap :: (BlockCipher cipher, ByteArray ba)
        => cipher -> ba -> Either String ba
 unwrap cipher wrapped
-    | inLen /= 40         = invalid
-    | icv /= checksum cek = invalid
-    | otherwise           = Right cek
+    | inLen /= 40                  = invalid
+    | B.constEq icv (checksum cek) = Right cek
+    | otherwise                    = invalid
   where
     inLen         = B.length wrapped
     Just iv'      = makeIV iv4adda22c79e82105
@@ -61,6 +63,3 @@ unwrap cipher wrapped
     cekicv        = cbcDecrypt cipher iv temp1
     (cek, icv)    = B.splitAt 24 cekicv
     invalid       = Left "KeyWrap.TripleDES: invalid checksum"
-
-reverseBytes :: (ByteArrayAccess bin, ByteArray bout) => bin -> bout
-reverseBytes = B.pack . reverse . B.unpack

@@ -125,6 +125,7 @@ import           Crypto.Store.Cipher.RC2
 import qualified Crypto.Store.KeyWrap.AES as AES_KW
 import qualified Crypto.Store.KeyWrap.TripleDES as TripleDES_KW
 import qualified Crypto.Store.KeyWrap.RC2 as RC2_KW
+import           Crypto.Store.Util
 
 
 -- Hash functions
@@ -1262,14 +1263,13 @@ keyWrap sz input
 keyUnwrap :: ByteArray ba => ba -> Either String ba
 keyUnwrap input
     | inLen < 4         = Left "keyUnwrap: invalid wrapped key"
-    | check /= 255      = Left "keyUnwrap: invalid wrapped key"
-    | inLen < count - 4 = Left "keyUnwrap: invalid wrapped key"
-    | otherwise         = Right $ B.take count (B.drop 4 input)
+    | valid             = Right $ B.take count (B.drop 4 input)
+    | otherwise         = Left "keyUnwrap: invalid wrapped key"
   where
     inLen = B.length input
     count = fromIntegral (B.index input 0)
     bytes = [ B.index input (i + 1) `xor` B.index input (i + 4) | i <- [0..2] ]
-    check = foldl1 (.&.) bytes
+    valid = foldl1 (.&.) bytes == 0xFF &&! inLen >= count - 4
 
 wrapEncrypt :: (MonadRandom m, BlockCipher cipher, ByteArray ba)
             => (cipher -> IV cipher -> ba -> ba)
