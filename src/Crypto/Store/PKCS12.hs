@@ -503,8 +503,7 @@ getFriendlyName attrs = runParseAttribute friendlyName attrs $ do
 
 -- | Add or replace the @friendlyName@ attribute in a list of attributes.
 setFriendlyName :: String -> [Attribute] -> [Attribute]
-setFriendlyName name attrs =
-    setAttributeASN1S friendlyName attrs (gBMPString name)
+setFriendlyName name = setAttributeASN1S friendlyName (gBMPString name)
 
 localKeyId :: OID
 localKeyId = [1,2,840,113549,1,9,21]
@@ -517,8 +516,7 @@ getLocalKeyId attrs = runParseAttribute localKeyId attrs $ do
 
 -- | Add or replace the @localKeyId@ attribute in a list of attributes.
 setLocalKeyId :: BS.ByteString -> [Attribute] -> [Attribute]
-setLocalKeyId d attrs =
-    setAttributeASN1S localKeyId attrs (gOctetString d)
+setLocalKeyId d = setAttributeASN1S localKeyId (gOctetString d)
 
 
 -- Utilities

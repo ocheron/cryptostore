@@ -80,14 +80,18 @@ setAttribute :: OID -> [ASN1] -> [Attribute] -> [Attribute]
 setAttribute oid vals = (:) attr . filterAttributes (/= oid)
   where attr = Attribute { attrType = oid, attrValues = vals }
 
+-- | Find an attribute with the specified attribute and run a parser on the
+-- attribute value when found.  'Nothing' is returned if the attribute could not
+-- be found but also when the parse failed.
 runParseAttribute :: OID -> [Attribute] -> ParseASN1 () a -> Maybe a
 runParseAttribute oid attrs p =
     case findAttribute oid attrs of
         Nothing -> Nothing
         Just s  -> either (const Nothing) Just (runParseASN1 p s)
 
-setAttributeASN1S :: OID -> [Attribute] -> ASN1S -> [Attribute]
-setAttributeASN1S oid attrs g = setAttribute oid (g []) attrs
+-- | Add or replace an attribute in a list of attributes, using 'ASN1S'.
+setAttributeASN1S :: OID -> ASN1S -> [Attribute] -> [Attribute]
+setAttributeASN1S oid g = setAttribute oid (g [])
 
 
 -- Content type
@@ -103,8 +107,7 @@ getContentTypeAttr attrs = runParseAttribute contentType attrs $ do
 
 -- | Add or replace the @contentType@ attribute in a list of attributes.
 setContentTypeAttr :: ContentType -> [Attribute] -> [Attribute]
-setContentTypeAttr ct attrs =
-    setAttributeASN1S contentType attrs (gOID $ getObjectID ct)
+setContentTypeAttr ct = setAttributeASN1S contentType (gOID $ getObjectID ct)
 
 
 -- Message digest
@@ -120,5 +123,4 @@ getMessageDigestAttr attrs = runParseAttribute messageDigest attrs $ do
 
 -- | Add or replace the @messageDigest@ attribute in a list of attributes.
 setMessageDigestAttr :: ByteString -> [Attribute] -> [Attribute]
-setMessageDigestAttr d attrs =
-    setAttributeASN1S messageDigest attrs (gOctetString d)
+setMessageDigestAttr d = setAttributeASN1S messageDigest (gOctetString d)
