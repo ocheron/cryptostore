@@ -166,7 +166,7 @@ pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
 
 -- | Apply PKCS #12 derivation on the specified password and run an encryption
 -- or decryption function on some input using derived key and IV.  This variant
--- uses an RC2 cipher with the EKL specified (effective key length). 
+-- uses an RC2 cipher with the EKL specified (effective key length).
 pkcs12rc2 :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
           => (String -> result)
           -> (Key -> ContentEncryptionParams -> ByteString -> result)
