@@ -199,7 +199,7 @@ instance Show DigestedData where
 
 instance Eq DigestedData where
     DigestedData a1 i1 d1 == DigestedData a2 i2 d2 =
-        DigestType a1 == DigestType a2 && d1 `eqBA` d2 && i1 == i2
+        DigestType a1 == DigestType a2 && d1 `B.eq` d2 && i1 == i2
 
 instance ASN1Elem e => ProduceASN1Object e DigestedData where
     asn1s DigestedData{..} =

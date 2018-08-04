@@ -38,7 +38,6 @@ module Crypto.Store.CMS.Util
     , parseAlgorithm
     , parseAlgorithmMaybe
     -- * Miscellaneous functions
-    , eqBA
     , orElse
     ) where
 
@@ -46,7 +45,6 @@ import           Data.ASN1.BinaryEncoding.Raw
 import           Data.ASN1.OID
 import           Data.ASN1.Stream
 import           Data.ASN1.Types
-import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
 import           Data.List (find)
 import           Data.X509
@@ -217,10 +215,6 @@ parseAlgorithmMaybe ty = onNextContainerMaybe ty $ do
   where
     getName :: param -> String
     getName = algorithmName
-
--- | Equality for heterogeneous bytearrays (not time-constant).
-eqBA :: (B.ByteArrayAccess b1, B.ByteArrayAccess b2) => b1 -> b2 -> Bool
-eqBA b1 b2 = and $ zipWith (==) (B.unpack b1) (B.unpack b2)
 
 -- | Execute the second action only if the first action produced 'Nothing'.
 orElse :: Monad m => m (Maybe a) -> m (Maybe a) -> m (Maybe a)

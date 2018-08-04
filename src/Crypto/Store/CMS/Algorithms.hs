@@ -442,10 +442,10 @@ instance Show ContentEncryptionParams where
 
 instance Eq ContentEncryptionParams where
     ParamsECB c1        == ParamsECB c2        = cecI c1 == cecI c2
-    ParamsCBC c1 iv1    == ParamsCBC c2 iv2    = cecI c1 == cecI c2 && iv1 `eqBA` iv2
-    ParamsCBCRC2 i1 iv1 == ParamsCBCRC2 i2 iv2 = i1 == i2 && iv1 `eqBA` iv2
-    ParamsCFB c1 iv1    == ParamsCFB c2 iv2    = cecI c1 == cecI c2 && iv1 `eqBA` iv2
-    ParamsCTR c1 iv1    == ParamsCTR c2 iv2    = cecI c1 == cecI c2 && iv1 `eqBA` iv2
+    ParamsCBC c1 iv1    == ParamsCBC c2 iv2    = cecI c1 == cecI c2 && iv1 `B.eq` iv2
+    ParamsCBCRC2 i1 iv1 == ParamsCBCRC2 i2 iv2 = i1 == i2 && iv1 `B.eq` iv2
+    ParamsCFB c1 iv1    == ParamsCFB c2 iv2    = cecI c1 == cecI c2 && iv1 `B.eq` iv2
+    ParamsCTR c1 iv1    == ParamsCTR c2 iv2    = cecI c1 == cecI c2 && iv1 `B.eq` iv2
     _                   == _                   = False
 
 instance HasKeySize ContentEncryptionParams where
@@ -722,7 +722,7 @@ instance Eq AuthContentEncryptionParams where
     Params_AUTH_ENC_128 p1 == Params_AUTH_ENC_128 p2 = p1 == p2
     Params_AUTH_ENC_256 p1 == Params_AUTH_ENC_256 p2 = p1 == p2
     Params_CHACHA20_POLY1305 iv1 == Params_CHACHA20_POLY1305 iv2 =
-        iv1 `eqBA` iv2
+        iv1 `B.eq` iv2
 
     ParamsCCM c1 iv1 m1 l1 == ParamsCCM c2 iv2 m2 l2 =
         cecI c1 == cecI c2 && iv1 == iv2 && (m1, l1) == (m2, l2)
