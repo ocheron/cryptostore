@@ -6,6 +6,8 @@
 -- Portability : unknown
 --
 --
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE MagicHash #-}
 module Crypto.Store.Util
     ( (&&!)
     , reverseBytes
@@ -18,12 +20,12 @@ import qualified Data.ByteArray as B
 import           Data.List
 import           Data.Word
 
+import GHC.Exts
+
 -- | This is a strict version of &&.
 (&&!) :: Bool -> Bool -> Bool
-True  &&! True  = True
-True  &&! False = False
-False &&! True  = False
-False &&! False = False
+(&&!) x y = isTrue# (andI# (getTag# x) (getTag# y))
+  where getTag# !z = dataToTag# z
 infixr 3 &&!
 
 -- | Reverse a bytearray.
