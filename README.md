@@ -15,6 +15,9 @@ Currently the following is implemented:
 
 * Many parts of Cryptographic Message Syntax
 
+Please have a look at the examples below as well as some warnings about
+cryptographic algorithms.
+
 ## Private Keys
 
 The API to read and write private keys is available in module
@@ -171,6 +174,18 @@ password recipient, then decrypt the data to recover the content.
 > openEnvelopedData (withRecipientPassword "mypassword") envelopedData
 Right (DataCI "Hi, what will you need from the cryptostore?")
 ```
+
+## Algorithms and security
+
+For compatibility reasons cryptostore implements many outdated algorithms that
+are still in use in data formats.  Please check your security requirements.  New
+applications should favor PBKDF2 or Scrypt and AEAD ciphers.
+
+Additionally, the package is designed exclusively for store and forward
+scenarios, as most algorithms will not be perfectly safe for interactive use.
+ECDSA signature generation uses the generic ECC implementation from cryptonite
+and could leak the private key under timing attack.  A padding oracle on
+CBC-encrypted ciphertext allows to recover the plaintext.
 
 ## Design
 
