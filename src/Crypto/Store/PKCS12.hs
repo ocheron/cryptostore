@@ -38,9 +38,11 @@ module Crypto.Store.PKCS12
     , CRLInfo(..)
     , Attribute(..)
     , getSafeKeys
-    , getSafeKeys'
+    , getAllSafeKeys
     , getSafeX509Certs
+    , getAllSafeX509Certs
     , getSafeX509CRLs
+    , getAllSafeX509CRLs
     -- * PKCS #12 attributes
     , findAttribute
     , setAttribute
@@ -233,6 +235,11 @@ instance ParseASN1Object [ASN1Event] PKCS12 where
 
 -- | Read the contents of a PKCS #12.  The same privacy password will be used
 -- for all content elements.
+--
+-- This convenience function returns a 'Protected' value as soon as one element
+-- at least is encrypted.  This does not mean all elements were actually
+-- protected in the input.  If detailed view is required then function
+-- 'unPKCS12'' is also available.
 unPKCS12 :: PKCS12 -> OptProtected [SafeContents]
 unPKCS12 = applySamePassword . unPKCS12'
 
@@ -443,27 +450,32 @@ instance ASN1Elem e => ProduceASN1Object e SafeContents where
 instance Monoid e => ParseASN1Object e SafeContents where
     parse = SafeContents <$> onNextContainer Sequence parse
 
--- | Return all private keys contained in the safe contents.  All shrouded
--- private keys must derive from the same password.
-getSafeKeys :: SafeContents -> OptProtected [X509.PrivKey]
-getSafeKeys = applySamePassword . getSafeKeys'
-
 -- | Return all private keys contained in the safe contents.
-getSafeKeys' :: SafeContents -> [OptProtected X509.PrivKey]
-getSafeKeys' (SafeContents scs) = loop scs
+getSafeKeys :: SafeContents -> [OptProtected X509.PrivKey]
+getSafeKeys (SafeContents scs) = loop scs
   where
     loop []           = []
     loop (bag : bags) =
         case bagInfo bag of
             KeyBag (FormattedKey _ k) -> Unprotected k : loop bags
             PKCS8ShroudedKeyBag k     -> Protected (unshroud k) : loop bags
-            SafeContentsBag inner     -> getSafeKeys' inner ++ loop bags
+            SafeContentsBag inner     -> getSafeKeys inner ++ loop bags
             _                         -> loop bags
 
     unshroud shrouded pwd = do
         bs <- decrypt shrouded pwd
         FormattedKey _ k <- decode bs
         return k
+
+-- | Return all private keys contained in the safe content list.  All shrouded
+-- private keys must derive from the same password.
+--
+-- This convenience function returns a 'Protected' value as soon as one key at
+-- least is encrypted.  This does not mean all keys were actually protected in
+-- the input.  If detailed view is required then function 'getSafeKeys' is
+-- available.
+getAllSafeKeys :: [SafeContents] -> OptProtected [X509.PrivKey]
+getAllSafeKeys = applySamePassword . concatMap getSafeKeys
 
 -- | Return all X.509 certificates contained in the safe contents.
 getSafeX509Certs :: SafeContents -> [X509.SignedCertificate]
@@ -476,6 +488,10 @@ getSafeX509Certs (SafeContents scs) = loop scs
             SafeContentsBag inner        -> getSafeX509Certs inner ++ loop bags
             _                            -> loop bags
 
+-- | Return all X.509 certificates contained in the safe content list.
+getAllSafeX509Certs :: [SafeContents] -> [X509.SignedCertificate]
+getAllSafeX509Certs = concatMap getSafeX509Certs
+
 -- | Return all X.509 CRLs contained in the safe contents.
 getSafeX509CRLs :: SafeContents -> [X509.SignedCRL]
 getSafeX509CRLs (SafeContents scs) = loop scs
@@ -486,6 +502,10 @@ getSafeX509CRLs (SafeContents scs) = loop scs
             CRLBag (Bag (CRLX509 c) _) -> c : loop bags
             SafeContentsBag inner      -> getSafeX509CRLs inner ++ loop bags
             _                          -> loop bags
+
+-- | Return all X.509 CRLs contained in the safe content list.
+getAllSafeX509CRLs :: [SafeContents] -> [X509.SignedCRL]
+getAllSafeX509CRLs = concatMap getSafeX509CRLs
 
 
 -- Standard attributes

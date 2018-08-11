@@ -75,9 +75,9 @@ Reading a binary PKCS #12 file using distinct integrity and privacy passwords:
 > Right p12 <- readP12File "/path/to/file.p12"
 > let Right pkcs12 = recover "myintegrityassword" p12
 > let Right contents = recover "myprivacypassword" (unPKCS12 pkcs12)
-> concatMap getSafeX509Certs contents
+> getAllSafeX509Certs contents
 [SignedExact {getSigned = ...}]
-> concat <$> mapM (recover "myprivacypassword" . getSafeKeys) contents
+> recover "myprivacypassword" (getAllSafeKeys contents)
 Right [PrivKeyRSA ...]
 ```
 

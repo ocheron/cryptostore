@@ -40,8 +40,8 @@ testType caseName prefix = testCaseSteps caseName $ \step -> do
             assertRight (recover pwd integrity) $ \privacy ->
                 assertRight (recover pwd $ unPKCS12 privacy) $ \scs -> do
                     step ("Testing " ++ name)
-                    concat <$> mapM (recover pwd . getSafeKeys) scs @?= Right [key]
-                    concatMap getSafeX509Certs scs @?= certs
+                    recover pwd (getAllSafeKeys scs) @?= Right [key]
+                    getAllSafeX509Certs scs @?= certs
   where
     pwd :: Password
     pwd = fromString "dontchangeme"
