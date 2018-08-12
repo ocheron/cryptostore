@@ -66,6 +66,7 @@ import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 import Crypto.Store.PKCS8.EC
 
 -- | Encrypted key.
@@ -478,10 +479,10 @@ instance ParseASN1Object [ASN1Event] EnvelopedData where
                                  }
 
 -- | Function able to produce a 'RecipientInfo'.
-type ProducerOfRI m = ContentEncryptionKey -> m (Either String RecipientInfo)
+type ProducerOfRI m = ContentEncryptionKey -> m (Either StoreError RecipientInfo)
 
 -- | Function able to consume a 'RecipientInfo'.
-type ConsumerOfRI m = RecipientInfo -> m (Either String ContentEncryptionKey)
+type ConsumerOfRI m = RecipientInfo -> m (Either StoreError ContentEncryptionKey)
 
 -- | Generate a Key Transport recipient from a certificate and
 -- desired algorithm.  The recipient will contain certificate identifier.
@@ -509,7 +510,7 @@ forKeyTransRecipient cert params inkey = do
 withRecipientKeyTrans :: MonadRandom m => PrivKey -> ConsumerOfRI m
 withRecipientKeyTrans privKey (KTRI KTRecipientInfo{..}) =
     transportDecrypt ktKeyTransportParams privKey ktEncryptedKey
-withRecipientKeyTrans _ _ = pure (Left "Not a KT recipient")
+withRecipientKeyTrans _ _ = pure (Left RecipientTypeMismatch)
 
 -- | Generate a Key Agreement recipient from a certificate and
 -- desired algorithm.  The recipient info will contain an ephemeral public key.
@@ -556,13 +557,13 @@ withRecipientKeyAgree (PrivKeyEC priv) cert (KARI KARecipientInfo{..}) =
     case kaOriginator of
         OriginatorPublic (OriginatorPublicKeyEC _ ba) ->
             case findRecipientEncryptedKey cert kaRecipientEncryptedKeys of
-                Nothing -> pure (Left "Recipient key not found")
+                Nothing -> pure (Left RecipientKeyNotFound)
                 Just ek ->
                     let pub = SerializedPoint (bitArrayGetData ba)
                      in pure (ecdhDecrypt kaKeyAgreementParams kaUkm priv pub ek)
-        _ -> pure (Left "Unsupported KA originator format")
-withRecipientKeyAgree _ _ (KARI _) = pure (Left "Unsupported private key")
-withRecipientKeyAgree _ _ _        = pure (Left "Not a KA recipient")
+        _ -> pure (Left UnsupportedOriginatorFormat)
+withRecipientKeyAgree _ _ (KARI _) = pure (Left UnexpectedPrivateKeyType)
+withRecipientKeyAgree _ _ _        = pure (Left RecipientTypeMismatch)
 
 -- | Generate a Key Encryption Key recipient from a key encryption key and
 -- desired algorithm.  The recipient may identify the KEK that was used with
@@ -594,7 +595,7 @@ forKeyRecipient key kid params inkey = do
 withRecipientKey :: Applicative f => KeyEncryptionKey -> ConsumerOfRI f
 withRecipientKey key (KEKRI KEKRecipientInfo{..}) =
     pure (keyDecrypt key kekKeyEncryptionParams kekEncryptedKey)
-withRecipientKey _ _ = pure (Left "Not a KEK recipient")
+withRecipientKey _ _ = pure (Left RecipientTypeMismatch)
 
 -- | Generate a password recipient from a password.
 --
@@ -627,4 +628,4 @@ withRecipientPassword pwd (PasswordRI PasswordRecipientInfo{..}) =
     derived = kdfDerive priKeyDerivationFunc len pwd :: EncryptedKey
     len = fromMaybe (getMaximumKeySize priKeyEncryptionParams)
                     (kdfKeyLength priKeyDerivationFunc)
-withRecipientPassword _ _ = pure (Left "Not a password recipient")
+withRecipientPassword _ _ = pure (Left RecipientTypeMismatch)

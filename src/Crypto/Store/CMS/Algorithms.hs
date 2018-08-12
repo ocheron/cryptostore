@@ -122,6 +122,7 @@ import           Crypto.Store.ASN1.Generate
 import           Crypto.Store.ASN1.Parse
 import           Crypto.Store.CMS.Util
 import           Crypto.Store.Cipher.RC2
+import           Crypto.Store.Error
 import qualified Crypto.Store.KeyWrap.AES as AES_KW
 import qualified Crypto.Store.KeyWrap.TripleDES as TripleDES_KW
 import qualified Crypto.Store.KeyWrap.RC2 as RC2_KW
@@ -530,7 +531,7 @@ generateRC2EncryptionParams len = ParamsCBCRC2 len <$> ivGenerate undefined
 contentEncrypt :: (ByteArray cek, ByteArray ba)
                => cek
                -> ContentEncryptionParams
-               -> ba -> Either String ba
+               -> ba -> Either StoreError ba
 contentEncrypt key params bs =
     case params of
         ParamsECB cipher    -> getCipher cipher key >>= (\c -> force $ ecbEncrypt c    $ padded c bs)
@@ -547,7 +548,7 @@ contentEncrypt key params bs =
 contentDecrypt :: (ByteArray cek, ByteArray ba)
                => cek
                -> ContentEncryptionParams
-               -> ba -> Either String ba
+               -> ba -> Either StoreError ba
 contentDecrypt key params bs =
     case params of
         ParamsECB cipher    -> getCipher cipher key >>= (\c -> unpadded c (ecbDecrypt c    bs))
@@ -558,7 +559,7 @@ contentDecrypt key params bs =
   where
     unpadded c decrypted =
         case unpad (PKCS7 $ blockSize c) decrypted of
-            Nothing  -> Left "Decryption failed, incorrect key or password?"
+            Nothing  -> Left DecryptionFailed
             Just out -> Right out
 
 -- from RFC 2268 section 6
@@ -854,7 +855,7 @@ generateGCMParams c l = do
 authContentEncrypt :: forall cek aad ba . (ByteArray cek, ByteArrayAccess aad, ByteArray ba)
                    => cek
                    -> AuthContentEncryptionParams -> ba
-                   -> aad -> ba -> Either String (AuthTag, ba)
+                   -> aad -> ba -> Either StoreError (AuthTag, ba)
 authContentEncrypt key params paramsRaw aad bs =
     case params of
         Params_AUTH_ENC_128 p   -> checkAuthKey 16 key >> authEncrypt p
@@ -866,7 +867,7 @@ authContentEncrypt key params paramsRaw aad bs =
     msglen  = B.length bs
     force x = x `seq` Right x
 
-    encrypt :: Int -> AEAD a -> Either String (AuthTag, ba)
+    encrypt :: Int -> AEAD a -> Either StoreError (AuthTag, ba)
     encrypt len aead = force $ aeadSimpleEncrypt aead aad bs len
 
     ccpEncrypt :: ChaChaPoly1305.State -> Either a (AuthTag, ba)
@@ -875,7 +876,7 @@ authContentEncrypt key params paramsRaw aad bs =
         (encrypted, state') = ChaChaPoly1305.encrypt bs state
         found = ccpTag (ChaChaPoly1305.finalize state')
 
-    authEncrypt :: AuthEncParams -> Either String (AuthTag, ba)
+    authEncrypt :: AuthEncParams -> Either StoreError (AuthTag, ba)
     authEncrypt p@AuthEncParams{..} = do
         let (encKey, macKey) = authKeys key p
         encrypted <- contentEncrypt encKey encAlgorithm bs
@@ -888,7 +889,7 @@ authContentEncrypt key params paramsRaw aad bs =
 authContentDecrypt :: forall cek aad ba . (ByteArray cek, ByteArrayAccess aad, ByteArray ba)
                    => cek
                    -> AuthContentEncryptionParams -> ba
-                   -> aad -> ba -> AuthTag -> Either String ba
+                   -> aad -> ba -> AuthTag -> Either StoreError ba
 authContentDecrypt key params paramsRaw aad bs expected =
     case params of
         Params_AUTH_ENC_128 p   -> checkAuthKey 16 key >> authDecrypt p
@@ -898,12 +899,12 @@ authContentDecrypt key params paramsRaw aad bs expected =
         ParamsGCM cipher iv _   -> getAEAD cipher key AEAD_GCM iv >>= decrypt
   where
     msglen  = B.length bs
-    badMac  = Left "Bad content MAC"
+    badMac  = Left BadContentMAC
 
-    decrypt :: AEAD a -> Either String ba
+    decrypt :: AEAD a -> Either StoreError ba
     decrypt aead = maybe badMac Right (aeadSimpleDecrypt aead aad bs expected)
 
-    ccpDecrypt :: ChaChaPoly1305.State -> Either String ba
+    ccpDecrypt :: ChaChaPoly1305.State -> Either StoreError ba
     ccpDecrypt state
         | found == expected = Right decrypted
         | otherwise         = badMac
@@ -911,7 +912,7 @@ authContentDecrypt key params paramsRaw aad bs expected =
         (decrypted, state') = ChaChaPoly1305.decrypt bs state
         found = ccpTag (ChaChaPoly1305.finalize state')
 
-    authDecrypt :: AuthEncParams -> Either String ba
+    authDecrypt :: AuthEncParams -> Either StoreError ba
     authDecrypt p@AuthEncParams{..}
         | found == expected = contentDecrypt encKey encAlgorithm bs
         | otherwise         = badMac
@@ -921,10 +922,10 @@ authContentDecrypt key params paramsRaw aad bs expected =
         found  = mac macAlgorithm macKey macMsg
 
 getAEAD :: (BlockCipher cipher, ByteArray key, ByteArrayAccess iv)
-        => proxy cipher -> key -> AEADMode -> iv -> Either String (AEAD cipher)
+        => proxy cipher -> key -> AEADMode -> iv -> Either StoreError (AEAD cipher)
 getAEAD cipher key mode iv = do
     c <- getCipher cipher key
-    onCryptoFailure (Left . show) Right $ aeadInit mode c iv
+    fromCryptoFailable $ aeadInit mode c iv
 
 authKeys :: ByteArrayAccess password
          => password -> AuthEncParams
@@ -943,21 +944,20 @@ authKeys key AuthEncParams{..} = (encKey, macKey)
     macLen | encLen == 24 = 16
            | otherwise    = getMaximumKeySize macAlgorithm
 
-checkAuthKey :: ByteArrayAccess cek => Int -> cek -> Either String ()
+checkAuthKey :: ByteArrayAccess cek => Int -> cek -> Either StoreError ()
 checkAuthKey sz key
     | actual == sz = Right ()
-    | otherwise    =
-        Left ("Expecting " ++ show sz ++ "-byte key instead of " ++ show actual)
+    | otherwise    = Left (CryptoError CryptoError_KeySizeInvalid)
   where actual = B.length key
 
 ccpInit :: (ByteArrayAccess key, ByteArrayAccess aad)
         => key
         -> ChaChaPoly1305.Nonce
         -> aad
-        -> Either String ChaChaPoly1305.State
+        -> Either StoreError ChaChaPoly1305.State
 ccpInit key nonce aad = case ChaChaPoly1305.initialize key nonce of
     CryptoPassed s -> return (addAAD s)
-    CryptoFailed e -> Left ("Invalid ChaChaPoly1305 parameters: " ++ show e)
+    CryptoFailed e -> Left (CryptoError e)
   where addAAD = ChaChaPoly1305.finalizeAAD . ChaChaPoly1305.appendAAD aad
 
 ccpTag :: Poly1305.Auth -> AuthTag
@@ -1206,14 +1206,14 @@ instance HasKeySize KeyEncryptionParams where
 
 -- | Encrypt a key with the specified key encryption key and algorithm.
 keyEncrypt :: (MonadRandom m, ByteArray kek, ByteArray ba)
-           => kek -> KeyEncryptionParams -> ba -> m (Either String ba)
+           => kek -> KeyEncryptionParams -> ba -> m (Either StoreError ba)
 keyEncrypt key (PWRIKEK params) bs =
     case params of
         ParamsECB cipher    -> let cc = getCipher cipher key in either (return . Left) (\c -> wrapEncrypt (const . ecbEncrypt) c undefined bs) cc
         ParamsCBC cipher iv -> let cc = getCipher cipher key in either (return . Left) (\c -> wrapEncrypt cbcEncrypt c iv bs) cc
         ParamsCBCRC2 len iv -> let cc = getRC2Cipher len key in either (return . Left) (\c -> wrapEncrypt cbcEncrypt c iv bs) cc
         ParamsCFB cipher iv -> let cc = getCipher cipher key in either (return . Left) (\c -> wrapEncrypt cfbEncrypt c iv bs) cc
-        ParamsCTR _ _       -> return (Left "Unable to wrap key in CTR mode")
+        ParamsCTR _ _       -> return $ Left (InvalidParameter "Unable to wrap key in CTR mode")
 keyEncrypt key AES128_WRAP      bs = return (getCipher AES128 key >>= (`AES_KW.wrap` bs))
 keyEncrypt key AES192_WRAP      bs = return (getCipher AES192 key >>= (`AES_KW.wrap` bs))
 keyEncrypt key AES256_WRAP      bs = return (getCipher AES256 key >>= (`AES_KW.wrap` bs))
@@ -1227,14 +1227,14 @@ keyEncrypt key (RC2_WRAP ekl)   bs = either (return . Left) (wrapRC2 bs) (getRC2
 
 -- | Decrypt a key with the specified key encryption key and algorithm.
 keyDecrypt :: (ByteArray kek, ByteArray ba)
-           => kek -> KeyEncryptionParams -> ba -> Either String ba
+           => kek -> KeyEncryptionParams -> ba -> Either StoreError ba
 keyDecrypt key (PWRIKEK params) bs =
     case params of
         ParamsECB cipher    -> getCipher cipher key >>= (\c -> wrapDecrypt (const . ecbDecrypt) c undefined bs)
         ParamsCBC cipher iv -> getCipher cipher key >>= (\c -> wrapDecrypt cbcDecrypt c iv bs)
         ParamsCBCRC2 len iv -> getRC2Cipher len key >>= (\c -> wrapDecrypt cbcDecrypt c iv bs)
         ParamsCFB cipher iv -> getCipher cipher key >>= (\c -> wrapDecrypt cfbDecrypt c iv bs)
-        ParamsCTR _ _       -> Left "Unable to unwrap key in CTR mode"
+        ParamsCTR _ _       -> Left (InvalidParameter "Unable to unwrap key in CTR mode")
 keyDecrypt key AES128_WRAP      bs = getCipher AES128   key >>= (`AES_KW.unwrap` bs)
 keyDecrypt key AES192_WRAP      bs = getCipher AES192   key >>= (`AES_KW.unwrap` bs)
 keyDecrypt key AES256_WRAP      bs = getCipher AES256   key >>= (`AES_KW.unwrap` bs)
@@ -1245,10 +1245,10 @@ keyDecrypt key DES_EDE3_WRAP    bs = getCipher DES_EDE3 key >>= (`TripleDES_KW.u
 keyDecrypt key (RC2_WRAP ekl)   bs = getRC2Cipher ekl key >>= (`RC2_KW.unwrap` bs)
 
 keyWrap :: (MonadRandom m, ByteArray ba)
-        => Int -> ba -> m (Either String ba)
+        => Int -> ba -> m (Either StoreError ba)
 keyWrap sz input
-    | inLen <   3 = return $ Left "keyWrap: input key too short"
-    | inLen > 255 = return $ Left "keyWrap: input key too long"
+    | inLen <   3 = return $ Left (InvalidInput "keyWrap: input key too short")
+    | inLen > 255 = return $ Left (InvalidInput "keyWrap: input key too long")
     | pLen == 0   = return $ Right $ B.concat [ count, check, input ]
     | otherwise   = do
         padding <- getRandomBytes pLen
@@ -1260,11 +1260,11 @@ keyWrap sz input
     pLen  = sz - (inLen + 4) `mod` sz + comp
     comp  = if inLen + 4 > sz then 0 else sz
 
-keyUnwrap :: ByteArray ba => ba -> Either String ba
+keyUnwrap :: ByteArray ba => ba -> Either StoreError ba
 keyUnwrap input
-    | inLen < 4         = Left "keyUnwrap: invalid wrapped key"
+    | inLen < 4         = Left (InvalidInput "keyUnwrap: invalid wrapped key")
     | valid             = Right $ B.take count (B.drop 4 input)
-    | otherwise         = Left "keyUnwrap: invalid wrapped key"
+    | otherwise         = Left (InvalidInput "keyUnwrap: invalid wrapped key")
   where
     inLen = B.length input
     count = fromIntegral (B.index input 0)
@@ -1273,7 +1273,7 @@ keyUnwrap input
 
 wrapEncrypt :: (MonadRandom m, BlockCipher cipher, ByteArray ba)
             => (cipher -> IV cipher -> ba -> ba)
-            -> cipher -> IV cipher -> ba -> m (Either String ba)
+            -> cipher -> IV cipher -> ba -> m (Either StoreError ba)
 wrapEncrypt encFn cipher iv input = do
     wrapped <- keyWrap sz input
     return (fn <$> wrapped)
@@ -1287,7 +1287,7 @@ wrapEncrypt encFn cipher iv input = do
 
 wrapDecrypt :: (BlockCipher cipher, ByteArray ba)
             => (cipher -> IV cipher -> ba -> ba)
-            -> cipher -> IV cipher -> ba -> Either String ba
+            -> cipher -> IV cipher -> ba -> Either StoreError ba
 wrapDecrypt decFn cipher iv input = keyUnwrap (decFn cipher iv firstPass)
   where
     sz = blockSize cipher
@@ -1389,15 +1389,13 @@ transportEncrypt :: MonadRandom m
                  => KeyTransportParams
                  -> X509.PubKey
                  -> ByteString
-                 -> m (Either String ByteString)
+                 -> m (Either StoreError ByteString)
 transportEncrypt RSAES         (X509.PubKeyRSA pub) bs =
-    let strErr e = Left ("transportEncrypt: " ++ show e)
-     in either strErr Right <$> RSA.encrypt pub bs
+    mapLeft RSAError <$> RSA.encrypt pub bs
 transportEncrypt (RSAESOAEP p) (X509.PubKeyRSA pub) bs =
     withOAEPParams p $ \params ->
-        let strErr e = Left ("transportEncrypt: " ++ show e)
-        in either strErr Right <$> RSAOAEP.encrypt params pub bs
-transportEncrypt alg _ _ = return $ Left ("transportEncrypt: public key not compatible with " ++ show alg)
+        mapLeft RSAError <$> RSAOAEP.encrypt params pub bs
+transportEncrypt _ _ _ = return $ Left UnexpectedPublicKeyType
 
 -- | Decrypt the specified content with a key-transport algorithm and recipient
 -- private key.
@@ -1405,15 +1403,13 @@ transportDecrypt :: MonadRandom m
                  => KeyTransportParams
                  -> X509.PrivKey
                  -> ByteString
-                 -> m (Either String ByteString)
+                 -> m (Either StoreError ByteString)
 transportDecrypt RSAES         (X509.PrivKeyRSA priv) bs =
-    let strErr e = Left ("transportDecrypt: " ++ show e)
-     in either strErr Right <$> RSA.decryptSafer priv bs
+    mapLeft RSAError <$> RSA.decryptSafer priv bs
 transportDecrypt (RSAESOAEP p) (X509.PrivKeyRSA priv) bs =
     withOAEPParams p $ \params ->
-        let strErr e = Left ("transportDecrypt: " ++ show e)
-        in either strErr Right <$> RSAOAEP.decryptSafer params priv bs
-transportDecrypt alg _ _ = return $ Left ("transportDecrypt: private key not compatible with " ++ show alg)
+        mapLeft RSAError <$> RSAOAEP.decryptSafer params priv bs
+transportDecrypt _ _ _ = return $ Left UnexpectedPrivateKeyType
 
 
 -- Key agreement
@@ -1501,30 +1497,30 @@ ecdhKeyMaterial (DigestType hashAlg) kep ukm zz
          in encodeASN1S $ asn1Container Sequence (ki . eui . spi)
 
 -- | Generate an ephemeral ECDH key.
-ecdhGenerate :: MonadRandom m => X509.PubKey -> m (Either String (ECC.Curve, ECC.PrivateNumber, X509.SerializedPoint))
+ecdhGenerate :: MonadRandom m => X509.PubKey -> m (Either StoreError (ECC.Curve, ECC.PrivateNumber, X509.SerializedPoint))
 ecdhGenerate (X509.PubKeyEC pub) =
     case ecPubKeyCurveName pub of
-        Nothing -> return $ Left "ecdhGenerate: not a named curve"
+        Nothing -> return $ Left NamedCurveRequired
         Just n  -> do
             let curve = ECC.getCurveByName n
             priv <- ECDH.generatePrivate curve
             return $ Right (curve, priv, X509.pubkeyEC_pub pub)
-ecdhGenerate _ = return $ Left "ecdhGenerate: not an EC public key"
+ecdhGenerate _ = return $ Left UnexpectedPublicKeyType
 
 -- | Encrypt the specified content with an ECDH key pair and key-agreement
 -- algorithm.
 ecdhEncrypt :: (MonadRandom m, ByteArray ba)
-            => KeyAgreementParams -> Maybe ByteString -> ECC.Curve -> ECC.PrivateNumber -> X509.SerializedPoint -> ba -> m (Either String ba)
+            => KeyAgreementParams -> Maybe ByteString -> ECC.Curve -> ECC.PrivateNumber -> X509.SerializedPoint -> ba -> m (Either StoreError ba)
 ecdhEncrypt (StdDH dig kep) ukm curve d pt bs =
     case unserializePoint curve pt of
-        Nothing  -> return $ Left "ecdhEncrypt: invalid serialized point"
+        Nothing  -> return $ Left (InvalidInput "Invalid serialized point")
         Just pub -> do
             let s = ECDH.getShared curve d pub
                 k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
             keyEncrypt k kep bs
 ecdhEncrypt (CofactorDH dig kep) ukm curve d pt bs =
     case unserializePoint curve pt of
-        Nothing  -> return $ Left "ecdhEncrypt: invalid serialized point"
+        Nothing  -> return $ Left (InvalidInput "Invalid serialized point")
         Just pub -> do
             let h = ECC.ecc_h (ECC.common_curve curve)
                 s = ECDH.getShared curve (h * d) pub
@@ -1534,13 +1530,13 @@ ecdhEncrypt (CofactorDH dig kep) ukm curve d pt bs =
 -- | Decrypt the specified content with an ECDH key pair and key-agreement
 -- algorithm.
 ecdhDecrypt :: ByteArray ba
-            => KeyAgreementParams -> Maybe ByteString -> X509.PrivKeyEC -> X509.SerializedPoint -> ba -> Either String ba
+            => KeyAgreementParams -> Maybe ByteString -> X509.PrivKeyEC -> X509.SerializedPoint -> ba -> Either StoreError ba
 ecdhDecrypt (StdDH dig kep) ukm priv pt bs =
     case ecPrivKeyCurve priv of
-        Nothing    -> Left "ecdhDecrypt: invalid curve"
+        Nothing    -> Left UnsupportedEllipticCurve
         Just curve ->
             case unserializePoint curve pt of
-                Nothing  -> Left "ecdhDecrypt: invalid serialized point"
+                Nothing  -> Left (InvalidInput "Invalid serialized point")
                 Just pub -> do
                     let d = X509.privkeyEC_priv priv
                         s = ECDH.getShared curve d pub
@@ -1548,10 +1544,10 @@ ecdhDecrypt (StdDH dig kep) ukm priv pt bs =
                     keyDecrypt k kep bs
 ecdhDecrypt (CofactorDH dig kep) ukm priv pt bs =
     case ecPrivKeyCurve priv of
-        Nothing    -> Left "ecdhDecrypt: invalid curve"
+        Nothing    -> Left UnsupportedEllipticCurve
         Just curve ->
             case unserializePoint curve pt of
-                Nothing  -> Left "ecdhDecrypt: invalid serialized point"
+                Nothing  -> Left (InvalidInput "Invalid serialized point")
                 Just pub -> do
                     let h = ECC.ecc_h (ECC.common_curve curve)
                         d = X509.privkeyEC_priv priv
@@ -1563,17 +1559,11 @@ ecdhDecrypt (CofactorDH dig kep) ukm priv pt bs =
 -- Utilities
 
 getCipher :: (BlockCipher cipher, ByteArray key)
-          => proxy cipher -> key -> Either String cipher
-getCipher _ key =
-    case cipherInit key of
-        CryptoPassed c -> Right c
-        CryptoFailed e -> Left ("Unable to use key: " ++ show e)
+          => proxy cipher -> key -> Either StoreError cipher
+getCipher _ key = fromCryptoFailable (cipherInit key)
 
-getRC2Cipher :: ByteArray key => Int -> key -> Either String RC2
-getRC2Cipher len key =
-    case rc2WithEffectiveKeyLength len key of
-        CryptoPassed c -> Right c
-        CryptoFailed e -> Left ("Unable to use RC2 key: " ++ show e)
+getRC2Cipher :: ByteArray key => Int -> key -> Either StoreError RC2
+getRC2Cipher len key = fromCryptoFailable (rc2WithEffectiveKeyLength len key)
 
 ivGenerate :: (BlockCipher cipher, MonadRandom m) => cipher -> m (IV cipher)
 ivGenerate cipher = do
@@ -1807,18 +1797,16 @@ instance AlgorithmId SignatureAlg where
     parseParameter (TypeECDSA alg)  = return (ECDSA alg)
 
 -- | Sign a message using the specified algorithm and private key.
-signatureGenerate :: MonadRandom m => SignatureAlg -> X509.PrivKey -> ByteString -> m (Either String SignatureValue)
+signatureGenerate :: MonadRandom m => SignatureAlg -> X509.PrivKey -> ByteString -> m (Either StoreError SignatureValue)
 signatureGenerate RSAAnyHash _ _ =
     error "signatureGenerate: should call signatureResolveHash first"
 signatureGenerate (RSA alg)   (X509.PrivKeyRSA priv) msg =
-    let strErr e = Left ("signatureGenerate: " ++ show e)
-        err      = return $ Left ("signatureGenerate: invalid hash algorithm for RSA: " ++ show alg)
+    let err = return . Left $ InvalidParameter ("Invalid hash algorithm for RSA: " ++ show alg)
      in withHashAlgorithmASN1 alg err $ \hashAlg ->
-            either strErr Right <$> RSA.signSafer (Just hashAlg) priv msg
+            mapLeft RSAError <$> RSA.signSafer (Just hashAlg) priv msg
 signatureGenerate (RSAPSS p)  (X509.PrivKeyRSA priv) msg =
     withPSSParams p $ \params ->
-        let strErr e = Left ("signatureGenerate: " ++ show e)
-         in either strErr Right <$> RSAPSS.signSafer params priv msg
+        mapLeft RSAError <$> RSAPSS.signSafer params priv msg
 signatureGenerate (DSA alg)   (X509.PrivKeyDSA priv) msg =
     case alg of
         DigestType t ->
@@ -1827,11 +1815,11 @@ signatureGenerate (ECDSA alg) (X509.PrivKeyEC priv)  msg =
     case alg of
         DigestType t ->
             case ecdsaToPrivateKey priv of
-                Nothing -> return (Left "signatureGenerate: unable to use curve in PrivKeyEC")
+                Nothing -> return (Left UnsupportedEllipticCurve)
                 Just p  ->
                     let h = hashFromProxy t
                      in Right . ecdsaFromSignature <$> ECDSA.sign p h msg
-signatureGenerate alg _ _ = return $ Left ("signatureGenerate: private key not compatible with " ++ show alg)
+signatureGenerate _ _ _ = return (Left UnexpectedPrivateKeyType)
 
 -- | Verify a message signature using the specified algorithm and public key.
 signatureVerify :: SignatureAlg -> X509.PubKey -> ByteString -> SignatureValue -> Bool

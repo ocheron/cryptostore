@@ -78,6 +78,7 @@ import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 import Crypto.Store.PKCS5
 import Crypto.Store.PKCS5.PBES1
 import Crypto.Store.PKCS8
@@ -86,11 +87,11 @@ import Crypto.Store.PKCS8
 -- Decoding and parsing
 
 -- | Read a PKCS #12 file from disk.
-readP12File :: FilePath -> IO (Either String (OptProtected PKCS12))
+readP12File :: FilePath -> IO (Either StoreError (OptProtected PKCS12))
 readP12File path = readP12FileFromMemory <$> BS.readFile path
 
 -- | Read a PKCS #12 file from a bytearray in BER format.
-readP12FileFromMemory :: BS.ByteString -> Either String (OptProtected PKCS12)
+readP12FileFromMemory :: BS.ByteString -> Either StoreError (OptProtected PKCS12)
 readP12FileFromMemory ber = decode ber >>= integrity
   where
     integrity PFX{..} =
@@ -103,7 +104,7 @@ readP12FileFromMemory ber = decode ber >>= integrity
             DigestType d ->
                 let fn key macAlg bs
                         | macValue == mac macAlg key bs = decode bs
-                        | otherwise = Left "Bac content MAC, invalid password?"
+                        | otherwise = Left BadContentMAC
                  in pkcs12mac Left fn d macParams content pwdUTF8
 
 
@@ -116,7 +117,7 @@ type IntegrityParams = (DigestType, PBEParameter)
 writeP12File :: FilePath
              -> IntegrityParams -> Password
              -> PKCS12
-             -> IO (Either String ())
+             -> IO (Either StoreError ())
 writeP12File path intp pw aSafe =
     case writeP12FileToMemory intp pw aSafe of
         Left e   -> return (Left e)
@@ -125,7 +126,7 @@ writeP12File path intp pw aSafe =
 -- | Write a PKCS #12 file to a bytearray in DER format.
 writeP12FileToMemory :: IntegrityParams -> Password
                      -> PKCS12
-                     -> Either String BS.ByteString
+                     -> Either StoreError BS.ByteString
 writeP12FileToMemory (alg@(DigestType hashAlg), pbeParam) pwdUTF8 aSafe =
     encode <$> protect
   where
@@ -255,7 +256,7 @@ unencrypted :: SafeContents -> PKCS12
 unencrypted = PKCS12 . (:[]) . Unencrypted
 
 -- | Build a PKCS #12 encrypted with the specified scheme and password.
-encrypted :: EncryptionScheme -> Password -> SafeContents -> Either String PKCS12
+encrypted :: EncryptionScheme -> Password -> SafeContents -> Either StoreError PKCS12
 encrypted alg pwd sc = PKCS12 . (:[]) . Encrypted <$> encrypt alg pwd bs
   where bs = encodeASN1Object sc
 
@@ -556,20 +557,20 @@ applySamePassword (Protected f : xs) =
             es <- g pwd
             return (e : es)
 
-decode :: ParseASN1Object [ASN1Event] obj => BS.ByteString -> Either String obj
+decode :: ParseASN1Object [ASN1Event] obj => BS.ByteString -> Either StoreError obj
 decode bs =
     case decodeASN1Repr' BER bs of
-        Left e     -> Left ("PKCS12: unable to decode: " ++ show e)
+        Left e     -> Left (DecodingError e)
         Right asn1 ->
             case fromASN1Repr asn1 of
                 Right (obj, []) -> Right obj
-                Right _         -> Left "PKCS12: incomplete parse"
-                Left e          -> Left e
+                Right _         -> Left (ParseFailure "Incomplete parse")
+                Left e          -> Left (ParseFailure e)
 
 parseOctetStringObject :: (Monoid e, ParseASN1Object [ASN1Event] obj)
                        => String -> ParseASN1 e obj
 parseOctetStringObject name = do
     OctetString bs <- getNext
     case decode bs of
-        Left e  -> throwParseError (name ++ ": " ++ e)
+        Left e  -> throwParseError (name ++ ": " ++ show e)
         Right c -> return c

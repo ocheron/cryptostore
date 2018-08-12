@@ -15,6 +15,7 @@ import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
 import Crypto.Store.Cipher.RC2
+import Crypto.Store.Error
 import Crypto.Store.KeyWrap.RC2
 
 import X509.Instances () -- for instance MonadRandom Gen
@@ -84,5 +85,5 @@ rc2kwTests =
             Just iv = makeIV vecIV
             doWrap = wrap' Left withRandomPad
             withRandomPad f len
-                | B.length vecPad /= len = Left "unexpected length"
+                | B.length vecPad /= len = Left (InvalidInput "unexpected length")
                 | otherwise              = Right (f vecPad)

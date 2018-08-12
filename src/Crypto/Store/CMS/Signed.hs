@@ -42,6 +42,7 @@ import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 
 -- | Information related to a signer of a 'Crypto.Store.CMS.SignedData'.  An
 -- element contains the signature material that was produced.
@@ -142,7 +143,7 @@ partitionHead p l =
         ([]   , _)    -> Nothing
 
 -- | Function able to produce a 'SignerInfo'.
-type ProducerOfSI m = ContentType -> ByteString -> m (Either String (SignerInfo, [CertificateChoice], [RevocationInfoChoice]))
+type ProducerOfSI m = ContentType -> ByteString -> m (Either StoreError (SignerInfo, [CertificateChoice], [RevocationInfoChoice]))
 
 -- | Function able to consume a 'SignerInfo'.
 type ConsumerOfSI m = ContentType -> ByteString -> SignerInfo -> [CertificateChoice] -> [RevocationInfoChoice] -> m Bool

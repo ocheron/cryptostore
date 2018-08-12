@@ -48,6 +48,7 @@ import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 import Crypto.Store.PKCS5.PBES1
 
 data EncryptionSchemeType = Type_PBES2
@@ -191,13 +192,13 @@ instance ASN1Object PKCS5 where
     fromASN1 = runParseASN1State parse
 
 -- | Encrypt a bytestring with the specified encryption scheme and password.
-encrypt :: EncryptionScheme -> Password -> ByteString -> Either String PKCS5
+encrypt :: EncryptionScheme -> Password -> ByteString -> Either StoreError PKCS5
 encrypt alg pwd bs = build <$> pbEncrypt alg bs pwd
   where
     build ed = ed `seq` PKCS5 { encryptionAlgorithm = alg, encryptedData = ed }
 
 -- | Decrypt the PKCS #5 content with the specified password.
-decrypt :: PKCS5 -> Password -> Either String ByteString
+decrypt :: PKCS5 -> Password -> Either StoreError ByteString
 decrypt obj = pbDecrypt (encryptionAlgorithm obj) (encryptedData obj)
 
 
@@ -205,7 +206,7 @@ decrypt obj = pbDecrypt (encryptionAlgorithm obj) (encryptedData obj)
 
 -- | Encrypt a bytestring with the specified encryption scheme and password.
 pbEncrypt :: EncryptionScheme -> ByteString -> Password
-          -> Either String EncryptedContent
+          -> Either StoreError EncryptedContent
 pbEncrypt (PBES2 p)                 = pbes2  contentEncrypt p
 pbEncrypt (PBE_MD5_DES_CBC p)       = pkcs5  Left contentEncrypt MD5  DES p
 pbEncrypt (PBE_SHA1_DES_CBC p)      = pkcs5  Left contentEncrypt SHA1 DES p
@@ -218,7 +219,7 @@ pbEncrypt (PBE_SHA1_RC2_40 p)       = pkcs12rc2 Left contentEncrypt SHA1 40 p
 
 -- | Decrypt an encrypted bytestring with the specified encryption scheme and
 -- password.
-pbDecrypt :: EncryptionScheme -> EncryptedContent -> Password -> Either String ByteString
+pbDecrypt :: EncryptionScheme -> EncryptedContent -> Password -> Either StoreError ByteString
 pbDecrypt (PBES2 p)                 = pbes2  contentDecrypt p
 pbDecrypt (PBE_MD5_DES_CBC p)       = pkcs5  Left contentDecrypt MD5  DES p
 pbDecrypt (PBE_SHA1_DES_CBC p)      = pkcs5  Left contentDecrypt SHA1 DES p

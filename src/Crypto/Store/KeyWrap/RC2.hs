@@ -21,6 +21,7 @@ import Crypto.Cipher.Types
 import Crypto.Hash
 import Crypto.Random
 
+import Crypto.Store.Error
 import Crypto.Store.Util
 
 checksum :: ByteArray ba => ba -> ba
@@ -34,7 +35,7 @@ iv4adda22c79e82105 = B.pack [0x4a, 0xdd, 0xa2, 0x2c, 0x79, 0xe8, 0x21, 0x05]
 -- Input must be between 0 and 255 bytes.  A fresh IV should be generated
 -- randomly for each invocation.
 wrap :: (MonadRandom m, BlockCipher cipher, ByteArray ba)
-     => cipher -> IV cipher -> ba -> m (Either String ba)
+     => cipher -> IV cipher -> ba -> m (Either StoreError ba)
 wrap = wrap' (return . Left) randomPad
   where randomPad f = fmap (Right . f) . getRandomBytes
 
@@ -44,12 +45,12 @@ wrap = wrap' (return . Left) randomPad
 -- Input must be between 0 and 255 bytes.  A fresh IV should be generated
 -- randomly for each invocation.
 wrap' :: (ByteArray ba, BlockCipher cipher)
-      => (String -> result) -> ((ba -> ba) -> Int -> result)
+      => (StoreError -> result) -> ((ba -> ba) -> Int -> result)
       -> cipher -> IV cipher -> ba -> result
 wrap' failure withRandomPad cipher iv cek
     | inLen < 256 = withRandomPad f padlen
-    | otherwise   =
-        failure "KeyWrap.RC2: invalid length for content encryption key"
+    | otherwise   = failure
+        (InvalidInput "KeyWrap.RC2: invalid length for content encryption key")
   where
     inLen      = B.length cek
     padlen     = (7 - inLen) `mod` 8
@@ -66,7 +67,7 @@ wrap' failure withRandomPad cipher iv cek
 
 -- | Unwrap an encrypted RC2 key with the specified RC2 cipher.
 unwrap :: (BlockCipher cipher, ByteArray ba)
-       => cipher -> ba -> Either String ba
+       => cipher -> ba -> Either StoreError ba
 unwrap cipher wrapped
     | inLen <= 16        = invalid
     | inLen `mod` 8 /= 0 = invalid
@@ -85,6 +86,6 @@ unwrap cipher wrapped
     len              = fromIntegral l
     padlen           = inLen - 16 - len - 1
     cek              = B.take len cekpad
-    invalid          = Left "KeyWrap.RC2: invalid checksum"
+    invalid          = Left BadChecksum
     checksumPadValid = B.constEq icv (checksum lcekpad)
                            &&! padlen >=0 &&! padlen < 8

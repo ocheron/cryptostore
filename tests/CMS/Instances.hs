@@ -17,6 +17,7 @@ import Test.Tasty.QuickCheck
 import Crypto.Cipher.Types
 
 import Crypto.Store.CMS
+import Crypto.Store.Error
 
 import X509.Instances
 
@@ -48,7 +49,7 @@ instance Arbitrary ContentInfo where
             alg   <- arbitrary
             (sigFns, _) <- arbitrarySigVer alg
             inner <- scale (subtract $ length sigFns) arbitrary
-            signData sigFns inner >>= either fail return
+            signData sigFns inner >>= failIfError
 
         arbitraryEnvelopedData :: Gen ContentInfo
         arbitraryEnvelopedData = do
@@ -56,7 +57,7 @@ instance Arbitrary ContentInfo where
             (alg, key, attrs) <- getCommon
             (envFns, _) <- arbitraryEnvDev key
             inner <- scale (subtract $ length envFns) arbitrary
-            envelopData oinfo key alg envFns attrs inner >>= either fail return
+            envelopData oinfo key alg envFns attrs inner >>= failIfError
 
         arbitraryDigestedData :: Gen ContentInfo
         arbitraryDigestedData = do
@@ -68,7 +69,7 @@ instance Arbitrary ContentInfo where
         arbitraryEncryptedData = do
             (alg, key, attrs) <- getCommon
             inner <- scale pred arbitrary
-            either fail return $ encryptData key alg attrs inner
+            failIfError $ encryptData key alg attrs inner
 
         arbitraryAuthenticatedData :: Gen ContentInfo
         arbitraryAuthenticatedData = do
@@ -76,14 +77,14 @@ instance Arbitrary ContentInfo where
             dig <- arbitrary
             inner <- scale (subtract $ length envFns) arbitrary
             generateAuthenticatedData oinfo key alg dig envFns aAttrs uAttrs inner
-                >>= either fail return
+                >>= failIfError
 
         arbitraryAuthEnvelopedData :: Gen ContentInfo
         arbitraryAuthEnvelopedData = do
             (oinfo, alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
             inner <- scale (subtract $ length envFns) arbitrary
             authEnvelopData oinfo key alg envFns aAttrs uAttrs inner
-                >>= either fail return
+                >>= failIfError
 
         getCommonAuth :: (HasKeySize params, Arbitrary params)
                   => Gen ( OriginatorInfo, params, ContentEncryptionKey
@@ -103,6 +104,9 @@ instance Arbitrary ContentInfo where
             key   <- generateKey alg
             attrs <- arbitraryAttributes
             return (alg, key, attrs)
+
+        failIfError :: Either StoreError a -> Gen a
+        failIfError = either (fail . show) return
 
 instance Arbitrary Attribute where
     arbitrary = do

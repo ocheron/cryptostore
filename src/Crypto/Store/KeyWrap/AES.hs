@@ -26,6 +26,7 @@ import Crypto.Cipher.Types
 
 import Foreign.Storable
 
+import Crypto.Store.Error
 import Crypto.Store.Util
 
 type Chunked ba = [ba]
@@ -56,8 +57,8 @@ wrapc cipher iiv list = uncurry (:) $ foldl' pass (iiv, list) [0 .. 5]
          in (xorWith msb i, lsb)
 
 unwrapc :: (BlockCipher aes, ByteArray ba)
-        => aes -> Chunked ba -> Either String (ba, Chunked ba)
-unwrapc _      []         = Left "KeyWrap.AES: input too short"
+        => aes -> Chunked ba -> Either StoreError (ba, Chunked ba)
+unwrapc _      []         = Left (InvalidInput "KeyWrap.AES: input too short")
 unwrapc cipher (iv:list)  = Right (iiv, reverse out)
   where
     (iiv, out) = foldl' pass (iv, reverse list) (reverse [0 .. 5])
@@ -66,21 +67,21 @@ unwrapc cipher (iv:list)  = Right (iiv, reverse out)
     f a (i, r) = aesrev cipher (xorWith a i, r)
 
 -- | Wrap a key with the specified AES cipher.
-wrap :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either String ba
+wrap :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either StoreError ba
 wrap cipher bs = unchunks . wrapc cipher iiv <$> chunks bs
   where iiv = B.replicate 8 0xA6
 
 -- | Unwrap an encrypted key with the specified AES cipher.
-unwrap :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either String ba
+unwrap :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either StoreError ba
 unwrap cipher bs = unchunks <$> (check =<< unwrapc cipher =<< chunks bs)
   where
     check (iiv, out)
         | constAllEq 0xA6 iiv = Right out
-        | otherwise           = Left "KeyWrap.AES: invalid input"
+        | otherwise           = Left BadChecksum
 
-chunks :: ByteArray ba => ba -> Either String (Chunked ba)
+chunks :: ByteArray ba => ba -> Either StoreError (Chunked ba)
 chunks bs | B.null bs       = Right []
-          | B.length bs < 8 = Left "KeyWrap.AES: input is not multiple of 8 bytes"
+          | B.length bs < 8 = Left (InvalidInput "KeyWrap.AES: input is not multiple of 8 bytes")
           | otherwise       = let (a, b) = B.splitAt 8 bs in (a :) <$> chunks b
 
 unchunks :: ByteArray ba => Chunked ba -> ba
@@ -89,24 +90,24 @@ unchunks = B.concat
 padMask :: Bytes
 padMask = B.pack [0xA6, 0x59, 0x59, 0xA6, 0x00, 0x00, 0x00, 0x00]
 
-pad :: ByteArray ba => Int -> ba -> Either String (Pair ba)
-pad inlen bs | inlen  == 0 = Left "KeyWrap.AES: input is empty"
+pad :: ByteArray ba => Int -> ba -> Either StoreError (Pair ba)
+pad inlen bs | inlen  == 0 = Left (InvalidInput "KeyWrap.AES: input is empty")
              | padlen == 8 = Right (aiv, bs)
              | otherwise   = Right (aiv, bs `B.append` B.zero padlen)
   where padlen = 8 - mod inlen 8
         aiv    = xorWith padMask (fromIntegral inlen)
 
-unpad :: ByteArray ba => Int -> Pair ba -> Either String ba
+unpad :: ByteArray ba => Int -> Pair ba -> Either StoreError ba
 unpad inlen (aiv, b)
-    | badlen         = Left "KeyWrap.AES: invalid input"
+    | badlen         = Left BadChecksum
     | constAllEq 0 p = Right bs
-    | otherwise      = Left "KeyWrap.AES: invalid input"
+    | otherwise      = Left BadChecksum
   where aivlen = fromIntegral (unxor padMask aiv)
         badlen = inlen < aivlen + 8 || inlen >= aivlen + 16
         (bs, p) = B.splitAt aivlen b
 
 -- | Pad and wrap a key with the specified AES cipher.
-wrapPad :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either String ba
+wrapPad :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either StoreError ba
 wrapPad cipher bs = doWrap =<< pad inlen bs
   where
     inlen = B.length bs
@@ -115,7 +116,7 @@ wrapPad cipher bs = doWrap =<< pad inlen bs
         | otherwise  = unchunks . wrapc cipher aiv <$> chunks b
 
 -- | Unwrap and unpad an encrypted key with the specified AES cipher.
-unwrapPad :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either String ba
+unwrapPad :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either StoreError ba
 unwrapPad cipher bs = unpad inlen =<< doUnwrap
   where
     inlen = B.length bs

@@ -60,14 +60,16 @@ import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 import Crypto.Store.PEM
 import Crypto.Store.PKCS5
 import Crypto.Store.PKCS8.EC
+import Crypto.Store.Util
 
 -- | Data type for objects that are possibly protected with a password.
 data OptProtected a = Unprotected a
                       -- ^ Value is unprotected
-                    | Protected (Password -> Either String a)
+                    | Protected (Password -> Either StoreError a)
                       -- ^ Value is protected with a password
 
 instance Functor OptProtected where
@@ -75,7 +77,7 @@ instance Functor OptProtected where
     fmap f (Protected g)   = Protected (fmap f . g)
 
 -- | Try to recover an 'OptProtected' content using the specified password.
-recover :: Password -> OptProtected a -> Either String a
+recover :: Password -> OptProtected a -> Either StoreError a
 recover _   (Unprotected x) = Right x
 recover pwd (Protected f)   = f pwd
 
@@ -89,9 +91,10 @@ recover pwd (Protected f)   = f pwd
 -- > let askForPassword = putStr "Please enter password: " >> B.getLine
 -- > result <- recoverA askForPassword encryptedKey
 -- > case result of
--- >     Left err  -> putStrLn $ "Unable to decrypt: " ++ err
+-- >     Left err  -> putStrLn $ "Unable to recover key: " ++ show err
 -- >     Right key -> print key
-recoverA :: Applicative f => f Password -> OptProtected a -> f (Either String a)
+recoverA :: Applicative f
+         => f Password -> OptProtected a -> f (Either StoreError a)
 recoverA _   (Unprotected x) = pure (Right x)
 recoverA get (Protected f)   = fmap f get
 
@@ -134,11 +137,10 @@ pemToKey acc pem =
 
     inner decfn pwd = do
         decrypted <- decfn pwd
-        asn1 <- either strError Right $ decodeASN1' BER decrypted
+        asn1 <- mapLeft DecodingError $ decodeASN1' BER decrypted
         case run allTypes asn1 of
-            Nothing -> Left "PKCS8: could not parse key after decryption"
+            Nothing -> Left (ParseFailure "No key parsed after decryption")
             Just k  -> return k
-    strError = Left .  ("PKCS8: could not decode ASN.1 after decryption: " ++) . show
 
 
 -- Writing to PEM format
@@ -160,7 +162,7 @@ writeKeyFileToMemory fmt = pemsWriteBS . map (keyToPEM fmt)
 -- encrypt.
 writeEncryptedKeyFile :: FilePath
                       -> EncryptionScheme -> Password-> X509.PrivKey
-                      -> IO (Either String ())
+                      -> IO (Either StoreError ())
 writeEncryptedKeyFile path alg pwd privKey =
     let pem = encryptKeyToPEM alg pwd privKey
      in either (return . Left) (fmap Right . writePEMs path . (:[])) pem
@@ -173,7 +175,7 @@ writeEncryptedKeyFile path alg pwd privKey =
 -- Fresh 'EncryptionScheme' parameters should be generated for each key to
 -- encrypt.
 writeEncryptedKeyFileToMemory :: EncryptionScheme -> Password -> X509.PrivKey
-                              -> Either String B.ByteString
+                              -> Either StoreError B.ByteString
 writeEncryptedKeyFileToMemory alg pwd privKey =
     pemWriteBS <$> encryptKeyToPEM alg pwd privKey
 
@@ -214,7 +216,7 @@ modernPrivKeyASN1S attrs privKey =
 -- Fresh 'EncryptionScheme' parameters should be generated for each key to
 -- encrypt.
 encryptKeyToPEM :: EncryptionScheme -> Password -> X509.PrivKey
-                -> Either String PEM
+                -> Either StoreError PEM
 encryptKeyToPEM alg pwd privKey = toPEM <$> encrypt alg pwd bs
   where bs = pemContent (keyToModernPEM privKey)
         toPEM pkcs8 = mkPEM "ENCRYPTED PRIVATE KEY" (encodeASN1Object pkcs8)

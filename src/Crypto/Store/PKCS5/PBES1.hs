@@ -47,6 +47,7 @@ import Crypto.Store.ASN1.Parse
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 
 -- | Secret key.
 type Key = B.ScrubbedBytes
@@ -83,7 +84,7 @@ rc2cbcWith len iv = ParamsCBCRC2 len getIV
     getIV = fromMaybe (error "PKCS5: bad RC2 initialization vector") (makeIV iv)
 
 -- | RC4 encryption or decryption.
-rc4Combine :: (ByteArrayAccess key, ByteArray ba) => key -> ba -> Either String ba
+rc4Combine :: (ByteArrayAccess key, ByteArray ba) => key -> ba -> Either StoreError ba
 rc4Combine key = Right . snd . RC4.combine (RC4.initialize key)
 
 -- | Conversion to UCS2 from UTF-8, ignoring non-BMP bits.
@@ -105,7 +106,7 @@ toUCS2 pwdUTF8
 -- | Apply PBKDF1 on the specified password and run an encryption or decryption
 -- function on some input using derived key and IV.
 pkcs5 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
-      => (String -> result)
+      => (StoreError -> result)
       -> (Key -> ContentEncryptionParams -> ByteString -> result)
       -> DigestAlgorithm hash
       -> ContentEncryptionCipher cipher
@@ -114,7 +115,7 @@ pkcs5 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
       -> password
       -> result
 pkcs5 failure encdec hashAlg cec pbeParam bs pwd
-    | proxyBlockSize cec /= 8 = failure "PKCS5: invalid cipher block size"
+    | proxyBlockSize cec /= 8 = failure (InvalidParameter "Invalid cipher block size")
     | otherwise =
         case pbkdf1 hashAlg pwd pbeParam 16 of
             Left err -> failure err
@@ -130,9 +131,9 @@ pbkdf1 :: (Hash.HashAlgorithm hash, ByteArrayAccess password, ByteArray out)
        -> password
        -> PBEParameter
        -> Int
-       -> Either String out
+       -> Either StoreError out
 pbkdf1 hashAlg pwd PBEParameter{..} dkLen
-    | dkLen > B.length t1 = Left "PBKDF1: derived key too long"
+    | dkLen > B.length t1 = Left (InvalidParameter "Derived key too long")
     | otherwise           = Right (B.convert $ B.takeView tc dkLen)
   where
     a  = hashFromProxy hashAlg
@@ -145,7 +146,7 @@ pbkdf1 hashAlg pwd PBEParameter{..} dkLen
 -- | Apply PKCS #12 derivation on the specified password and run an encryption
 -- or decryption function on some input using derived key and IV.
 pkcs12 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
-       => (String -> result)
+       => (StoreError -> result)
        -> (Key -> ContentEncryptionParams -> ByteString -> result)
        -> DigestAlgorithm hash
        -> ContentEncryptionCipher cipher
@@ -155,7 +156,7 @@ pkcs12 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password
        -> result
 pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
     case toUCS2 pwdUTF8 of
-        Nothing      -> failure "Provided password is not valid UTF-8"
+        Nothing      -> failure passwordNotUTF8
         Just pwdUCS2 ->
             let ivLen   = proxyBlockSize cec
                 iv      = pkcs12Derive hashAlg pbeParam 2 pwdUCS2 ivLen :: B.Bytes
@@ -168,7 +169,7 @@ pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
 -- or decryption function on some input using derived key and IV.  This variant
 -- uses an RC2 cipher with the EKL specified (effective key length).
 pkcs12rc2 :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
-          => (String -> result)
+          => (StoreError -> result)
           -> (Key -> ContentEncryptionParams -> ByteString -> result)
           -> DigestAlgorithm hash
           -> Int
@@ -178,7 +179,7 @@ pkcs12rc2 :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
           -> result
 pkcs12rc2 failure encdec hashAlg len pbeParam bs pwdUTF8 =
     case toUCS2 pwdUTF8 of
-        Nothing      -> failure "Provided password is not valid UTF-8"
+        Nothing      -> failure passwordNotUTF8
         Just pwdUCS2 ->
             let ivLen   = 8
                 iv      = pkcs12Derive hashAlg pbeParam 2 pwdUCS2 ivLen :: B.Bytes
@@ -191,7 +192,7 @@ pkcs12rc2 failure encdec hashAlg len pbeParam bs pwdUTF8 =
 -- or decryption function on some input using derived key.  This variant does
 -- not derive any IV and is required for RC4.
 pkcs12stream :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
-             => (String -> result)
+             => (StoreError -> result)
              -> (Key -> ByteString -> result)
              -> DigestAlgorithm hash
              -> Int
@@ -201,7 +202,7 @@ pkcs12stream :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
              -> result
 pkcs12stream failure encdec hashAlg keyLen pbeParam bs pwdUTF8 =
     case toUCS2 pwdUTF8 of
-        Nothing      -> failure "Provided password is not valid UTF-8"
+        Nothing      -> failure passwordNotUTF8
         Just pwdUCS2 ->
             let key = pkcs12Derive hashAlg pbeParam 1 pwdUCS2 keyLen :: Key
              in encdec key bs
@@ -209,7 +210,7 @@ pkcs12stream failure encdec hashAlg keyLen pbeParam bs pwdUTF8 =
 -- | Apply PKCS #12 derivation on the specified password and run a MAC function
 -- on some input using derived key.
 pkcs12mac :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
-          => (String -> result)
+          => (StoreError -> result)
           -> (Key -> MACAlgorithm -> ByteString -> result)
           -> DigestAlgorithm hash
           -> PBEParameter
@@ -218,12 +219,15 @@ pkcs12mac :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
           -> result
 pkcs12mac failure macFn hashAlg pbeParam bs pwdUTF8 =
     case toUCS2 pwdUTF8 of
-        Nothing      -> failure "Provided password is not valid UTF-8"
+        Nothing      -> failure passwordNotUTF8
         Just pwdUCS2 ->
             let macAlg = HMAC hashAlg
                 keyLen = getMaximumKeySize macAlg
                 key    = pkcs12Derive hashAlg pbeParam 3 pwdUCS2 keyLen :: Key
             in macFn key macAlg bs
+
+passwordNotUTF8 :: StoreError
+passwordNotUTF8 = InvalidPassword "Provided password is not valid UTF-8"
 
 pkcs12Derive :: (Hash.HashAlgorithm hash, ByteArray bout)
              => DigestAlgorithm hash

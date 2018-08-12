@@ -23,6 +23,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Crypto.Store.CMS
                      , Crypto.Store.Cipher.RC2
+                     , Crypto.Store.Error
                      , Crypto.Store.PKCS5
                      , Crypto.Store.KeyWrap.AES
                      , Crypto.Store.KeyWrap.TripleDES

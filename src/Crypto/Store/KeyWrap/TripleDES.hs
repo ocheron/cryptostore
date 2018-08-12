@@ -19,6 +19,7 @@ import qualified Data.ByteArray as B
 import Crypto.Cipher.Types
 import Crypto.Hash
 
+import Crypto.Store.Error
 import Crypto.Store.Util
 
 checksum :: ByteArray ba => ba -> ba
@@ -32,11 +33,11 @@ iv4adda22c79e82105 = B.pack [0x4a, 0xdd, 0xa2, 0x2c, 0x79, 0xe8, 0x21, 0x05]
 -- Input must be 24 bytes.  A fresh IV should be generated randomly for each
 -- invocation.
 wrap :: (BlockCipher cipher, ByteArray ba)
-     => cipher -> IV cipher -> ba -> Either String ba
+     => cipher -> IV cipher -> ba -> Either StoreError ba
 wrap cipher iv cek
     | inLen == 24 = Right wrapped
-    | otherwise   =
-        Left "KeyWrap.TripleDES: invalid length for content encryption key"
+    | otherwise   = Left
+        (InvalidInput "KeyWrap.TripleDES: invalid length for content encryption key")
   where
     inLen    = B.length cek
     Just iv' = makeIV iv4adda22c79e82105
@@ -48,7 +49,7 @@ wrap cipher iv cek
 
 -- | Unwrap an encrypted Triple-DES key with the specified Triple-DES cipher.
 unwrap :: (BlockCipher cipher, ByteArray ba)
-       => cipher -> ba -> Either String ba
+       => cipher -> ba -> Either StoreError ba
 unwrap cipher wrapped
     | inLen /= 40                  = invalid
     | B.constEq icv (checksum cek) = Right cek
@@ -62,4 +63,4 @@ unwrap cipher wrapped
     Just iv       = makeIV ivBs
     cekicv        = cbcDecrypt cipher iv temp1
     (cek, icv)    = B.splitAt 24 cekicv
-    invalid       = Left "KeyWrap.TripleDES: invalid checksum"
+    invalid       = Left BadChecksum

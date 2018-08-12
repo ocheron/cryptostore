@@ -157,6 +157,7 @@ import Crypto.Store.CMS.PEM
 import Crypto.Store.CMS.Signed
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 
 
 -- DigestedData
@@ -188,7 +189,7 @@ encryptData :: ContentEncryptionKey
             -> ContentEncryptionParams
             -> [Attribute]
             -> ContentInfo
-            -> Either String ContentInfo
+            -> Either StoreError ContentInfo
 encryptData key params attrs ci =
     EncryptedDataCI . build <$> contentEncrypt key params (encapsulate ci)
   where
@@ -202,7 +203,7 @@ encryptData key params attrs ci =
 -- | Decrypt an encrypted content info using the specified key.
 decryptData :: ContentEncryptionKey
             -> EncryptedData
-            -> Either String ContentInfo
+            -> Either StoreError ContentInfo
 decryptData key EncryptedData{..} = do
     decrypted <- contentDecrypt key edContentEncryptionParams edEncryptedContent
     decapsulate edContentType decrypted
@@ -222,7 +223,7 @@ envelopData :: Applicative f
             -> [ProducerOfRI f]
             -> [Attribute]
             -> ContentInfo
-            -> f (Either String ContentInfo)
+            -> f (Either StoreError ContentInfo)
 envelopData oinfo key params envFns attrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
@@ -242,7 +243,7 @@ envelopData oinfo key params envFns attrs ci =
 openEnvelopedData :: Monad m
                   => ConsumerOfRI m
                   -> EnvelopedData
-                  -> m (Either String ContentInfo)
+                  -> m (Either StoreError ContentInfo)
 openEnvelopedData devFn EnvelopedData{..} = do
     r <- riAttempts (map (fmap (>>= decr) . devFn) evRecipientInfos)
     return (r >>= decapsulate ct)
@@ -272,7 +273,7 @@ generateAuthenticatedData :: Applicative f
                           -> [Attribute]
                           -> [Attribute]
                           -> ContentInfo
-                          -> f (Either String ContentInfo)
+                          -> f (Either StoreError ContentInfo)
 generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
@@ -306,7 +307,7 @@ generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
 verifyAuthenticatedData :: Monad m
                         => ConsumerOfRI m
                         -> AuthenticatedData
-                        -> m (Either String ContentInfo)
+                        -> m (Either StoreError ContentInfo)
 verifyAuthenticatedData devFn AuthenticatedData{..} =
     riAttempts (map (fmap (>>= unwrap) . devFn) adRecipientInfos)
   where
@@ -323,9 +324,9 @@ verifyAuthenticatedData devFn AuthenticatedData{..} =
     input     = if noAttr then msg else encodeAuthAttrs adAuthAttrs
 
     unwrap k
-        | isJust adDigestAlgorithm && noAttr  = Left "Missing auth attributes"
-        | not noAttr && not attrMatch         = Left "Invalid auth attributes"
-        | adMAC /= mac adMACAlgorithm k input = Left "Bad content MAC"
+        | isJust adDigestAlgorithm && noAttr  = Left (InvalidInput "Missing auth attributes")
+        | not noAttr && not attrMatch         = Left (InvalidInput "Invalid auth attributes")
+        | adMAC /= mac adMACAlgorithm k input = Left BadContentMAC
         | otherwise                           = Right adContentInfo
 
 
@@ -346,7 +347,7 @@ authEnvelopData :: Applicative f
                 -> [Attribute]
                 -> [Attribute]
                 -> ContentInfo
-                -> f (Either String ContentInfo)
+                -> f (Either StoreError ContentInfo)
 authEnvelopData oinfo key params envFns aAttrs uAttrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
@@ -370,7 +371,7 @@ authEnvelopData oinfo key params envFns aAttrs uAttrs ci =
 openAuthEnvelopedData :: Monad m
                       => ConsumerOfRI m
                       -> AuthEnvelopedData
-                      -> m (Either String ContentInfo)
+                      -> m (Either StoreError ContentInfo)
 openAuthEnvelopedData devFn AuthEnvelopedData{..} = do
     r <- riAttempts (map (fmap (>>= decr) . devFn) aeRecipientInfos)
     return (r >>= decapsulate ct)
@@ -388,7 +389,7 @@ openAuthEnvelopedData devFn AuthEnvelopedData{..} = do
 -- processed by one or several 'ProducerOfSI' functions to create signer info
 -- elements.
 signData :: Applicative f
-         => [ProducerOfSI f] -> ContentInfo -> f (Either String ContentInfo)
+         => [ProducerOfSI f] -> ContentInfo -> f (Either StoreError ContentInfo)
 signData sigFns ci =
     f <$> (sequence <$> traverse (\fn -> fn ct msg) sigFns)
   where
@@ -421,12 +422,12 @@ verifySignedData verFn SignedData{..} =
 
 -- Utilities
 
-riAttempts :: Monad m => [m (Either String b)] -> m (Either String b)
-riAttempts []       = return (Left "No recipient info found")
+riAttempts :: Monad m => [m (Either StoreError b)] -> m (Either StoreError b)
+riAttempts []       = return (Left NoRecipientInfoFound)
 riAttempts [single] = single
 riAttempts list     = loop list
   where
-    loop []     = return (Left "No recipient info matched")
+    loop []     = return (Left NoRecipientInfoMatched)
     loop (x:xs) = x >>= orTail xs
 
     orTail xs (Left _)  = loop xs

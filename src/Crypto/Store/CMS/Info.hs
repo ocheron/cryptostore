@@ -47,6 +47,8 @@ import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Signed
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
+import Crypto.Store.Util
 
 -- | Get the type of a content info.
 getContentType :: ContentInfo -> ContentType
@@ -302,10 +304,9 @@ instance ParseASN1Object [ASN1Event] AuthenticatedData where
 
 -- Utilities
 
-decode :: ParseASN1 [ASN1Event] a -> ByteString -> Either String a
-decode parser bs = vals >>= runParseASN1_ parser
-  where vals = either (Left . showerr) Right (decodeASN1Repr' BER bs)
-        showerr err = "Unable to decode encapsulated ASN.1: " ++ show err
+decode :: ParseASN1 [ASN1Event] a -> ByteString -> Either StoreError a
+decode parser bs = vals >>= mapLeft ParseFailure . runParseASN1_ parser
+  where vals = mapLeft DecodingError (decodeASN1Repr' BER bs)
 
 -- | Encode the information for encapsulation in another content info.
 encapsulate :: ContentInfo -> ByteString
@@ -318,7 +319,7 @@ encapsulate (AuthenticatedDataCI ad) = encodeASN1Object ad
 encapsulate (AuthEnvelopedDataCI ae) = encodeASN1Object ae
 
 -- | Decode the information from encapsulated content.
-decapsulate :: ContentType -> ByteString -> Either String ContentInfo
+decapsulate :: ContentType -> ByteString -> Either StoreError ContentInfo
 decapsulate DataType bs              = pure (DataCI bs)
 decapsulate SignedDataType bs        = SignedDataCI <$> decode parse bs
 decapsulate EnvelopedDataType bs     = EnvelopedDataCI <$> decode parse bs
@@ -343,7 +344,8 @@ parseEncapsulatedContentInfo =
     parseInner ct = do
         bs <- parseContentSingle <|> parseContentChunks
         case decapsulate ct bs of
-            Left err -> throwParseError err
+            Left err -> throwParseError
+                ("Unable to decode and parse encapsulated ASN.1: " ++ show err)
             Right ci -> return ci
 
     parseContentSingle = do { OctetString bs <- getNext; return bs }

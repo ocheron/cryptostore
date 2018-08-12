@@ -12,6 +12,7 @@ module Crypto.Store.Util
     ( (&&!)
     , reverseBytes
     , constAllEq
+    , mapLeft
     ) where
 
 import           Data.Bits
@@ -37,3 +38,8 @@ reverseBytes = B.pack . reverse . B.unpack
 constAllEq :: ByteArrayAccess ba => Word8 -> ba -> Bool
 constAllEq b = (== 0) . foldl' fn 0 . B.unpack
   where fn acc x = acc .|. xor b x
+
+-- | Map over the left value.
+mapLeft :: (a -> b) -> Either a c -> Either b c
+mapLeft f (Left a)  = Left (f a)
+mapLeft _ (Right c) = Right c
