@@ -219,9 +219,9 @@ instance Monoid e => ParseASN1Object e MacData where
 -- | PKCS #12 privacy wrapper, adding optional encryption to 'SafeContents'.
 -- ASN.1 equivalent is @AuthenticatedSafe@.
 --
--- The monoid interface allows to combine multiple pieces encrypted separately
--- but they should all derive from the same password to be readable by
--- 'unPKCS12' and most software.
+-- The semigroup interface allows to combine multiple pieces encrypted
+-- separately but they should all derive from the same password to be readable
+-- by 'unPKCS12' and most other software.
 newtype PKCS12 = PKCS12 [ASElement]
     deriving (Show,Eq)
 
