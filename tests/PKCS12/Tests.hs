@@ -16,6 +16,7 @@ import Test.Tasty.QuickCheck
 
 import Util
 import PKCS12.Instances
+import X509.Instances
 
 testType :: TestName -> String -> TestTree
 testType caseName prefix = testCaseSteps caseName $ \step -> do
@@ -96,6 +97,14 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         pI <- arbitraryPassword
         let r = readP12FileFromMemory <$> writeP12FileToMemory params pI c
         return $ Right (Right (Right c)) === (fmap (recover pI) <$> r)
+    , localOption (QuickCheckTests 20) $ testProperty "converting credentials" $
+        \pChain pKey privKey -> do
+            pwd <- arbitraryPassword
+            chain <- arbitrary >>= arbitraryCertificateChain
+            let cred = (chain, privKey)
+                pkcs12 = fromCredential pChain pKey pwd cred
+                r = pkcs12 >>= recover pwd . toCredential
+            return $ Right (Just cred) === r
     ]
 
 pkcs12Tests :: TestTree

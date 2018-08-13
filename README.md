@@ -110,6 +110,41 @@ Generating a PKCS #12 file containing a private key:
 Right ()
 ```
 
+The API also provides functions to generate/extract a pair containing a private
+key and a certificate chain.  This pair is the type alias `Credential` in `tls`.
+Currently the functions assume that the PKCS #12 file contains no other data
+than the credential.
+
+```haskell
+> :set -XOverloadedStrings
+> :m Crypto.Store.PKCS12 Crypto.Store.PKCS8 Crypto.Store.PKCS5 Crypto.Store.CMS
+
+-- Read PKCS #12 content as credential
+> Right p12 <- readP12File "/path/to/file.p12"
+> let Right pkcs12 = recover "myintegrityassword" p12
+> let Right (Just cred) = recover "myprivacypassword" (toCredential pkcs12)
+> cred
+(CertificateChain [...], PrivKeyRSA (...))
+
+-- Scheme to reencrypt the key
+> saltK <- generateSalt 8
+> let kdfK = PBKDF2 saltK 2048 Nothing PBKDF2_SHA256
+> encParamsK <- generateEncryptionParams (CBC AES256)
+> let sKey = PBES2 (PBES2Parameter kdfK encParamsK)
+
+-- Scheme to reencrypt the certificate chain
+> saltC <- generateSalt 8
+> let kdfC = PBKDF2 saltC 1024 Nothing PBKDF2_SHA256
+> encParamsC <- generateEncryptionParams (CBC AES128)
+> let sCert = PBES2 (PBES2Parameter kdfC encParamsC)
+
+-- Write the content back to a new file
+> let Right pkcs12' = fromCredential (Just sCert) sKey "myprivacypassword" cred
+> salt <- generateSalt 8
+> let iParams = (DigestType SHA256, PBEParameter salt 2048)
+> writeP12File "/path/to/newfile.p12" iParams "myintegrityassword" pkcs12'
+```
+
 ## Cryptographic Message Syntax
 
 The API to read and write CMS content is available in `Crypto.Store.CMS`.  The

@@ -51,6 +51,9 @@ module Crypto.Store.PKCS12
     , setFriendlyName
     , getLocalKeyId
     , setLocalKeyId
+    -- * Credentials
+    , fromCredential
+    , toCredential
     -- * Password-based protection
     , Password
     , OptProtected(..)
@@ -509,6 +512,55 @@ getAllSafeX509CRLs :: [SafeContents] -> [X509.SignedCRL]
 getAllSafeX509CRLs = concatMap getSafeX509CRLs
 
 
+-- Conversion to/from credentials
+
+getInnerCredential :: [SafeContents] -> SamePassword (Maybe (X509.CertificateChain, X509.PrivKey))
+getInnerCredential l = SamePassword (fn <$> getAllSafeKeys l)
+  where
+    certs = getAllSafeX509Certs l
+
+    fn []               = Nothing
+    fn [k] | null certs = Nothing
+           | otherwise  = Just (X509.CertificateChain certs, k)
+    fn _                = Nothing
+
+-- | Extract the private key and certificate chain from a 'PKCS12' value.  A
+-- credential is returned when the structure contains exactly one private key
+-- and at least one X.509 certificate.
+toCredential :: PKCS12 -> OptProtected (Maybe (X509.CertificateChain, X509.PrivKey))
+toCredential p12 =
+    unSamePassword (SamePassword (unPKCS12 p12) >>= getInnerCredential)
+
+-- | Build a 'PKCS12' value containing a private key and certificate chain.
+-- Distinct encryption is applied for both.  Encrypting the certificate chain is
+-- optional.
+--
+-- Note: advice is to always generate fresh and independent 'EncryptionScheme'
+-- values so that the salt is not reused twice in the encryption process.
+fromCredential :: Maybe EncryptionScheme -- for certificates
+               -> EncryptionScheme       -- for private key
+               -> Password
+               -> (X509.CertificateChain, X509.PrivKey)
+               -> Either StoreError PKCS12
+fromCredential algChain algKey pwd (X509.CertificateChain certs, key)
+    | null certs = Left (InvalidInput "Empty certificate chain")
+    | otherwise  = (<>) <$> pkcs12Chain <*> pkcs12Key
+  where
+    pkcs12Key   = unencrypted <$> scKeyOrError
+    pkcs12Chain =
+        case algChain of
+            Just alg -> encrypted alg pwd scChain
+            Nothing  -> Right (unencrypted scChain)
+
+    scChain     = SafeContents (map toCertBag certs)
+    toCertBag c = Bag (CertBag (Bag (CertX509 c) [])) []
+
+    scKeyOrError = wrap <$> encrypt algKey pwd encodedKey
+
+    wrap shrouded = SafeContents [Bag (PKCS8ShroudedKeyBag shrouded) []]
+    encodedKey    = encodeASN1Object (FormattedKey PKCS8Format key)
+
+
 -- Standard attributes
 
 friendlyName :: OID
@@ -542,20 +594,44 @@ setLocalKeyId d = setAttributeASN1S localKeyId (gOctetString d)
 
 -- Utilities
 
+-- Internal wrapper of OptProtected providing Applicative and Monad instances.
+--
+-- This adds the following constraint: all values composed must derive from the
+-- same encryption password.  Semantically, 'Protected' actually means
+-- "requiring a password".  Otherwise composition of 'Protected' and
+-- 'Unprotected' values is unsound.
+newtype SamePassword a = SamePassword { unSamePassword :: OptProtected a }
+
+instance Functor SamePassword where
+    fmap f (SamePassword opt) = SamePassword (fmap f opt)
+
+instance Applicative SamePassword where
+    pure a = SamePassword (Unprotected a)
+
+    SamePassword (Unprotected f) <*> SamePassword (Unprotected x) =
+        SamePassword (Unprotected (f x))
+
+    SamePassword (Unprotected f) <*> SamePassword (Protected x) =
+        SamePassword $ Protected (fmap f . x)
+
+    SamePassword (Protected f) <*> SamePassword (Unprotected x) =
+        SamePassword $ Protected (fmap ($ x) . f)
+
+    SamePassword (Protected f) <*> SamePassword (Protected x) =
+        SamePassword $ Protected (\pwd -> f pwd <*> x pwd)
+
+instance Monad SamePassword where
+    return = pure
+
+    SamePassword (Unprotected x)   >>= f = f x
+    SamePassword (Protected inner) >>= f =
+        SamePassword . Protected $ \pwd ->
+            case inner pwd of
+                Left err -> Left err
+                Right x  -> recover pwd (unSamePassword $ f x)
+
 applySamePassword :: [OptProtected a] -> OptProtected [a]
-applySamePassword [] = Unprotected []
-applySamePassword (Unprotected e : xs) =
-    case applySamePassword xs of
-        Unprotected es -> Unprotected (e : es)
-        Protected f    -> Protected (fmap (e :) . f)
-applySamePassword (Protected f : xs) =
-    case applySamePassword xs of
-        Unprotected es -> Protected (fmap (: es) . f)
-        Protected g    -> Protected (addTail g)
-  where addTail g pwd = do
-            e <- f pwd
-            es <- g pwd
-            return (e : es)
+applySamePassword = unSamePassword . traverse SamePassword
 
 decode :: ParseASN1Object [ASN1Event] obj => BS.ByteString -> Either StoreError obj
 decode bs =
