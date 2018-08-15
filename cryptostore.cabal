@@ -91,7 +91,6 @@ test-suite test-cryptostore
                      , hourglass
                      , pem
                      , x509
-                     , x509-store
                      , cryptostore
   default-language:    Haskell2010
   ghc-options:         -Wall

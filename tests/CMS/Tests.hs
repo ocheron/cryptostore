@@ -6,7 +6,6 @@ import Control.Monad
 import qualified Data.ByteString as B
 import           Data.String (fromString)
 import           Data.Maybe (isNothing)
-import           Data.X509.File (readSignedObject)
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -14,6 +13,7 @@ import Test.Tasty.QuickCheck
 
 import Crypto.Store.CMS
 import Crypto.Store.PKCS8
+import Crypto.Store.X509 (readSignedObject)
 
 import CMS.Instances
 import Util

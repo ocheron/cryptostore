@@ -5,10 +5,10 @@ import Control.Monad (forM_)
 
 import Data.PEM (pemContent)
 import Data.String (fromString)
-import Data.X509.File (readSignedObject)
 
 import Crypto.Store.PKCS12
 import Crypto.Store.PKCS8
+import Crypto.Store.X509 (readSignedObject)
 
 import Test.Tasty
 import Test.Tasty.HUnit
