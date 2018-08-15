@@ -10,6 +10,7 @@ import Cipher.RC2
 import CMS.Tests
 import PKCS12.Tests
 import PKCS8.Tests
+import X509.Tests
 
 -- | Run the test suite.
 main :: IO ()
@@ -19,6 +20,7 @@ main = defaultMain $ testGroup "cryptostore"
     , rc2kwTests
     , rc2Tests
     , cmsTests
+    , x509Tests
     , pkcs8Tests
     , pkcs12Tests
     ]

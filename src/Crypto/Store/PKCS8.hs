@@ -13,6 +13,9 @@
 --
 -- Functions to read a private key return an object wrapped in the
 -- 'OptProtected' data type.
+--
+-- Functions related to public keys, certificates and CRLs are available from
+-- "Crypto.Store.X509".
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}

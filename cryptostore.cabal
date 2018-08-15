@@ -30,6 +30,7 @@ library
                      , Crypto.Store.KeyWrap.RC2
                      , Crypto.Store.PKCS12
                      , Crypto.Store.PKCS8
+                     , Crypto.Store.X509
   other-modules:       Crypto.Store.ASN1.Generate
                      , Crypto.Store.ASN1.Parse
                      , Crypto.Store.CMS.Algorithms
@@ -78,6 +79,7 @@ test-suite test-cryptostore
                      , PKCS8.Tests
                      , Util
                      , X509.Instances
+                     , X509.Tests
   build-depends:       base >= 4.9 && < 5
                      , bytestring
                      , asn1-types >= 0.3.1 && < 0.4

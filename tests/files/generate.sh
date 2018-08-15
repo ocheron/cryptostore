@@ -158,6 +158,19 @@ encrypt ecdsa-p256
 encrypt ecdsa-epc
 
 
+# Public keys
+
+for TYPE in rsa dsa ecdsa-p256; do
+  "$OPENSSL" pkey -pubout \
+    -in "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
+    -out "$DEST_DIR"/"$TYPE"-public.pem
+done
+
+"$OPENSSL" rsa -RSAPublicKey_out \
+  -in "$DEST_DIR"/rsa-unencrypted-pkcs8.pem \
+  >> "$DEST_DIR"/rsa-public.pem
+
+
 # Certificates
 
 for TYPE in rsa dsa ecdsa-p256 ecdsa-epc; do

@@ -11,6 +11,8 @@ Currently the following is implemented:
 * Reading and writing private keys with optional encryption (this extends
   [x509-store](https://hackage.haskell.org/package/x509-store) API)
 
+* Reading and writing public keys, certificates and CRLs
+
 * PKCS #12 container format (password-based only)
 
 * Many parts of Cryptographic Message Syntax
@@ -59,6 +61,29 @@ Right ()
 Parameters used in this example are AES-256-CBC as cipher, PBKDF2 as
 key-derivation function, with an 8-byte salt, 2048 iterations and SHA-256 as
 pseudorandom function.
+
+## Public Keys and Signed Objects
+
+Module `Crypto.Store.X509` provides functions to read/write PEM files containing
+public keys, X.509 certificates and CRLs.  These files are never encrypted.
+
+Reading a public key and certificate from disk:
+
+```haskell
+> :m Data.X509 Crypto.Store.X509
+> readPubKeyFile "/path/to/pubkey.pem"
+[PubKeyRSA ...]
+> readSignedObject "/path/to/cert.pem" :: IO [SignedCertificate]
+[SignedExact ...]
+```
+
+Writing back to disk:
+
+```haskell
+> :m Crypto.Store.X509
+> writePubKeyFile "/path/to/pubkey.pem" [pubKey]
+> writeSignedObject "/path/to/cert.pem" [cert]
+```
 
 ## PKCS #12
 
