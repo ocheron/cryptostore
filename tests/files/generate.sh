@@ -40,25 +40,10 @@ CIPHER_KEYS_ENCRYPTED=" \
   -aes-256-ecb:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
   -camellia-128-ecb:000102030405060708090a0b0c0d0e0f"
 
-PKCS12_INTEGRITY="sha1 sha224 sha256 sha384 sha512"
+PKCS12_INTEGRITY="sha1 sha256 sha384"
 
 PKCS12_PRIVACY=" \
-  des-cbc \
-  des-ede3-cbc \
-  cast5-cbc \
-  camellia-128-cbc \
-  rc2-cbc \
-  rc2-40-cbc \
-  rc2-64-cbc \
   aes-128-cbc \
-  aes-192-cbc \
-  aes-256-cbc \
-  pbeWithMD5AndDES-CBC \
-  pbeWithSHA1AndDES-CBC \
-  PBE-SHA1-RC4-128 \
-  PBE-SHA1-RC4-40 \
-  pbeWithSHA1And3-KeyTripleDES-CBC \
-  pbeWithSHA1And2-KeyTripleDES-CBC \
   PBE-SHA1-RC2-128 \
   PBE-SHA1-RC2-40"
 
@@ -182,7 +167,7 @@ done
 
 # PKCS #12
 
-for TYPE in rsa dsa ecdsa-p256 ecdsa-epc; do
+for TYPE in rsa ecdsa-p256; do
   (
     "$OPENSSL" pkcs12 -export -passout pass:"$PASSWORD" \
     -inkey "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \

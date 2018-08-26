@@ -58,28 +58,11 @@ testType caseName prefix = testCaseSteps caseName $ \step -> do
             privacyNames "certificate" ++ privacyNames "private-key"
 
     integrityModes = [ "SHA-1"
-                     , "SHA-224"
                      , "SHA-256"
                      , "SHA-384"
-                     , "SHA-512"
                      ]
 
-    privacyModes   = [ "des-cbc"
-                     , "des-ede3-cbc"
-                     , "cast5-cbc"
-                     , "camellia-128-cbc"
-                     , "rc2-cbc"
-                     , "rc2-40-cbc"
-                     , "rc2-64-cbc"
-                     , "aes-128-cbc"
-                     , "aes-192-cbc"
-                     , "aes-256-cbc"
-                     , "pbeWithMD5AndDES-CBC"
-                     , "pbeWithSHA1AndDES-CBC"
-                     , "PBE-SHA1-RC4-128"
-                     , "PBE-SHA1-RC4-40"
-                     , "pbeWithSHA1And3-KeyTripleDES-CBC"
-                     , "pbeWithSHA1And2-KeyTripleDES-CBC"
+    privacyModes   = [ "aes-128-cbc"
                      , "PBE-SHA1-RC2-128"
                      , "PBE-SHA1-RC2-40"
                      ]
@@ -111,8 +94,6 @@ pkcs12Tests :: TestTree
 pkcs12Tests =
     testGroup "PKCS12"
         [ testType "RSA"                        "rsa"
-        , testType "DSA"                        "dsa"
         , testType "EC (named curve)"           "ecdsa-p256"
-        , testType "EC (explicit prime curve)"  "ecdsa-epc"
         , propertyTests
         ]
