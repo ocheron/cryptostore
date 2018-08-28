@@ -173,9 +173,11 @@ certSigner alg priv (CertificateChain chain) sAttrsM uAttrs ct msg =
     cert = head chain
     obj  = signedObject (getSigned cert)
     isn  = IssuerAndSerialNumber (certIssuerDN obj) (certSerial obj)
+    pub  = certPubKey obj
 
-    (dig, alg') = signatureResolveHash def alg
+    (dig, alg') = signatureResolveHash noAttr def alg
 
+    noAttr          = null sAttrs
     (sAttrs, input) =
         case sAttrsM of
             Nothing    -> ([], msg)
@@ -183,7 +185,7 @@ certSigner alg priv (CertificateChain chain) sAttrsM uAttrs ct msg =
                 let l = setContentTypeAttr ct $ setMessageDigestAttr md attrs
                  in (l, encodeAuthAttrs l)
 
-    generate  = signatureGenerate alg' priv input
+    generate  = signatureGenerate alg' priv pub input
     build sig =
         let si = SignerInfo { siSignerId = SignerIASN isn
                             , siDigestAlgorithm = dig

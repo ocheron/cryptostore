@@ -1851,22 +1851,23 @@ instance AlgorithmId SignatureAlg where
     parseParameter (TypeDSA alg)    = return (DSA alg)
     parseParameter (TypeECDSA alg)  = return (ECDSA alg)
 
--- | Sign a message using the specified algorithm and private key.
-signatureGenerate :: MonadRandom m => SignatureAlg -> X509.PrivKey -> ByteString -> m (Either StoreError SignatureValue)
-signatureGenerate RSAAnyHash _ _ =
+-- | Sign a message using the specified algorithm and private key.  The
+-- corresponding public key is also required for some algorithms.
+signatureGenerate :: MonadRandom m => SignatureAlg -> X509.PrivKey -> X509.PubKey -> ByteString -> m (Either StoreError SignatureValue)
+signatureGenerate RSAAnyHash _ _ _ =
     error "signatureGenerate: should call signatureResolveHash first"
-signatureGenerate (RSA alg)   (X509.PrivKeyRSA priv) msg =
+signatureGenerate (RSA alg)   (X509.PrivKeyRSA priv) (X509.PubKeyRSA _) msg =
     let err = return . Left $ InvalidParameter ("Invalid hash algorithm for RSA: " ++ show alg)
      in withHashAlgorithmASN1 alg err $ \hashAlg ->
             mapLeft RSAError <$> RSA.signSafer (Just hashAlg) priv msg
-signatureGenerate (RSAPSS p)  (X509.PrivKeyRSA priv) msg =
+signatureGenerate (RSAPSS p)  (X509.PrivKeyRSA priv) (X509.PubKeyRSA _) msg =
     withPSSParams p $ \params ->
         mapLeft RSAError <$> RSAPSS.signSafer params priv msg
-signatureGenerate (DSA alg)   (X509.PrivKeyDSA priv) msg =
+signatureGenerate (DSA alg)   (X509.PrivKeyDSA priv) (X509.PubKeyDSA _) msg =
     case alg of
         DigestAlgorithm t ->
             Right . dsaFromSignature <$> DSA.sign priv (hashFromProxy t) msg
-signatureGenerate (ECDSA alg) (X509.PrivKeyEC priv)  msg =
+signatureGenerate (ECDSA alg) (X509.PrivKeyEC priv)  (X509.PubKeyEC _)  msg =
     case alg of
         DigestAlgorithm t ->
             case ecdsaToPrivateKey priv of
@@ -1874,7 +1875,7 @@ signatureGenerate (ECDSA alg) (X509.PrivKeyEC priv)  msg =
                 Just p  ->
                     let h = hashFromProxy t
                      in Right . ecdsaFromSignature <$> ECDSA.sign p h msg
-signatureGenerate _ _ _ = return (Left UnexpectedPrivateKeyType)
+signatureGenerate _ _ _ _ = return (Left UnexpectedPrivateKeyType)
 
 -- | Verify a message signature using the specified algorithm and public key.
 signatureVerify :: SignatureAlg -> X509.PubKey -> ByteString -> SignatureValue -> Bool
@@ -1912,12 +1913,12 @@ withHashAlgorithmASN1 _                        e _ = e
 -- | Return on which digest algorithm the specified signature algorithm is
 -- based, as well as a substitution algorithm for when a default digest
 -- algorithm is required.
-signatureResolveHash :: DigestAlgorithm -> SignatureAlg -> (DigestAlgorithm, SignatureAlg)
-signatureResolveHash d RSAAnyHash     = (d, RSA d)
-signatureResolveHash _ alg@(RSA d)    = (d, alg)
-signatureResolveHash _ alg@(RSAPSS p) = (pssHashAlgorithm p, alg)
-signatureResolveHash _ alg@(DSA d)    = (d, alg)
-signatureResolveHash _ alg@(ECDSA d)  = (d, alg)
+signatureResolveHash :: Bool -> DigestAlgorithm -> SignatureAlg -> (DigestAlgorithm, SignatureAlg)
+signatureResolveHash _     d RSAAnyHash     = (d, RSA d)
+signatureResolveHash _     _ alg@(RSA d)    = (d, alg)
+signatureResolveHash _     _ alg@(RSAPSS p) = (pssHashAlgorithm p, alg)
+signatureResolveHash _     _ alg@(DSA d)    = (d, alg)
+signatureResolveHash _     _ alg@(ECDSA d)  = (d, alg)
 
 -- | Check that a signature algorithm is based on the specified digest algorithm
 -- and return a substitution algorithm for when a default digest algorithm is
