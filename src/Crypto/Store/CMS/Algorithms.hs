@@ -6,6 +6,7 @@
 -- Portability : unknown
 --
 -- Cryptographic Message Syntax algorithms
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -93,6 +94,8 @@ import           Data.Word
 import qualified Data.X509 as X509
 import           Data.X509.EC
 
+import GHC.TypeLits
+
 import qualified Crypto.Cipher.AES as Cipher
 import qualified Crypto.Cipher.CAST5 as Cipher
 import qualified Crypto.Cipher.Camellia as Cipher
@@ -157,6 +160,14 @@ data DigestProxy hashAlg where
     SHA384 :: DigestProxy Hash.SHA384
     -- | SHA-512
     SHA512 :: DigestProxy Hash.SHA512
+    -- | SHAKE128 (256 bits)
+    SHAKE128_256 :: DigestProxy (Hash.SHAKE128 256)
+    -- | SHAKE256 (512 bits)
+    SHAKE256_512 :: DigestProxy (Hash.SHAKE256 512)
+    -- | SHAKE128 (variable size)
+    SHAKE128 :: KnownNat n => Proxy n -> DigestProxy (Hash.SHAKE128 n)
+    -- | SHAKE256 (variable size)
+    SHAKE256 :: KnownNat n => Proxy n -> DigestProxy (Hash.SHAKE256 n)
 
 deriving instance Show (DigestProxy hashAlg)
 deriving instance Eq (DigestProxy hashAlg)
@@ -178,42 +189,94 @@ instance Eq DigestAlgorithm where
     DigestAlgorithm SHA256       == DigestAlgorithm SHA256       = True
     DigestAlgorithm SHA384       == DigestAlgorithm SHA384       = True
     DigestAlgorithm SHA512       == DigestAlgorithm SHA512       = True
+    DigestAlgorithm SHAKE128_256 == DigestAlgorithm SHAKE128_256 = True
+    DigestAlgorithm SHAKE256_512 == DigestAlgorithm SHAKE256_512 = True
+    DigestAlgorithm (SHAKE128 a) == DigestAlgorithm (SHAKE128 b) = natVal a == natVal b
+    DigestAlgorithm (SHAKE256 a) == DigestAlgorithm (SHAKE256 b) = natVal a == natVal b
     _                            == _                            = False
 
-instance Enumerable DigestAlgorithm where
-    values = [ DigestAlgorithm MD2
-             , DigestAlgorithm MD4
-             , DigestAlgorithm MD5
-             , DigestAlgorithm SHA1
-             , DigestAlgorithm SHA224
-             , DigestAlgorithm SHA256
-             , DigestAlgorithm SHA384
-             , DigestAlgorithm SHA512
+data DigestType
+    = Type_MD2
+    | Type_MD4
+    | Type_MD5
+    | Type_SHA1
+    | Type_SHA224
+    | Type_SHA256
+    | Type_SHA384
+    | Type_SHA512
+    | Type_SHAKE128_256
+    | Type_SHAKE256_512
+    | Type_SHAKE128_Len
+    | Type_SHAKE256_Len
+
+instance Enumerable DigestType where
+    values = [ Type_MD2
+             , Type_MD4
+             , Type_MD5
+             , Type_SHA1
+             , Type_SHA224
+             , Type_SHA256
+             , Type_SHA384
+             , Type_SHA512
+             , Type_SHAKE128_256
+             , Type_SHAKE256_512
+             , Type_SHAKE128_Len
+             , Type_SHAKE256_Len
              ]
 
-instance OIDable DigestAlgorithm where
-    getObjectID (DigestAlgorithm MD2)    = [1,2,840,113549,2,2]
-    getObjectID (DigestAlgorithm MD4)    = [1,2,840,113549,2,4]
-    getObjectID (DigestAlgorithm MD5)    = [1,2,840,113549,2,5]
-    getObjectID (DigestAlgorithm SHA1)   = [1,3,14,3,2,26]
-    getObjectID (DigestAlgorithm SHA224) = [2,16,840,1,101,3,4,2,4]
-    getObjectID (DigestAlgorithm SHA256) = [2,16,840,1,101,3,4,2,1]
-    getObjectID (DigestAlgorithm SHA384) = [2,16,840,1,101,3,4,2,2]
-    getObjectID (DigestAlgorithm SHA512) = [2,16,840,1,101,3,4,2,3]
+instance OIDable DigestType where
+    getObjectID Type_MD2          = [1,2,840,113549,2,2]
+    getObjectID Type_MD4          = [1,2,840,113549,2,4]
+    getObjectID Type_MD5          = [1,2,840,113549,2,5]
+    getObjectID Type_SHA1         = [1,3,14,3,2,26]
+    getObjectID Type_SHA224       = [2,16,840,1,101,3,4,2,4]
+    getObjectID Type_SHA256       = [2,16,840,1,101,3,4,2,1]
+    getObjectID Type_SHA384       = [2,16,840,1,101,3,4,2,2]
+    getObjectID Type_SHA512       = [2,16,840,1,101,3,4,2,3]
+    getObjectID Type_SHAKE128_256 = [2,16,840,1,101,3,4,2,11]
+    getObjectID Type_SHAKE256_512 = [2,16,840,1,101,3,4,2,12]
+    getObjectID Type_SHAKE128_Len = [2,16,840,1,101,3,4,2,17]
+    getObjectID Type_SHAKE256_Len = [2,16,840,1,101,3,4,2,18]
 
-instance OIDNameable DigestAlgorithm where
+instance OIDNameable DigestType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
 
 instance AlgorithmId DigestAlgorithm where
-    type AlgorithmType DigestAlgorithm = DigestAlgorithm
+    type AlgorithmType DigestAlgorithm = DigestType
     algorithmName _  = "digest algorithm"
-    algorithmType    = id
 
-    -- MD5 has NULL parameter, other algorithms have no parameter
-    parameterASN1S (DigestAlgorithm MD5) = gNull
-    parameterASN1S _                     = id
+    algorithmType (DigestAlgorithm MD2)          = Type_MD2
+    algorithmType (DigestAlgorithm MD4)          = Type_MD4
+    algorithmType (DigestAlgorithm MD5)          = Type_MD5
+    algorithmType (DigestAlgorithm SHA1)         = Type_SHA1
+    algorithmType (DigestAlgorithm SHA224)       = Type_SHA224
+    algorithmType (DigestAlgorithm SHA256)       = Type_SHA256
+    algorithmType (DigestAlgorithm SHA384)       = Type_SHA384
+    algorithmType (DigestAlgorithm SHA512)       = Type_SHA512
+    algorithmType (DigestAlgorithm SHAKE128_256) = Type_SHAKE128_256
+    algorithmType (DigestAlgorithm SHAKE256_512) = Type_SHAKE256_512
+    algorithmType (DigestAlgorithm (SHAKE128 _)) = Type_SHAKE128_Len
+    algorithmType (DigestAlgorithm (SHAKE256 _)) = Type_SHAKE256_Len
 
-    parseParameter p = getNextMaybe nullOrNothing >> return p
+    -- MD5 has NULL parameter, SHAKE128 and SHAKE256 have the bitsize as
+    -- parameter, other algorithms have no parameter
+    parameterASN1S (DigestAlgorithm MD5)          = gNull
+    parameterASN1S (DigestAlgorithm (SHAKE128 n)) = gIntVal (natVal n)
+    parameterASN1S (DigestAlgorithm (SHAKE256 n)) = gIntVal (natVal n)
+    parameterASN1S _                              = id
+
+    parseParameter Type_MD2          = parseDigestParam (DigestAlgorithm MD2)
+    parseParameter Type_MD4          = parseDigestParam (DigestAlgorithm MD4)
+    parseParameter Type_MD5          = parseDigestParam (DigestAlgorithm MD5)
+    parseParameter Type_SHA1         = parseDigestParam (DigestAlgorithm SHA1)
+    parseParameter Type_SHA224       = parseDigestParam (DigestAlgorithm SHA224)
+    parseParameter Type_SHA256       = parseDigestParam (DigestAlgorithm SHA256)
+    parseParameter Type_SHA384       = parseDigestParam (DigestAlgorithm SHA384)
+    parseParameter Type_SHA512       = parseDigestParam (DigestAlgorithm SHA512)
+    parseParameter Type_SHAKE128_256 = parseDigestParam (DigestAlgorithm SHAKE128_256)
+    parseParameter Type_SHAKE256_512 = parseDigestParam (DigestAlgorithm SHAKE256_512)
+    parseParameter Type_SHAKE128_Len = parseBitLen 256 (DigestAlgorithm $ SHAKE128 p256)
+    parseParameter Type_SHAKE256_Len = parseBitLen 512 (DigestAlgorithm $ SHAKE256 p512)
 
 -- | Compute the digest of a message.
 digest :: ByteArrayAccess message => DigestAlgorithm -> message -> ByteString
@@ -225,6 +288,24 @@ doHash _ = Hash.hash
 
 hashFromProxy :: proxy a -> a
 hashFromProxy _ = undefined
+
+parseDigestParam :: Monoid e => DigestAlgorithm -> ParseASN1 e DigestAlgorithm
+parseDigestParam p = getNextMaybe nullOrNothing >> return p
+
+parseBitLen :: Monoid e => Integer -> a -> ParseASN1 e a
+parseBitLen expected res = do
+    IntVal n <- getNext
+    if n == expected
+        then return res
+        else throwParseError ("Invalid bit length: " ++ show n)
+        -- FIXME: should allow any input size but cryptonite requires
+        -- divisibility by 8.  For now we restrict to 256/512 bits only.
+
+p256 :: Proxy 256
+p256 = Proxy
+
+p512 :: Proxy 512
+p512 = Proxy
 
 
 -- Cipher-like things

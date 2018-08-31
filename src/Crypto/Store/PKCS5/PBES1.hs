@@ -267,6 +267,7 @@ getV (DigestAlgorithm SHA224) = 64
 getV (DigestAlgorithm SHA256) = 64
 getV (DigestAlgorithm SHA384) = 128
 getV (DigestAlgorithm SHA512) = 128
+getV t                        = error ("pkcs12Derive: unsupported hash: " ++ show t)
 
 hashFromProxy :: proxy a -> a
 hashFromProxy _ = undefined
