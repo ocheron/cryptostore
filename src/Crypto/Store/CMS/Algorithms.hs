@@ -88,6 +88,7 @@ import           Data.ByteArray (ByteArray, ByteArrayAccess)
 import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
 import           Data.Maybe (fromMaybe)
+import           Data.Proxy
 import           Data.Word
 import qualified Data.X509 as X509
 import           Data.X509.EC
@@ -100,6 +101,7 @@ import qualified Crypto.Cipher.DES as Cipher
 import qualified Crypto.Cipher.TripleDES as Cipher
 import           Crypto.Cipher.Types
 import           Crypto.Data.Padding
+import           Crypto.ECC (Curve_X25519, Curve_X448, ecdh)
 import           Crypto.Error
 import qualified Crypto.Hash as Hash
 import qualified Crypto.KDF.PBKDF2 as PBKDF2
@@ -107,6 +109,8 @@ import qualified Crypto.KDF.Scrypt as Scrypt
 import qualified Crypto.MAC.HMAC as HMAC
 import qualified Crypto.MAC.Poly1305 as Poly1305
 import           Crypto.Number.Serialize
+import qualified Crypto.PubKey.Curve25519 as X25519
+import qualified Crypto.PubKey.Curve448 as X448
 import qualified Crypto.PubKey.DSA as DSA
 import qualified Crypto.PubKey.ECC.DH as ECDH
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
@@ -1503,6 +1507,8 @@ ecdhKeyMaterial (DigestAlgorithm hashAlg) kep ukm zz
 -- | Key pair for ECDH.
 data ECDHPair
     = PairEC ECC.Curve ECC.PrivateNumber ECC.Point
+    | PairX25519 X25519.SecretKey X25519.PublicKey
+    | PairX448 X448.SecretKey X448.PublicKey
 
 -- | Generate an ephemeral ECDH key.
 ecdhGenerate :: MonadRandom m => X509.PubKey -> m (Either StoreError ECDHPair)
@@ -1515,12 +1521,20 @@ ecdhGenerate (X509.PubKeyEC pub) =
             return $ case unserializePoint curve (X509.pubkeyEC_pub pub) of
                 Nothing -> Left (InvalidInput "Invalid serialized point")
                 Just pt -> Right (PairEC curve priv pt)
+ecdhGenerate (X509.PubKeyX25519 pub) = do
+    priv <- X25519.generateSecretKey
+    return $ Right (PairX25519 priv pub)
+ecdhGenerate (X509.PubKeyX448 pub) = do
+    priv <- X448.generateSecretKey
+    return $ Right (PairX448 priv pub)
 ecdhGenerate _ = return $ Left UnexpectedPublicKeyType
 
 -- | Return the serialized public key corresponding to the ECDH private key.
 ecdhPublic :: ECDHPair -> ByteString
 ecdhPublic (PairEC curve d _)  = unSerialize (getSerializedPoint curve d)
   where unSerialize (X509.SerializedPoint pt) = pt
+ecdhPublic (PairX25519 priv _) = B.convert (X25519.toPublic priv)
+ecdhPublic (PairX448 priv _)   = B.convert (X448.toPublic priv)
 
 -- | Encrypt the specified content with an ECDH key pair and key-agreement
 -- algorithm.
@@ -1530,11 +1544,27 @@ ecdhEncrypt (StdDH dig kep) ukm (PairEC curve d pub) bs = do
     let s = ECDH.getShared curve d pub
         k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
     keyEncrypt k kep bs
+ecdhEncrypt (StdDH dig kep) ukm (PairX25519 priv pub) bs =
+    case fromCryptoFailable (ecdh x25519 priv pub) of
+        Left e  -> return (Left e)
+        Right s ->
+            let k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+             in keyEncrypt k kep bs
+ecdhEncrypt (StdDH dig kep) ukm (PairX448 priv pub) bs =
+    case fromCryptoFailable (ecdh x448 priv pub) of
+        Left e  -> return (Left e)
+        Right s ->
+            let k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+             in keyEncrypt k kep bs
 ecdhEncrypt (CofactorDH dig kep) ukm (PairEC curve d pub) bs = do
     let h = ECC.ecc_h (ECC.common_curve curve)
         s = ECDH.getShared curve (h * d) pub
         k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
     keyEncrypt k kep bs
+ecdhEncrypt (CofactorDH _ _) _ (PairX25519 _ _) _ =
+    return $ Left (InvalidInput "X25519 is not supported for cofactor DH")
+ecdhEncrypt (CofactorDH _ _) _ (PairX448 _ _) _ =
+    return $ Left (InvalidInput "X448 is not supported for cofactor DH")
 
 -- | Decrypt the specified content with an ECDH key pair and key-agreement
 -- algorithm.
@@ -1551,6 +1581,14 @@ ecdhDecrypt (StdDH dig kep) ukm (X509.PrivKeyEC priv) pt bs =
                         s = ECDH.getShared curve d pub
                         k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
                     keyDecrypt k kep bs
+ecdhDecrypt (StdDH dig kep) ukm (X509.PrivKeyX25519 priv) pt bs = do
+    s <- fromCryptoFailable (X25519.publicKey pt >>= ecdh x25519 priv)
+    let k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+    keyDecrypt k kep bs
+ecdhDecrypt (StdDH dig kep) ukm (X509.PrivKeyX448 priv) pt bs = do
+    s <- fromCryptoFailable (X448.publicKey pt >>= ecdh x448 priv)
+    let k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+    keyDecrypt k kep bs
 ecdhDecrypt (StdDH _ _) _ _ _ _ = Left UnexpectedPrivateKeyType
 ecdhDecrypt (CofactorDH dig kep) ukm (X509.PrivKeyEC priv) pt bs =
     case ecPrivKeyCurve priv of
@@ -1565,6 +1603,12 @@ ecdhDecrypt (CofactorDH dig kep) ukm (X509.PrivKeyEC priv) pt bs =
                         k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
                     keyDecrypt k kep bs
 ecdhDecrypt (CofactorDH _ _) _ _ _ _ = Left UnexpectedPrivateKeyType
+
+x25519 :: Proxy Curve_X25519
+x25519 = Proxy
+
+x448 :: Proxy Curve_X448
+x448 = Proxy
 
 
 -- Utilities

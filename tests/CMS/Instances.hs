@@ -352,11 +352,13 @@ instance Arbitrary KeyIdentifier where
         kid <- arbitrarySmall
         KeyIdentifier kid Nothing <$> arbitrary
 
-arbitraryAgreeParams :: KeyEncryptionParams -> Gen KeyAgreementParams
-arbitraryAgreeParams alg = oneof
-    [ flip StdDH alg <$> arbitraryDigest
-    , flip CofactorDH alg <$> arbitraryDigest
-    ]
+arbitraryAgreeParams :: Bool -> KeyEncryptionParams -> Gen KeyAgreementParams
+arbitraryAgreeParams allowCofactorDH alg
+    | allowCofactorDH = oneof
+        [ flip StdDH alg <$> arbitraryDigest
+        , flip CofactorDH alg <$> arbitraryDigest
+        ]
+    | otherwise = flip StdDH alg <$> arbitraryDigest
   where
     arbitraryDigest =
         elements
@@ -387,11 +389,14 @@ arbitraryEnvDev cek = sized $ \n -> do
         return (envFn, devFn)
 
     arbitraryKA = do
-        (pub, priv) <- arbitraryNamedEC
-        cert <- arbitrarySignedCertificate (PubKeyEC pub)
-        kap  <- arbitraryAlg >>= arbitraryAgreeParams
+        (cert, priv) <- arbitraryDHParams
+        let allowCofactorDH =
+                case priv of
+                    PrivKeyEC _ -> True
+                    _           -> False
+        kap <- arbitraryAlg >>= arbitraryAgreeParams allowCofactorDH
         let envFn = forKeyAgreeRecipient cert kap
-            devFn = withRecipientKeyAgree (PrivKeyEC priv) cert
+            devFn = withRecipientKeyAgree priv cert
         return (envFn, devFn)
 
     arbitraryKEK = do
@@ -430,6 +435,26 @@ arbitraryEnvDev cek = sized $ \n -> do
                                  , return AES256_WRAP_PAD
                                  , RC2_WRAP <$> choose (1, 1024)
                                  ]
+
+    arbitraryDHParams = oneof [ arbitraryCredNamedEC
+                              , arbitraryCredX25519
+                              , arbitraryCredX448
+                              ]
+
+    arbitraryCredNamedEC = do
+        (pub, priv) <- arbitraryNamedEC
+        cert <- arbitrarySignedCertificate (PubKeyEC pub)
+        return (cert, PrivKeyEC priv)
+
+    arbitraryCredX25519 = do
+        (pub, priv) <- arbitraryX25519
+        cert <- arbitrarySignedCertificate (PubKeyX25519 pub)
+        return (cert, PrivKeyX25519 priv)
+
+    arbitraryCredX448 = do
+        (pub, priv) <- arbitraryX448
+        cert <- arbitrarySignedCertificate (PubKeyX448 pub)
+        return (cert, PrivKeyX448 priv)
 
     -- key wrapping in PWRIKEK is incompatible with CTR mode so we must never
     -- generate this combination
