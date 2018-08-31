@@ -196,6 +196,9 @@ instance Arbitrary SignatureAlg where
         , pure $ ECDSA (DigestAlgorithm SHA256)
         , pure $ ECDSA (DigestAlgorithm SHA384)
         , pure $ ECDSA (DigestAlgorithm SHA512)
+
+        , pure Ed25519
+        , pure Ed448
         ]
 
 arbitraryKeyPair :: SignatureAlg -> Gen (PubKey, PrivKey)
@@ -214,6 +217,12 @@ arbitraryKeyPair (DSA _) = do
 arbitraryKeyPair (ECDSA _) = do
     (pub, priv) <- arbitraryNamedEC
     return (PubKeyEC pub, PrivKeyEC priv)
+arbitraryKeyPair Ed25519 = do
+    (pub, priv) <- arbitraryEd25519
+    return (PubKeyEd25519 pub, PrivKeyEd25519 priv)
+arbitraryKeyPair Ed448 = do
+    (pub, priv) <- arbitraryEd448
+    return (PubKeyEd448 pub, PrivKeyEd448 priv)
 
 arbitrarySigVer :: SignatureAlg -> Gen ([ProducerOfSI Gen], ConsumerOfSI Gen)
 arbitrarySigVer alg = sized $ \n -> do

@@ -118,6 +118,8 @@ import qualified Crypto.PubKey.DSA as DSA
 import qualified Crypto.PubKey.ECC.DH as ECDH
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.Types as ECC
+import qualified Crypto.PubKey.Ed25519 as Ed25519
+import qualified Crypto.PubKey.Ed448 as Ed448
 import qualified Crypto.PubKey.MaskGenFunction as MGF
 import qualified Crypto.PubKey.RSA.PSS as RSAPSS
 import qualified Crypto.PubKey.RSA.OAEP as RSAOAEP
@@ -1848,6 +1850,8 @@ data SignatureType = TypeRSAAnyHash
                    | TypeRSAPSS
                    | TypeDSA DigestAlgorithm
                    | TypeECDSA DigestAlgorithm
+                   | TypeEd25519
+                   | TypeEd448
     deriving (Show,Eq)
 
 instance Enumerable SignatureType where
@@ -1872,6 +1876,9 @@ instance Enumerable SignatureType where
              , TypeECDSA (DigestAlgorithm SHA256)
              , TypeECDSA (DigestAlgorithm SHA384)
              , TypeECDSA (DigestAlgorithm SHA512)
+
+             , TypeEd25519
+             , TypeEd448
              ]
 
 instance OIDable SignatureType where
@@ -1897,6 +1904,9 @@ instance OIDable SignatureType where
     getObjectID (TypeECDSA (DigestAlgorithm SHA384)) = [1,2,840,10045,4,3,3]
     getObjectID (TypeECDSA (DigestAlgorithm SHA512)) = [1,2,840,10045,4,3,4]
 
+    getObjectID TypeEd25519                          = [1,3,101,112]
+    getObjectID TypeEd448                            = [1,3,101,113]
+
     getObjectID ty = error ("Unsupported SignatureType: " ++ show ty)
 
 instance OIDNameable SignatureType where
@@ -1908,6 +1918,8 @@ data SignatureAlg = RSAAnyHash
                   | RSAPSS PSSParams
                   | DSA DigestAlgorithm
                   | ECDSA DigestAlgorithm
+                  | Ed25519
+                  | Ed448
     deriving (Show,Eq)
 
 instance AlgorithmId SignatureAlg where
@@ -1919,18 +1931,24 @@ instance AlgorithmId SignatureAlg where
     algorithmType (RSAPSS _)  = TypeRSAPSS
     algorithmType (DSA alg)   = TypeDSA alg
     algorithmType (ECDSA alg) = TypeECDSA alg
+    algorithmType Ed25519     = TypeEd25519
+    algorithmType Ed448       = TypeEd448
 
     parameterASN1S RSAAnyHash = gNull
     parameterASN1S (RSA _)    = gNull
     parameterASN1S (RSAPSS p) = asn1s p
     parameterASN1S (DSA _)    = id
     parameterASN1S (ECDSA _)  = id
+    parameterASN1S Ed25519    = id
+    parameterASN1S Ed448      = id
 
     parseParameter TypeRSAAnyHash   = getNextMaybe nullOrNothing >> return RSAAnyHash
     parseParameter (TypeRSA alg)    = getNextMaybe nullOrNothing >> return (RSA alg)
     parseParameter TypeRSAPSS       = RSAPSS <$> parse
     parseParameter (TypeDSA alg)    = return (DSA alg)
     parseParameter (TypeECDSA alg)  = return (ECDSA alg)
+    parseParameter TypeEd25519      = return Ed25519
+    parseParameter TypeEd448        = return Ed448
 
 -- | Sign a message using the specified algorithm and private key.  The
 -- corresponding public key is also required for some algorithms.
@@ -1956,6 +1974,10 @@ signatureGenerate (ECDSA alg) (X509.PrivKeyEC priv)  (X509.PubKeyEC _)  msg =
                 Just p  ->
                     let h = hashFromProxy t
                      in Right . ecdsaFromSignature <$> ECDSA.sign p h msg
+signatureGenerate Ed25519 (X509.PrivKeyEd25519 priv) (X509.PubKeyEd25519 pub) msg =
+    return . Right . B.convert $ Ed25519.sign priv pub msg
+signatureGenerate Ed448 (X509.PrivKeyEd448 priv) (X509.PubKeyEd448 pub) msg =
+    return . Right . B.convert $ Ed448.sign priv pub msg
 signatureGenerate _ _ _ _ = return (Left UnexpectedPrivateKeyType)
 
 -- | Verify a message signature using the specified algorithm and public key.
@@ -1976,6 +1998,14 @@ signatureVerify (ECDSA alg) (X509.PubKeyEC pub)  msg sig = fromMaybe False $ do
     s <- ecdsaToSignature sig
     case alg of
         DigestAlgorithm t -> return $ ECDSA.verify (hashFromProxy t) p s msg
+signatureVerify Ed25519 (X509.PubKeyEd25519 pub) msg sig =
+    case Ed25519.signature sig of
+        CryptoFailed _ -> False
+        CryptoPassed s -> Ed25519.verify pub msg s
+signatureVerify Ed448 (X509.PubKeyEd448 pub) msg sig =
+    case Ed448.signature sig of
+        CryptoFailed _ -> False
+        CryptoPassed s -> Ed448.verify pub msg s
 signatureVerify _                 _                    _   _   = False
 
 withHashAlgorithmASN1 :: DigestAlgorithm
@@ -2000,6 +2030,9 @@ signatureResolveHash _     _ alg@(RSA d)    = (d, alg)
 signatureResolveHash _     _ alg@(RSAPSS p) = (pssHashAlgorithm p, alg)
 signatureResolveHash _     _ alg@(DSA d)    = (d, alg)
 signatureResolveHash _     _ alg@(ECDSA d)  = (d, alg)
+signatureResolveHash _     _ alg@Ed25519    = (DigestAlgorithm SHA512, alg)
+signatureResolveHash True  _ alg@Ed448      = (DigestAlgorithm SHAKE256_512, alg)
+signatureResolveHash False _ alg@Ed448      = (DigestAlgorithm (SHAKE256 p512), alg)
 
 -- | Check that a signature algorithm is based on the specified digest algorithm
 -- and return a substitution algorithm for when a default digest algorithm is
@@ -2018,6 +2051,13 @@ signatureCheckHash expected alg@(DSA found)
 signatureCheckHash expected alg@(ECDSA found)
     | expected == found = Just alg
     | otherwise         = Nothing
+signatureCheckHash expected alg@Ed25519
+    | expected == DigestAlgorithm SHA512 = Just alg
+    | otherwise                          = Nothing
+signatureCheckHash expected alg@Ed448
+    | expected == DigestAlgorithm SHAKE256_512    = Just alg
+    | expected == DigestAlgorithm (SHAKE256 p512) = Just alg
+    | otherwise                                   = Nothing
 
 dsaToSignature :: ByteString -> Maybe DSA.Signature
 dsaToSignature b = tryDecodeAndParse b $ onNextContainer Sequence $ do
