@@ -50,8 +50,8 @@ import Crypto.Store.PEM
 
 -- | Class of signed objects convertible to PEM.
 class (ASN1Object a, Eq a, Show a) => SignedObject a where
-    signedObjectName :: Proxy a -> String
-    otherObjectNames :: Proxy a -> [String]
+    signedObjectName :: proxy a -> String
+    otherObjectNames :: proxy a -> [String]
 
 instance SignedObject X509.Certificate where
     signedObjectName _ = "CERTIFICATE"
@@ -61,7 +61,7 @@ instance SignedObject X509.CRL where
     signedObjectName _ = "X509 CRL"
     otherObjectNames _ = []
 
-validObjectName :: SignedObject a => Proxy a -> String -> Bool
+validObjectName :: SignedObject a => proxy a -> String -> Bool
 validObjectName prx name =
     name == signedObjectName prx || name `elem` otherObjectNames prx
 
