@@ -166,12 +166,12 @@ digestedDataTests =
             let ci' = digestData alg (DataCI message)
             ci @?= ci'
   where path  = testFile "cms-digested-data.pem"
-        algs  = [ ("MD5",    DigestType MD5)
-                , ("SHA1",   DigestType SHA1)
-                , ("SHA224", DigestType SHA224)
-                , ("SHA256", DigestType SHA256)
-                , ("SHA384", DigestType SHA384)
-                , ("SHA512", DigestType SHA512)
+        algs  = [ ("MD5",    DigestAlgorithm MD5)
+                , ("SHA1",   DigestAlgorithm SHA1)
+                , ("SHA224", DigestAlgorithm SHA224)
+                , ("SHA256", DigestAlgorithm SHA256)
+                , ("SHA384", DigestAlgorithm SHA384)
+                , ("SHA512", DigestAlgorithm SHA512)
                 ]
 
 encryptedDataTests :: TestTree

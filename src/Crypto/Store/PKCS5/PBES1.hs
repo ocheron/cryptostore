@@ -108,7 +108,7 @@ toUCS2 pwdUTF8
 pkcs5 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
       => (StoreError -> result)
       -> (Key -> ContentEncryptionParams -> ByteString -> result)
-      -> DigestAlgorithm hash
+      -> DigestProxy hash
       -> ContentEncryptionCipher cipher
       -> PBEParameter
       -> ByteString
@@ -127,7 +127,7 @@ pkcs5 failure encdec hashAlg cec pbeParam bs pwd
 -- PBKDF1, RFC 8018 section 5.1
 
 pbkdf1 :: (Hash.HashAlgorithm hash, ByteArrayAccess password, ByteArray out)
-       => DigestAlgorithm hash
+       => DigestProxy hash
        -> password
        -> PBEParameter
        -> Int
@@ -148,7 +148,7 @@ pbkdf1 hashAlg pwd PBEParameter{..} dkLen
 pkcs12 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
        => (StoreError -> result)
        -> (Key -> ContentEncryptionParams -> ByteString -> result)
-       -> DigestAlgorithm hash
+       -> DigestProxy hash
        -> ContentEncryptionCipher cipher
        -> PBEParameter
        -> ByteString
@@ -171,7 +171,7 @@ pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
 pkcs12rc2 :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
           => (StoreError -> result)
           -> (Key -> ContentEncryptionParams -> ByteString -> result)
-          -> DigestAlgorithm hash
+          -> DigestProxy hash
           -> Int
           -> PBEParameter
           -> ByteString
@@ -194,7 +194,7 @@ pkcs12rc2 failure encdec hashAlg len pbeParam bs pwdUTF8 =
 pkcs12stream :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
              => (StoreError -> result)
              -> (Key -> ByteString -> result)
-             -> DigestAlgorithm hash
+             -> DigestProxy hash
              -> Int
              -> PBEParameter
              -> ByteString
@@ -212,7 +212,7 @@ pkcs12stream failure encdec hashAlg keyLen pbeParam bs pwdUTF8 =
 pkcs12mac :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
           => (StoreError -> result)
           -> (Key -> MACAlgorithm -> ByteString -> result)
-          -> DigestAlgorithm hash
+          -> DigestProxy hash
           -> PBEParameter
           -> ByteString
           -> password
@@ -230,7 +230,7 @@ passwordNotUTF8 :: StoreError
 passwordNotUTF8 = InvalidPassword "Provided password is not valid UTF-8"
 
 pkcs12Derive :: (Hash.HashAlgorithm hash, ByteArray bout)
-             => DigestAlgorithm hash
+             => DigestProxy hash
              -> PBEParameter
              -> Word8
              -> ByteString -- password (UCS2)
@@ -240,7 +240,7 @@ pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
     B.take n $ B.concat $ take c $ loop t (s `B.append` p)
   where
     a = hashFromProxy hashAlg
-    v = getV (DigestType hashAlg)
+    v = getV (DigestAlgorithm hashAlg)
     u = Hash.hashDigestSize a
 
     c = (n + u - 1) `div` u
@@ -258,15 +258,15 @@ pkcs12Derive hashAlg PBEParameter{..} idByte pwdUCS2 n =
                    j  = B.concat $ map (add1 b) (chunks v i)
                 in ai : loop x j
 
-getV :: DigestType -> Int
-getV (DigestType MD2)    = 64
-getV (DigestType MD4)    = 64
-getV (DigestType MD5)    = 64
-getV (DigestType SHA1)   = 64
-getV (DigestType SHA224) = 64
-getV (DigestType SHA256) = 64
-getV (DigestType SHA384) = 128
-getV (DigestType SHA512) = 128
+getV :: DigestAlgorithm -> Int
+getV (DigestAlgorithm MD2)    = 64
+getV (DigestAlgorithm MD4)    = 64
+getV (DigestAlgorithm MD5)    = 64
+getV (DigestAlgorithm SHA1)   = 64
+getV (DigestAlgorithm SHA224) = 64
+getV (DigestAlgorithm SHA256) = 64
+getV (DigestAlgorithm SHA384) = 128
+getV (DigestAlgorithm SHA512) = 128
 
 hashFromProxy :: proxy a -> a
 hashFromProxy _ = undefined

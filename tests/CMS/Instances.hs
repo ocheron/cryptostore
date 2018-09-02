@@ -118,30 +118,30 @@ instance Arbitrary Attribute where
 arbitraryAttributes :: Gen [Attribute]
 arbitraryAttributes = resize 3 arbitrary
 
-instance Arbitrary DigestType where
+instance Arbitrary DigestAlgorithm where
     arbitrary = elements
-        [ DigestType MD2
-        , DigestType MD4
-        , DigestType MD5
-        , DigestType SHA1
-        , DigestType SHA224
-        , DigestType SHA256
-        , DigestType SHA384
-        , DigestType SHA512
+        [ DigestAlgorithm MD2
+        , DigestAlgorithm MD4
+        , DigestAlgorithm MD5
+        , DigestAlgorithm SHA1
+        , DigestAlgorithm SHA224
+        , DigestAlgorithm SHA256
+        , DigestAlgorithm SHA384
+        , DigestAlgorithm SHA512
         ]
 
-arbitraryIntegrityDigest :: Gen DigestType
+arbitraryIntegrityDigest :: Gen DigestAlgorithm
 arbitraryIntegrityDigest = elements
-    [ DigestType MD5
-    , DigestType SHA1
-    , DigestType SHA224
-    , DigestType SHA256
-    , DigestType SHA384
-    , DigestType SHA512
+    [ DigestAlgorithm MD5
+    , DigestAlgorithm SHA1
+    , DigestAlgorithm SHA224
+    , DigestAlgorithm SHA256
+    , DigestAlgorithm SHA384
+    , DigestAlgorithm SHA512
     ]
 
 instance Arbitrary MACAlgorithm where
-    arbitrary = (\(DigestType alg) -> HMAC alg) <$> arbitraryIntegrityDigest
+    arbitrary = (\(DigestAlgorithm alg) -> HMAC alg) <$> arbitraryIntegrityDigest
 
 instance Arbitrary OAEPParams where
     arbitrary = do
@@ -165,25 +165,25 @@ instance Arbitrary SignatureAlg where
     arbitrary = oneof
         [ pure RSAAnyHash
 
-        , pure $ RSA (DigestType MD2)
-        , pure $ RSA (DigestType MD5)
-        , pure $ RSA (DigestType SHA1)
-        , pure $ RSA (DigestType SHA224)
-        , pure $ RSA (DigestType SHA256)
-        , pure $ RSA (DigestType SHA384)
-        , pure $ RSA (DigestType SHA512)
+        , pure $ RSA (DigestAlgorithm MD2)
+        , pure $ RSA (DigestAlgorithm MD5)
+        , pure $ RSA (DigestAlgorithm SHA1)
+        , pure $ RSA (DigestAlgorithm SHA224)
+        , pure $ RSA (DigestAlgorithm SHA256)
+        , pure $ RSA (DigestAlgorithm SHA384)
+        , pure $ RSA (DigestAlgorithm SHA512)
 
         , RSAPSS <$> arbitrary
 
-        , pure $ DSA (DigestType SHA1)
-        , pure $ DSA (DigestType SHA224)
-        , pure $ DSA (DigestType SHA256)
+        , pure $ DSA (DigestAlgorithm SHA1)
+        , pure $ DSA (DigestAlgorithm SHA224)
+        , pure $ DSA (DigestAlgorithm SHA256)
 
-        , pure $ ECDSA (DigestType SHA1)
-        , pure $ ECDSA (DigestType SHA224)
-        , pure $ ECDSA (DigestType SHA256)
-        , pure $ ECDSA (DigestType SHA384)
-        , pure $ ECDSA (DigestType SHA512)
+        , pure $ ECDSA (DigestAlgorithm SHA1)
+        , pure $ ECDSA (DigestAlgorithm SHA224)
+        , pure $ ECDSA (DigestAlgorithm SHA256)
+        , pure $ ECDSA (DigestAlgorithm SHA384)
+        , pure $ ECDSA (DigestAlgorithm SHA512)
         ]
 
 arbitraryKeyPair :: SignatureAlg -> Gen (PubKey, PrivKey)
@@ -360,11 +360,11 @@ arbitraryAgreeParams alg = oneof
   where
     arbitraryDigest =
         elements
-            [ DigestType SHA1
-            , DigestType SHA224
-            , DigestType SHA256
-            , DigestType SHA384
-            , DigestType SHA512
+            [ DigestAlgorithm SHA1
+            , DigestAlgorithm SHA224
+            , DigestAlgorithm SHA256
+            , DigestAlgorithm SHA384
+            , DigestAlgorithm SHA512
             ]
 
 arbitraryEnvDev :: ContentEncryptionKey

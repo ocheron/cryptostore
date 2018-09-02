@@ -104,7 +104,7 @@ readP12FileFromMemory ber = decode ber >>= integrity
 
     verify MacData{..} content pwdUTF8 =
         case digAlg of
-            DigestType d ->
+            DigestAlgorithm d ->
                 let fn key macAlg bs
                         | macValue == mac macAlg key bs = decode bs
                         | otherwise = Left BadContentMAC
@@ -114,7 +114,7 @@ readP12FileFromMemory ber = decode ber >>= integrity
 -- Generating and encoding
 
 -- | Parameters used for password integrity mode.
-type IntegrityParams = (DigestType, PBEParameter)
+type IntegrityParams = (DigestAlgorithm, PBEParameter)
 
 -- | Write a PKCS #12 file to disk.
 writeP12File :: FilePath
@@ -130,7 +130,7 @@ writeP12File path intp pw aSafe =
 writeP12FileToMemory :: IntegrityParams -> Password
                      -> PKCS12
                      -> Either StoreError BS.ByteString
-writeP12FileToMemory (alg@(DigestType hashAlg), pbeParam) pwdUTF8 aSafe =
+writeP12FileToMemory (alg@(DigestAlgorithm hashAlg), pbeParam) pwdUTF8 aSafe =
     encode <$> protect
   where
     content   = encodeASN1Object aSafe
@@ -186,7 +186,7 @@ instance ParseASN1Object [ASN1Event] PFX where
         return PFX { authSafeData = d, macData = m }
 
 data MacData = MacData
-    { digAlg :: DigestType
+    { digAlg :: DigestAlgorithm
     , macValue :: MessageAuthenticationCode
     , macParams :: PBEParameter
     }

@@ -124,11 +124,11 @@ isData _          = False
 
 -- | Signed content information.
 data SignedData = SignedData
-    { sdDigestAlgorithms :: [DigestType]    -- ^ Digest algorithms
-    , sdContentInfo :: ContentInfo          -- ^ Inner content info
-    , sdCertificates :: [CertificateChoice] -- ^ The collection of certificates
-    , sdCRLs  :: [RevocationInfoChoice]     -- ^ The collection of CRLs
-    , sdSignerInfos :: [SignerInfo]         -- ^ Per-signer information
+    { sdDigestAlgorithms :: [DigestAlgorithm] -- ^ Digest algorithms
+    , sdContentInfo :: ContentInfo            -- ^ Inner content info
+    , sdCertificates :: [CertificateChoice]   -- ^ The collection of certificates
+    , sdCRLs  :: [RevocationInfoChoice]       -- ^ The collection of CRLs
+    , sdSignerInfos :: [SignerInfo]           -- ^ Per-signer information
     }
     deriving (Show,Eq)
 
@@ -175,10 +175,10 @@ instance ParseASN1Object [ASN1Event] SignedData where
         parseOptList tag =
             fromMaybe [] <$> onNextContainerMaybe (Container Context tag) parse
 
-digestTypesASN1S :: ASN1Elem e => [DigestType] -> ASN1Stream e
+digestTypesASN1S :: ASN1Elem e => [DigestAlgorithm] -> ASN1Stream e
 digestTypesASN1S list cont = foldr (algorithmASN1S Sequence) cont list
 
-parseDigestTypes :: Monoid e => ParseASN1 e [DigestType]
+parseDigestTypes :: Monoid e => ParseASN1 e [DigestAlgorithm]
 parseDigestTypes = getMany (parseAlgorithm Sequence)
 
 
@@ -186,7 +186,7 @@ parseDigestTypes = getMany (parseAlgorithm Sequence)
 
 -- | Digested content information.
 data DigestedData = forall hashAlg. HashAlgorithm hashAlg => DigestedData
-    { ddDigestAlgorithm :: DigestAlgorithm hashAlg -- ^ Digest algorithm
+    { ddDigestAlgorithm :: DigestProxy hashAlg     -- ^ Digest algorithm
     , ddContentInfo :: ContentInfo                 -- ^ Inner content info
     , ddDigest :: Digest hashAlg                   -- ^ Digest value
     }
@@ -201,14 +201,14 @@ instance Show DigestedData where
 
 instance Eq DigestedData where
     DigestedData a1 i1 d1 == DigestedData a2 i2 d2 =
-        DigestType a1 == DigestType a2 && d1 `B.eq` d2 && i1 == i2
+        DigestAlgorithm a1 == DigestAlgorithm a2 && d1 `B.eq` d2 && i1 == i2
 
 instance ASN1Elem e => ProduceASN1Object e DigestedData where
     asn1s DigestedData{..} =
         asn1Container Sequence (ver . alg . ci . dig)
       where
         v = if isData ddContentInfo then 0 else 2
-        d = DigestType ddDigestAlgorithm
+        d = DigestAlgorithm ddDigestAlgorithm
 
         ver = gIntVal v
         alg = algorithmASN1S Sequence d
@@ -225,7 +225,7 @@ instance Monoid e => ParseASN1Object e DigestedData where
             inner <- parseEncapsulatedContentInfo
             OctetString bs <- getNext
             case alg of
-                DigestType digAlg ->
+                DigestAlgorithm digAlg ->
                     case digestFromByteString bs of
                         Nothing -> throwParseError "DigestedData: parsed invalid digest"
                         Just d  ->
@@ -245,7 +245,7 @@ data AuthenticatedData = AuthenticatedData
       -- ^ Information for recipients, allowing to authenticate the content
     , adMACAlgorithm :: MACAlgorithm
       -- ^ MAC algorithm
-    , adDigestAlgorithm :: Maybe DigestType
+    , adDigestAlgorithm :: Maybe DigestAlgorithm
       -- ^ Optional digest algorithm
     , adContentInfo :: ContentInfo
       -- ^ Inner content info

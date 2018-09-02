@@ -79,8 +79,8 @@ module Crypto.Store.CMS
     , forPasswordRecipient
     , withRecipientPassword
     -- * Digested data
+    , DigestProxy(..)
     , DigestAlgorithm(..)
-    , DigestType(..)
     , DigestedData(..)
     , digestData
     , digestVerify
@@ -163,8 +163,8 @@ import Crypto.Store.Error
 -- DigestedData
 
 -- | Add a digested-data layer on the specified content info.
-digestData :: DigestType -> ContentInfo -> ContentInfo
-digestData (DigestType alg) ci = DigestedDataCI dd
+digestData :: DigestAlgorithm -> ContentInfo -> ContentInfo
+digestData (DigestAlgorithm alg) ci = DigestedDataCI dd
   where dd = DigestedData
                  { ddDigestAlgorithm = alg
                  , ddContentInfo     = ci
@@ -268,7 +268,7 @@ generateAuthenticatedData :: Applicative f
                           => OriginatorInfo
                           -> AuthenticationKey
                           -> MACAlgorithm
-                          -> Maybe DigestType
+                          -> Maybe DigestAlgorithm
                           -> [ProducerOfRI f]
                           -> [Attribute]
                           -> [Attribute]

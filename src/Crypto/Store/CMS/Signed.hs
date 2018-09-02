@@ -49,7 +49,7 @@ import Crypto.Store.Error
 data SignerInfo = SignerInfo
     { siSignerId :: SignerIdentifier
       -- ^ Identifier of the signer certificate
-    , siDigestAlgorithm :: DigestType
+    , siDigestAlgorithm :: DigestAlgorithm
       -- ^ Digest algorithm used for the signature
     , siSignedAttrs :: [Attribute]
       -- ^ Optional signed attributes
@@ -169,7 +169,7 @@ certSigner alg priv (CertificateChain chain) sAttrsM uAttrs ct msg =
     fmap build <$> generate
   where
     md   = digest dig msg
-    def  = DigestType Crypto.Store.CMS.Algorithms.SHA256
+    def  = DigestAlgorithm Crypto.Store.CMS.Algorithms.SHA256
     cert = head chain
     obj  = signedObject (getSigned cert)
     isn  = IssuerAndSerialNumber (certIssuerDN obj) (certSerial obj)

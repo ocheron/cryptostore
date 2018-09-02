@@ -17,8 +17,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 module Crypto.Store.CMS.Algorithms
-    ( DigestType(..)
-    , DigestAlgorithm(..)
+    ( DigestAlgorithm(..)
+    , DigestProxy(..)
     , digest
     , MessageAuthenticationCode
     , MACAlgorithm(..)
@@ -131,85 +131,86 @@ import           Crypto.Store.Util
 
 -- Hash functions
 
--- | CMS digest algorithm.
-data DigestAlgorithm hashAlg where
+-- | CMS digest proxy.  Acts like 'Data.Proxy.Proxy', i.e. provides a hash
+-- algorithm as type parameter.  The GADT constructors map to known algorithms.
+data DigestProxy hashAlg where
     -- | MD2
-    MD2    :: DigestAlgorithm Hash.MD2
+    MD2    :: DigestProxy Hash.MD2
     -- | MD4
-    MD4    :: DigestAlgorithm Hash.MD4
+    MD4    :: DigestProxy Hash.MD4
     -- | MD5
-    MD5    :: DigestAlgorithm Hash.MD5
+    MD5    :: DigestProxy Hash.MD5
     -- | SHA-1
-    SHA1   :: DigestAlgorithm Hash.SHA1
+    SHA1   :: DigestProxy Hash.SHA1
     -- | SHA-224
-    SHA224 :: DigestAlgorithm Hash.SHA224
+    SHA224 :: DigestProxy Hash.SHA224
     -- | SHA-256
-    SHA256 :: DigestAlgorithm Hash.SHA256
+    SHA256 :: DigestProxy Hash.SHA256
     -- | SHA-384
-    SHA384 :: DigestAlgorithm Hash.SHA384
+    SHA384 :: DigestProxy Hash.SHA384
     -- | SHA-512
-    SHA512 :: DigestAlgorithm Hash.SHA512
+    SHA512 :: DigestProxy Hash.SHA512
 
-deriving instance Show (DigestAlgorithm hashAlg)
-deriving instance Eq (DigestAlgorithm hashAlg)
+deriving instance Show (DigestProxy hashAlg)
+deriving instance Eq (DigestProxy hashAlg)
 
--- | Existential CMS digest algorithm.
-data DigestType =
+-- | CMS digest algorithm.
+data DigestAlgorithm =
     forall hashAlg . Hash.HashAlgorithm hashAlg
-        => DigestType (DigestAlgorithm hashAlg)
+        => DigestAlgorithm (DigestProxy hashAlg)
 
-instance Show DigestType where
-    show (DigestType a) = show a
+instance Show DigestAlgorithm where
+    show (DigestAlgorithm a) = show a
 
-instance Eq DigestType where
-    DigestType MD2    == DigestType MD2    = True
-    DigestType MD4    == DigestType MD4    = True
-    DigestType MD5    == DigestType MD5    = True
-    DigestType SHA1   == DigestType SHA1   = True
-    DigestType SHA224 == DigestType SHA224 = True
-    DigestType SHA256 == DigestType SHA256 = True
-    DigestType SHA384 == DigestType SHA384 = True
-    DigestType SHA512 == DigestType SHA512 = True
-    _                 == _                 = False
+instance Eq DigestAlgorithm where
+    DigestAlgorithm MD2          == DigestAlgorithm MD2          = True
+    DigestAlgorithm MD4          == DigestAlgorithm MD4          = True
+    DigestAlgorithm MD5          == DigestAlgorithm MD5          = True
+    DigestAlgorithm SHA1         == DigestAlgorithm SHA1         = True
+    DigestAlgorithm SHA224       == DigestAlgorithm SHA224       = True
+    DigestAlgorithm SHA256       == DigestAlgorithm SHA256       = True
+    DigestAlgorithm SHA384       == DigestAlgorithm SHA384       = True
+    DigestAlgorithm SHA512       == DigestAlgorithm SHA512       = True
+    _                            == _                            = False
 
-instance Enumerable DigestType where
-    values = [ DigestType MD2
-             , DigestType MD4
-             , DigestType MD5
-             , DigestType SHA1
-             , DigestType SHA224
-             , DigestType SHA256
-             , DigestType SHA384
-             , DigestType SHA512
+instance Enumerable DigestAlgorithm where
+    values = [ DigestAlgorithm MD2
+             , DigestAlgorithm MD4
+             , DigestAlgorithm MD5
+             , DigestAlgorithm SHA1
+             , DigestAlgorithm SHA224
+             , DigestAlgorithm SHA256
+             , DigestAlgorithm SHA384
+             , DigestAlgorithm SHA512
              ]
 
-instance OIDable DigestType where
-    getObjectID (DigestType MD2)    = [1,2,840,113549,2,2]
-    getObjectID (DigestType MD4)    = [1,2,840,113549,2,4]
-    getObjectID (DigestType MD5)    = [1,2,840,113549,2,5]
-    getObjectID (DigestType SHA1)   = [1,3,14,3,2,26]
-    getObjectID (DigestType SHA224) = [2,16,840,1,101,3,4,2,4]
-    getObjectID (DigestType SHA256) = [2,16,840,1,101,3,4,2,1]
-    getObjectID (DigestType SHA384) = [2,16,840,1,101,3,4,2,2]
-    getObjectID (DigestType SHA512) = [2,16,840,1,101,3,4,2,3]
+instance OIDable DigestAlgorithm where
+    getObjectID (DigestAlgorithm MD2)    = [1,2,840,113549,2,2]
+    getObjectID (DigestAlgorithm MD4)    = [1,2,840,113549,2,4]
+    getObjectID (DigestAlgorithm MD5)    = [1,2,840,113549,2,5]
+    getObjectID (DigestAlgorithm SHA1)   = [1,3,14,3,2,26]
+    getObjectID (DigestAlgorithm SHA224) = [2,16,840,1,101,3,4,2,4]
+    getObjectID (DigestAlgorithm SHA256) = [2,16,840,1,101,3,4,2,1]
+    getObjectID (DigestAlgorithm SHA384) = [2,16,840,1,101,3,4,2,2]
+    getObjectID (DigestAlgorithm SHA512) = [2,16,840,1,101,3,4,2,3]
 
-instance OIDNameable DigestType where
+instance OIDNameable DigestAlgorithm where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
 
-instance AlgorithmId DigestType where
-    type AlgorithmType DigestType = DigestType
+instance AlgorithmId DigestAlgorithm where
+    type AlgorithmType DigestAlgorithm = DigestAlgorithm
     algorithmName _  = "digest algorithm"
     algorithmType    = id
 
     -- MD5 has NULL parameter, other algorithms have no parameter
-    parameterASN1S (DigestType MD5) = gNull
-    parameterASN1S _                = id
+    parameterASN1S (DigestAlgorithm MD5) = gNull
+    parameterASN1S _                     = id
 
     parseParameter p = getNextMaybe nullOrNothing >> return p
 
 -- | Compute the digest of a message.
-digest :: ByteArrayAccess message => DigestType -> message -> ByteString
-digest (DigestType hashAlg) message = B.convert (doHash hashAlg message)
+digest :: ByteArrayAccess message => DigestAlgorithm -> message -> ByteString
+digest (DigestAlgorithm hashAlg) message = B.convert (doHash hashAlg message)
 
 doHash :: (Hash.HashAlgorithm hashAlg, ByteArrayAccess ba)
        => proxy hashAlg -> ba -> Hash.Digest hashAlg
@@ -259,12 +260,12 @@ type MessageAuthenticationCode = AuthTag
 -- | Message Authentication Code (MAC) Algorithm.
 data MACAlgorithm
     = forall hashAlg . Hash.HashAlgorithm hashAlg
-        => HMAC (DigestAlgorithm hashAlg)
+        => HMAC (DigestProxy hashAlg)
 
 deriving instance Show MACAlgorithm
 
 instance Eq MACAlgorithm where
-    HMAC a1 == HMAC a2 = DigestType a1 == DigestType a2
+    HMAC a1 == HMAC a2 = DigestAlgorithm a1 == DigestAlgorithm a2
 
 instance Enumerable MACAlgorithm where
     values = [ HMAC MD5
@@ -1302,7 +1303,7 @@ wrapDecrypt decFn cipher iv input = keyUnwrap (decFn cipher iv firstPass)
 
 -- | Encryption parameters for RSAES-OAEP.
 data OAEPParams = OAEPParams
-    { oaepHashAlgorithm :: DigestType            -- ^ Hash function
+    { oaepHashAlgorithm :: DigestAlgorithm       -- ^ Hash function
     , oaepMaskGenAlgorithm :: MaskGenerationFunc -- ^ Mask generation function
     }
     deriving (Show,Eq)
@@ -1313,7 +1314,7 @@ withOAEPParams :: forall seed output a . (ByteArrayAccess seed, ByteArray output
                -> a
 withOAEPParams p fn =
     case oaepHashAlgorithm p of
-        DigestType hashAlg ->
+        DigestAlgorithm hashAlg ->
             fn RSAOAEP.OAEPParams
                 { RSAOAEP.oaepHash = hashFromProxy hashAlg
                 , RSAOAEP.oaepMaskGenAlg = mgf (oaepMaskGenAlgorithm p)
@@ -1324,7 +1325,7 @@ instance ASN1Elem e => ProduceASN1Object e OAEPParams where
     asn1s OAEPParams{..} =
         asn1Container Sequence (h . m)
       where
-        sha1  = DigestType SHA1
+        sha1  = DigestAlgorithm SHA1
         tag i = asn1Container (Container Context i)
 
         h | oaepHashAlgorithm == sha1 = id
@@ -1342,7 +1343,7 @@ instance Monoid e => ParseASN1Object e OAEPParams where
                           , oaepMaskGenAlgorithm = fromMaybe (MGF1 sha1) m
                           }
       where
-        sha1  = DigestType SHA1
+        sha1  = DigestAlgorithm SHA1
         tag i = onNextContainerMaybe (Container Context i)
 
         parsePSpecified = do
@@ -1414,36 +1415,36 @@ transportDecrypt _ _ _ = return $ Left UnexpectedPrivateKeyType
 
 -- Key agreement
 
-data KeyAgreementType = TypeStdDH DigestType
-                      | TypeCofactorDH DigestType
+data KeyAgreementType = TypeStdDH DigestAlgorithm
+                      | TypeCofactorDH DigestAlgorithm
                       deriving (Show,Eq)
 
 instance Enumerable KeyAgreementType where
-    values = [ TypeStdDH (DigestType SHA1)
-             , TypeStdDH (DigestType SHA224)
-             , TypeStdDH (DigestType SHA256)
-             , TypeStdDH (DigestType SHA384)
-             , TypeStdDH (DigestType SHA512)
+    values = [ TypeStdDH (DigestAlgorithm SHA1)
+             , TypeStdDH (DigestAlgorithm SHA224)
+             , TypeStdDH (DigestAlgorithm SHA256)
+             , TypeStdDH (DigestAlgorithm SHA384)
+             , TypeStdDH (DigestAlgorithm SHA512)
 
-             , TypeCofactorDH (DigestType SHA1)
-             , TypeCofactorDH (DigestType SHA224)
-             , TypeCofactorDH (DigestType SHA256)
-             , TypeCofactorDH (DigestType SHA384)
-             , TypeCofactorDH (DigestType SHA512)
+             , TypeCofactorDH (DigestAlgorithm SHA1)
+             , TypeCofactorDH (DigestAlgorithm SHA224)
+             , TypeCofactorDH (DigestAlgorithm SHA256)
+             , TypeCofactorDH (DigestAlgorithm SHA384)
+             , TypeCofactorDH (DigestAlgorithm SHA512)
              ]
 
 instance OIDable KeyAgreementType where
-    getObjectID (TypeStdDH (DigestType SHA1))        = [1,3,133,16,840,63,0,2]
-    getObjectID (TypeStdDH (DigestType SHA224))      = [1,3,132,1,11,0]
-    getObjectID (TypeStdDH (DigestType SHA256))      = [1,3,132,1,11,1]
-    getObjectID (TypeStdDH (DigestType SHA384))      = [1,3,132,1,11,2]
-    getObjectID (TypeStdDH (DigestType SHA512))      = [1,3,132,1,11,3]
+    getObjectID (TypeStdDH (DigestAlgorithm SHA1))        = [1,3,133,16,840,63,0,2]
+    getObjectID (TypeStdDH (DigestAlgorithm SHA224))      = [1,3,132,1,11,0]
+    getObjectID (TypeStdDH (DigestAlgorithm SHA256))      = [1,3,132,1,11,1]
+    getObjectID (TypeStdDH (DigestAlgorithm SHA384))      = [1,3,132,1,11,2]
+    getObjectID (TypeStdDH (DigestAlgorithm SHA512))      = [1,3,132,1,11,3]
 
-    getObjectID (TypeCofactorDH (DigestType SHA1))   = [1,3,133,16,840,63,0,3]
-    getObjectID (TypeCofactorDH (DigestType SHA224)) = [1,3,132,1,14,0]
-    getObjectID (TypeCofactorDH (DigestType SHA256)) = [1,3,132,1,14,1]
-    getObjectID (TypeCofactorDH (DigestType SHA384)) = [1,3,132,1,14,2]
-    getObjectID (TypeCofactorDH (DigestType SHA512)) = [1,3,132,1,14,3]
+    getObjectID (TypeCofactorDH (DigestAlgorithm SHA1))   = [1,3,133,16,840,63,0,3]
+    getObjectID (TypeCofactorDH (DigestAlgorithm SHA224)) = [1,3,132,1,14,0]
+    getObjectID (TypeCofactorDH (DigestAlgorithm SHA256)) = [1,3,132,1,14,1]
+    getObjectID (TypeCofactorDH (DigestAlgorithm SHA384)) = [1,3,132,1,14,2]
+    getObjectID (TypeCofactorDH (DigestAlgorithm SHA512)) = [1,3,132,1,14,3]
 
     getObjectID ty = error ("Unsupported KeyAgreementType: " ++ show ty)
 
@@ -1451,9 +1452,9 @@ instance OIDNameable KeyAgreementType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
 
 -- | Key agreement algorithm with associated parameters.
-data KeyAgreementParams = StdDH DigestType KeyEncryptionParams
+data KeyAgreementParams = StdDH DigestAlgorithm KeyEncryptionParams
                           -- ^ 1-Pass D-H with Stardard ECDH
-                        | CofactorDH DigestType KeyEncryptionParams
+                        | CofactorDH DigestAlgorithm KeyEncryptionParams
                           -- ^ 1-Pass D-H with Cofactor ECDH
                         deriving (Show,Eq)
 
@@ -1471,8 +1472,8 @@ instance AlgorithmId KeyAgreementParams where
     parseParameter (TypeCofactorDH d) = CofactorDH d <$> parseAlgorithm Sequence
 
 ecdhKeyMaterial :: (ByteArrayAccess bin, ByteArray bout)
-              => DigestType -> KeyEncryptionParams -> Maybe ByteString -> bin -> bout
-ecdhKeyMaterial (DigestType hashAlg) kep ukm zz
+                => DigestAlgorithm -> KeyEncryptionParams -> Maybe ByteString -> bin -> bout
+ecdhKeyMaterial (DigestAlgorithm hashAlg) kep ukm zz
     | r == 0    = B.concat (map chunk [1..d])
     | otherwise = B.concat (map chunk [1..d]) `B.append` B.take r (chunk $ succ d)
   where
@@ -1631,7 +1632,7 @@ instance OIDNameable MaskGenerationType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
 
 -- | Mask Generation Functions (MGF) and associated parameters.
-newtype MaskGenerationFunc = MGF1 DigestType
+newtype MaskGenerationFunc = MGF1 DigestAlgorithm
     deriving (Show,Eq)
 
 instance AlgorithmId MaskGenerationFunc where
@@ -1647,7 +1648,7 @@ instance AlgorithmId MaskGenerationFunc where
 -- | Generate a mask with the MGF.
 mgf :: (ByteArrayAccess seed, ByteArray output)
     => MaskGenerationFunc -> seed -> Int -> output
-mgf (MGF1 (DigestType hashAlg)) = MGF.mgf1 (hashFromProxy hashAlg)
+mgf (MGF1 (DigestAlgorithm hashAlg)) = MGF.mgf1 (hashFromProxy hashAlg)
 
 
 -- Signature algorithms
@@ -1657,7 +1658,7 @@ type SignatureValue = ByteString
 
 -- | Signature parameters for RSASSA-PSS.
 data PSSParams = PSSParams
-    { pssHashAlgorithm :: DigestType            -- ^ Hash function
+    { pssHashAlgorithm :: DigestAlgorithm       -- ^ Hash function
     , pssMaskGenAlgorithm :: MaskGenerationFunc -- ^ Mask generation function
     , pssSaltLength :: Int                      -- ^ Length of the salt in bytes
     }
@@ -1669,7 +1670,7 @@ withPSSParams :: forall seed output a . (ByteArrayAccess seed, ByteArray output)
               -> a
 withPSSParams p fn =
     case pssHashAlgorithm p of
-        DigestType hashAlg ->
+        DigestAlgorithm hashAlg ->
             fn RSAPSS.PSSParams
                 { RSAPSS.pssHash = hashFromProxy hashAlg
                 , RSAPSS.pssMaskGenAlg = mgf (pssMaskGenAlgorithm p)
@@ -1681,7 +1682,7 @@ instance ASN1Elem e => ProduceASN1Object e PSSParams where
     asn1s PSSParams{..} =
         asn1Container Sequence (h . m . s)
       where
-        sha1  = DigestType SHA1
+        sha1  = DigestAlgorithm SHA1
         tag i = asn1Container (Container Context i)
 
         h | pssHashAlgorithm == sha1 = id
@@ -1704,62 +1705,62 @@ instance Monoid e => ParseASN1Object e PSSParams where
                          , pssSaltLength = fromMaybe 20 s
                          }
       where
-        sha1  = DigestType SHA1
+        sha1  = DigestAlgorithm SHA1
         tag i = onNextContainerMaybe (Container Context i)
 
 data SignatureType = TypeRSAAnyHash
-                   | TypeRSA DigestType
+                   | TypeRSA DigestAlgorithm
                    | TypeRSAPSS
-                   | TypeDSA DigestType
-                   | TypeECDSA DigestType
+                   | TypeDSA DigestAlgorithm
+                   | TypeECDSA DigestAlgorithm
     deriving (Show,Eq)
 
 instance Enumerable SignatureType where
     values = [ TypeRSAAnyHash
 
-             , TypeRSA (DigestType MD2)
-             , TypeRSA (DigestType MD5)
-             , TypeRSA (DigestType SHA1)
-             , TypeRSA (DigestType SHA224)
-             , TypeRSA (DigestType SHA256)
-             , TypeRSA (DigestType SHA384)
-             , TypeRSA (DigestType SHA512)
+             , TypeRSA (DigestAlgorithm MD2)
+             , TypeRSA (DigestAlgorithm MD5)
+             , TypeRSA (DigestAlgorithm SHA1)
+             , TypeRSA (DigestAlgorithm SHA224)
+             , TypeRSA (DigestAlgorithm SHA256)
+             , TypeRSA (DigestAlgorithm SHA384)
+             , TypeRSA (DigestAlgorithm SHA512)
 
              , TypeRSAPSS
 
-             , TypeDSA (DigestType SHA1)
-             , TypeDSA (DigestType SHA224)
-             , TypeDSA (DigestType SHA256)
+             , TypeDSA (DigestAlgorithm SHA1)
+             , TypeDSA (DigestAlgorithm SHA224)
+             , TypeDSA (DigestAlgorithm SHA256)
 
-             , TypeECDSA (DigestType SHA1)
-             , TypeECDSA (DigestType SHA224)
-             , TypeECDSA (DigestType SHA256)
-             , TypeECDSA (DigestType SHA384)
-             , TypeECDSA (DigestType SHA512)
+             , TypeECDSA (DigestAlgorithm SHA1)
+             , TypeECDSA (DigestAlgorithm SHA224)
+             , TypeECDSA (DigestAlgorithm SHA256)
+             , TypeECDSA (DigestAlgorithm SHA384)
+             , TypeECDSA (DigestAlgorithm SHA512)
              ]
 
 instance OIDable SignatureType where
-    getObjectID TypeRSAAnyHash                  = [1,2,840,113549,1,1,1]
+    getObjectID TypeRSAAnyHash                       = [1,2,840,113549,1,1,1]
 
-    getObjectID (TypeRSA (DigestType MD2))      = [1,2,840,113549,1,1,2]
-    getObjectID (TypeRSA (DigestType MD5))      = [1,2,840,113549,1,1,4]
-    getObjectID (TypeRSA (DigestType SHA1))     = [1,2,840,113549,1,1,5]
-    getObjectID (TypeRSA (DigestType SHA224))   = [1,2,840,113549,1,1,14]
-    getObjectID (TypeRSA (DigestType SHA256))   = [1,2,840,113549,1,1,11]
-    getObjectID (TypeRSA (DigestType SHA384))   = [1,2,840,113549,1,1,12]
-    getObjectID (TypeRSA (DigestType SHA512))   = [1,2,840,113549,1,1,13]
+    getObjectID (TypeRSA (DigestAlgorithm MD2))      = [1,2,840,113549,1,1,2]
+    getObjectID (TypeRSA (DigestAlgorithm MD5))      = [1,2,840,113549,1,1,4]
+    getObjectID (TypeRSA (DigestAlgorithm SHA1))     = [1,2,840,113549,1,1,5]
+    getObjectID (TypeRSA (DigestAlgorithm SHA224))   = [1,2,840,113549,1,1,14]
+    getObjectID (TypeRSA (DigestAlgorithm SHA256))   = [1,2,840,113549,1,1,11]
+    getObjectID (TypeRSA (DigestAlgorithm SHA384))   = [1,2,840,113549,1,1,12]
+    getObjectID (TypeRSA (DigestAlgorithm SHA512))   = [1,2,840,113549,1,1,13]
 
-    getObjectID TypeRSAPSS                      = [1,2,840,113549,1,1,10]
+    getObjectID TypeRSAPSS                           = [1,2,840,113549,1,1,10]
 
-    getObjectID (TypeDSA (DigestType SHA1))     = [1,2,840,10040,4,3]
-    getObjectID (TypeDSA (DigestType SHA224))   = [2,16,840,1,101,3,4,3,1]
-    getObjectID (TypeDSA (DigestType SHA256))   = [2,16,840,1,101,3,4,3,2]
+    getObjectID (TypeDSA (DigestAlgorithm SHA1))     = [1,2,840,10040,4,3]
+    getObjectID (TypeDSA (DigestAlgorithm SHA224))   = [2,16,840,1,101,3,4,3,1]
+    getObjectID (TypeDSA (DigestAlgorithm SHA256))   = [2,16,840,1,101,3,4,3,2]
 
-    getObjectID (TypeECDSA (DigestType SHA1))   = [1,2,840,10045,4,1]
-    getObjectID (TypeECDSA (DigestType SHA224)) = [1,2,840,10045,4,3,1]
-    getObjectID (TypeECDSA (DigestType SHA256)) = [1,2,840,10045,4,3,2]
-    getObjectID (TypeECDSA (DigestType SHA384)) = [1,2,840,10045,4,3,3]
-    getObjectID (TypeECDSA (DigestType SHA512)) = [1,2,840,10045,4,3,4]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA1))   = [1,2,840,10045,4,1]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA224)) = [1,2,840,10045,4,3,1]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA256)) = [1,2,840,10045,4,3,2]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA384)) = [1,2,840,10045,4,3,3]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA512)) = [1,2,840,10045,4,3,4]
 
     getObjectID ty = error ("Unsupported SignatureType: " ++ show ty)
 
@@ -1768,10 +1769,10 @@ instance OIDNameable SignatureType where
 
 -- | CMS signature algorithms and associated parameters.
 data SignatureAlg = RSAAnyHash
-                  | RSA DigestType
+                  | RSA DigestAlgorithm
                   | RSAPSS PSSParams
-                  | DSA DigestType
-                  | ECDSA DigestType
+                  | DSA DigestAlgorithm
+                  | ECDSA DigestAlgorithm
     deriving (Show,Eq)
 
 instance AlgorithmId SignatureAlg where
@@ -1809,11 +1810,11 @@ signatureGenerate (RSAPSS p)  (X509.PrivKeyRSA priv) msg =
         mapLeft RSAError <$> RSAPSS.signSafer params priv msg
 signatureGenerate (DSA alg)   (X509.PrivKeyDSA priv) msg =
     case alg of
-        DigestType t ->
+        DigestAlgorithm t ->
             Right . dsaFromSignature <$> DSA.sign priv (hashFromProxy t) msg
 signatureGenerate (ECDSA alg) (X509.PrivKeyEC priv)  msg =
     case alg of
-        DigestType t ->
+        DigestAlgorithm t ->
             case ecdsaToPrivateKey priv of
                 Nothing -> return (Left UnsupportedEllipticCurve)
                 Just p  ->
@@ -1833,31 +1834,31 @@ signatureVerify (RSAPSS p)  (X509.PubKeyRSA pub) msg sig =
 signatureVerify (DSA alg)   (X509.PubKeyDSA pub) msg sig = fromMaybe False $ do
     s <- dsaToSignature sig
     case alg of
-        DigestType t -> return $ DSA.verify (hashFromProxy t) pub s msg
+        DigestAlgorithm t -> return $ DSA.verify (hashFromProxy t) pub s msg
 signatureVerify (ECDSA alg) (X509.PubKeyEC pub)  msg sig = fromMaybe False $ do
     p <- ecdsaToPublicKey pub
     s <- ecdsaToSignature sig
     case alg of
-        DigestType t -> return $ ECDSA.verify (hashFromProxy t) p s msg
+        DigestAlgorithm t -> return $ ECDSA.verify (hashFromProxy t) p s msg
 signatureVerify _                 _                    _   _   = False
 
-withHashAlgorithmASN1 :: DigestType
+withHashAlgorithmASN1 :: DigestAlgorithm
                       -> a
                       -> (forall hashAlg . RSA.HashAlgorithmASN1 hashAlg => hashAlg -> a)
                       -> a
-withHashAlgorithmASN1 (DigestType MD2)    _ f = f Hash.MD2
-withHashAlgorithmASN1 (DigestType MD5)    _ f = f Hash.MD5
-withHashAlgorithmASN1 (DigestType SHA1)   _ f = f Hash.SHA1
-withHashAlgorithmASN1 (DigestType SHA224) _ f = f Hash.SHA224
-withHashAlgorithmASN1 (DigestType SHA256) _ f = f Hash.SHA256
-withHashAlgorithmASN1 (DigestType SHA384) _ f = f Hash.SHA384
-withHashAlgorithmASN1 (DigestType SHA512) _ f = f Hash.SHA512
-withHashAlgorithmASN1 _                   e _ = e
+withHashAlgorithmASN1 (DigestAlgorithm MD2)    _ f = f Hash.MD2
+withHashAlgorithmASN1 (DigestAlgorithm MD5)    _ f = f Hash.MD5
+withHashAlgorithmASN1 (DigestAlgorithm SHA1)   _ f = f Hash.SHA1
+withHashAlgorithmASN1 (DigestAlgorithm SHA224) _ f = f Hash.SHA224
+withHashAlgorithmASN1 (DigestAlgorithm SHA256) _ f = f Hash.SHA256
+withHashAlgorithmASN1 (DigestAlgorithm SHA384) _ f = f Hash.SHA384
+withHashAlgorithmASN1 (DigestAlgorithm SHA512) _ f = f Hash.SHA512
+withHashAlgorithmASN1 _                        e _ = e
 
 -- | Return on which digest algorithm the specified signature algorithm is
 -- based, as well as a substitution algorithm for when a default digest
 -- algorithm is required.
-signatureResolveHash :: DigestType -> SignatureAlg -> (DigestType, SignatureAlg)
+signatureResolveHash :: DigestAlgorithm -> SignatureAlg -> (DigestAlgorithm, SignatureAlg)
 signatureResolveHash d RSAAnyHash     = (d, RSA d)
 signatureResolveHash _ alg@(RSA d)    = (d, alg)
 signatureResolveHash _ alg@(RSAPSS p) = (pssHashAlgorithm p, alg)
@@ -1867,7 +1868,7 @@ signatureResolveHash _ alg@(ECDSA d)  = (d, alg)
 -- | Check that a signature algorithm is based on the specified digest algorithm
 -- and return a substitution algorithm for when a default digest algorithm is
 -- required.
-signatureCheckHash :: DigestType -> SignatureAlg -> Maybe SignatureAlg
+signatureCheckHash :: DigestAlgorithm -> SignatureAlg -> Maybe SignatureAlg
 signatureCheckHash expected RSAAnyHash = Just $ RSA expected
 signatureCheckHash expected alg@(RSA found)
     | expected == found = Just alg
