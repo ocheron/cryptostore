@@ -97,5 +97,9 @@ pkcs8Tests =
         , testType "DSA"                        "dsa"
         , testType "EC (named curve)"           "ecdsa-p256"
         , testType "EC (explicit prime curve)"  "ecdsa-epc"
+        , testType "X25519"                     "x25519"
+        , testType "X448"                       "x448"
+        , testType "Ed25519"                    "ed25519"
+        , testType "Ed448"                      "ed448"
         , propertyTests
         ]

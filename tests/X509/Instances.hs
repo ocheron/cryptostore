@@ -6,6 +6,10 @@ module X509.Instances
     , arbitraryLargeRSA
     , arbitraryDSA
     , arbitraryNamedEC
+    , arbitraryX25519
+    , arbitraryX448
+    , arbitraryEd25519
+    , arbitraryEd448
     , arbitrarySignedCertificate
     , arbitraryCertificateChain
     , shuffleCertificateChain
@@ -22,10 +26,14 @@ import           Data.X509
 import Test.Tasty.QuickCheck
 
 import           Crypto.Number.Serialize (i2ospOf_)
+import qualified Crypto.PubKey.Curve25519 as X25519
+import qualified Crypto.PubKey.Curve448 as X448
 import qualified Crypto.PubKey.DSA as DSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.Generate as ECC
 import qualified Crypto.PubKey.ECC.Types as ECC
+import qualified Crypto.PubKey.Ed25519 as Ed25519
+import qualified Crypto.PubKey.Ed448 as Ed448
 import qualified Crypto.PubKey.RSA as RSA
 import           Crypto.Random
 
@@ -60,6 +68,10 @@ instance Arbitrary PrivKey where
                       , PrivKeyDSA . snd <$> arbitraryDSA
                       , PrivKeyEC . snd  <$> arbitraryNamedEC
                       , PrivKeyEC . snd  <$> arbitraryExplicitPrimeCurve
+                      , PrivKeyX25519 . snd <$> arbitraryX25519
+                      , PrivKeyX448 . snd <$> arbitraryX448
+                      , PrivKeyEd25519 . snd <$> arbitraryEd25519
+                      , PrivKeyEd448 . snd <$> arbitraryEd448
                       ]
 
 arbitraryRSA :: Gen (RSA.PublicKey, RSA.PrivateKey)
@@ -196,6 +208,26 @@ getSerializedPoint curve pt = SerializedPoint (serializePoint pt)
 
 curveSizeBytes :: ECC.Curve -> Int
 curveSizeBytes curve = (ECC.curveSizeBits curve + 7) `div` 8
+
+arbitraryX25519 :: Gen (X25519.PublicKey, X25519.SecretKey)
+arbitraryX25519 = do
+    priv <- X25519.generateSecretKey
+    return (X25519.toPublic priv, priv)
+
+arbitraryX448 :: Gen (X448.PublicKey, X448.SecretKey)
+arbitraryX448 = do
+    priv <- X448.generateSecretKey
+    return (X448.toPublic priv, priv)
+
+arbitraryEd25519 :: Gen (Ed25519.PublicKey, Ed25519.SecretKey)
+arbitraryEd25519 = do
+    priv <- Ed25519.generateSecretKey
+    return (Ed25519.toPublic priv, priv)
+
+arbitraryEd448 :: Gen (Ed448.PublicKey, Ed448.SecretKey)
+arbitraryEd448 = do
+    priv <- Ed448.generateSecretKey
+    return (Ed448.toPublic priv, priv)
 
 instance Arbitrary SignatureALG where
     arbitrary = elements

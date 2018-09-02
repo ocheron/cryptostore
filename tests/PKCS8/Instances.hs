@@ -1,8 +1,11 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Orphan instances.
 module PKCS8.Instances
     ( arbitraryPassword
     ) where
+
+import Data.X509
 
 import Test.Tasty.QuickCheck
 
@@ -35,5 +38,13 @@ instance Arbitrary EncryptionScheme where
 instance Arbitrary PrivateKeyFormat where
     arbitrary = elements [ TraditionalFormat, PKCS8Format ]
 
-instance Arbitrary a => Arbitrary (FormattedKey a) where
-    arbitrary = FormattedKey <$> arbitrary <*> arbitrary
+instance Arbitrary (FormattedKey PrivKey) where
+    arbitrary = do
+        key <- arbitrary
+        fmt <- case key of
+                   PrivKeyX25519  _ -> return PKCS8Format
+                   PrivKeyX448    _ -> return PKCS8Format
+                   PrivKeyEd25519 _ -> return PKCS8Format
+                   PrivKeyEd448   _ -> return PKCS8Format
+                   _                -> arbitrary
+        return (FormattedKey fmt key)

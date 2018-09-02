@@ -152,6 +152,50 @@ encrypt ecdsa-p256
 encrypt ecdsa-epc
 
 
+# X25519
+
+"$OPENSSL" genpkey -algorithm x25519 \
+  -out "$DEST_DIR"/x25519-unencrypted-pkcs8.pem
+
+"$OPENSSL" pkey -in "$DEST_DIR"/x25519-unencrypted-pkcs8.pem \
+  -traditional -out "$DEST_DIR"/x25519-unencrypted-trad.pem
+
+encrypt x25519
+
+
+# X448
+
+"$OPENSSL" genpkey -algorithm x448 \
+  -out "$DEST_DIR"/x448-unencrypted-pkcs8.pem
+
+"$OPENSSL" pkey -in "$DEST_DIR"/x448-unencrypted-pkcs8.pem \
+  -traditional -out "$DEST_DIR"/x448-unencrypted-trad.pem
+
+encrypt x448
+
+
+# Ed25519
+
+"$OPENSSL" genpkey -algorithm ed25519 \
+  -out "$DEST_DIR"/ed25519-unencrypted-pkcs8.pem
+
+"$OPENSSL" pkey -in "$DEST_DIR"/ed25519-unencrypted-pkcs8.pem \
+  -traditional -out "$DEST_DIR"/ed25519-unencrypted-trad.pem
+
+encrypt ed25519
+
+
+# Ed448
+
+"$OPENSSL" genpkey -algorithm ed448 \
+  -out "$DEST_DIR"/ed448-unencrypted-pkcs8.pem
+
+"$OPENSSL" pkey -in "$DEST_DIR"/ed448-unencrypted-pkcs8.pem \
+  -traditional -out "$DEST_DIR"/ed448-unencrypted-trad.pem
+
+encrypt ed448
+
+
 # Public keys
 
 for TYPE in rsa dsa ecdsa-p256; do

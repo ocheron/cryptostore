@@ -51,12 +51,18 @@ import Data.ASN1.Types
 import Data.ASN1.BinaryEncoding
 import Data.ASN1.BitArray
 import Data.ASN1.Encoding
+import Data.ByteArray (ByteArrayAccess, convert)
 import Data.Maybe
 import qualified Data.X509 as X509
 import qualified Data.ByteString as B
+import           Crypto.Error
 import           Crypto.Number.Serialize (i2osp, i2ospOf_, os2ip)
+import qualified Crypto.PubKey.Curve25519 as X25519
+import qualified Crypto.PubKey.Curve448 as X448
 import qualified Crypto.PubKey.DSA as DSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import qualified Crypto.PubKey.Ed25519 as Ed25519
+import qualified Crypto.PubKey.Ed448 as Ed448
 import qualified Crypto.PubKey.RSA as RSA
 
 import Crypto.Store.ASN1.Generate
@@ -129,12 +135,20 @@ pemToKey acc pem =
     rsa       = X509.PrivKeyRSA . unFormat <$> parse
     dsa       = X509.PrivKeyDSA . DSA.toPrivateKey . unFormat <$> parse
     ecdsa     = X509.PrivKeyEC . unFormat <$> parse
+    x25519    = X509.PrivKeyX25519 <$> parseModern
+    x448      = X509.PrivKeyX448 <$> parseModern
+    ed25519   = X509.PrivKeyEd25519 <$> parseModern
+    ed448     = X509.PrivKeyEd448 <$> parseModern
     encrypted = inner . decrypt <$> parse
 
     getParser "PRIVATE KEY"           = Unprotected <$> allTypes
     getParser "RSA PRIVATE KEY"       = Unprotected <$> rsa
     getParser "DSA PRIVATE KEY"       = Unprotected <$> dsa
     getParser "EC PRIVATE KEY"        = Unprotected <$> ecdsa
+    getParser "X25519 PRIVATE KEY"    = Unprotected <$> x25519
+    getParser "X448 PRIVATE KEY"      = Unprotected <$> x448
+    getParser "ED25519 PRIVATE KEY"   = Unprotected <$> ed25519
+    getParser "ED448 PRIVATE KEY"     = Unprotected <$> ed448
     getParser "ENCRYPTED PRIVATE KEY" = Protected   <$> encrypted
     getParser _                       = empty
 
@@ -198,8 +212,13 @@ traditionalPrivKeyASN1S privKey =
         X509.PrivKeyRSA k -> ("RSA", traditional k)
         X509.PrivKeyDSA k -> ("DSA", traditional (dsaPrivToPair k))
         X509.PrivKeyEC  k -> ("EC",  traditional k)
+        X509.PrivKeyX25519  k -> ("X25519",  tradModern k)
+        X509.PrivKeyX448    k -> ("X448",    tradModern k)
+        X509.PrivKeyEd25519 k -> ("ED25519", tradModern k)
+        X509.PrivKeyEd448   k -> ("ED448",   tradModern k)
   where
     traditional a = asn1s (Traditional a)
+    tradModern a  = asn1s (Modern [] a)
 
 keyToModernPEM :: X509.PrivKey -> PEM
 keyToModernPEM privKey = mkPEM "PRIVATE KEY" (encodeASN1S asn1)
@@ -211,6 +230,10 @@ modernPrivKeyASN1S attrs privKey =
         X509.PrivKeyRSA k -> modern k
         X509.PrivKeyDSA k -> modern (dsaPrivToPair k)
         X509.PrivKeyEC  k -> modern k
+        X509.PrivKeyX25519  k -> modern k
+        X509.PrivKeyX448    k -> modern k
+        X509.PrivKeyEd25519 k -> modern k
+        X509.PrivKeyEd448   k -> modern k
   where
     modern a = asn1s (Modern attrs a)
 
@@ -263,7 +286,7 @@ instance (ProduceASN1Object e (Traditional a), ProduceASN1Object e (Modern a)) =
     asn1s (FormattedKey PKCS8Format k)       = asn1s (Modern [] k)
 
 instance (Monoid e, ParseASN1Object e (Traditional a), ParseASN1Object e (Modern a)) => ParseASN1Object e (FormattedKey a) where
-    parse = (traditional <$> parseTraditional) <|> (modern <$> parseModern)
+    parse = (modern <$> parseModern) <|> (traditional <$> parseTraditional)
       where
         traditional = FormattedKey TraditionalFormat
         modern      = FormattedKey PKCS8Format
@@ -292,11 +315,15 @@ instance ASN1Elem e => ProduceASN1Object e (Modern X509.PrivKey) where
     asn1s (Modern attrs privKey) = modernPrivKeyASN1S attrs privKey
 
 instance Monoid e => ParseASN1Object e (Modern X509.PrivKey) where
-    parse = rsa <|> dsa <|> ecdsa
+    parse = rsa <|> dsa <|> ecdsa <|> x25519 <|> x448 <|> ed25519 <|> ed448
       where
         rsa   = fmap X509.PrivKeyRSA  <$> parse
         dsa   = fmap (X509.PrivKeyDSA . DSA.toPrivateKey) <$> parse
         ecdsa = fmap X509.PrivKeyEC <$> parse
+        x25519  = fmap X509.PrivKeyX25519 <$> parse
+        x448    = fmap X509.PrivKeyX448 <$> parse
+        ed25519 = fmap X509.PrivKeyEd25519 <$> parse
+        ed448   = fmap X509.PrivKeyEd448 <$> parse
 
 skipVersion :: Monoid e => ParseASN1 e ()
 skipVersion = do
@@ -598,3 +625,89 @@ parseCurveFn = parseNamedCurve <|> parsePrimeCurve
             then do BitString seed <- getNext
                     return (os2ip $ bitArrayGetData seed)
             else return 0
+
+
+-- X25519, X448, Ed25519, Ed448
+
+instance ASN1Elem e => ProduceASN1Object e (Modern X25519.SecretKey) where
+    asn1s (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
+      where
+        v     = gIntVal 0
+        alg   = asn1Container Sequence (gOID [1,3,101,110])
+        bs    = innerEddsaASN1S privKey
+        att   = attributesASN1S (Container Context 0) attrs
+
+instance Monoid e => ParseASN1Object e (Modern X25519.SecretKey) where
+    parse = onNextContainer Sequence $ do
+        skipVersion
+        onNextContainer Sequence $ do { OID [1,3,101,110] <- getNext; return () }
+        (attrs, bs) <- parseAttrKeys
+        Modern attrs <$> parseInnerEddsa "X25519" X25519.secretKey bs
+
+instance ASN1Elem e => ProduceASN1Object e (Modern X448.SecretKey) where
+    asn1s (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
+      where
+        v     = gIntVal 0
+        alg   = asn1Container Sequence (gOID [1,3,101,111])
+        bs    = innerEddsaASN1S privKey
+        att   = attributesASN1S (Container Context 0) attrs
+
+instance Monoid e => ParseASN1Object e (Modern X448.SecretKey) where
+    parse = onNextContainer Sequence $ do
+        skipVersion
+        onNextContainer Sequence $ do { OID [1,3,101,111] <- getNext; return () }
+        (attrs, bs) <- parseAttrKeys
+        Modern attrs <$> parseInnerEddsa "X448" X448.secretKey bs
+
+instance ASN1Elem e => ProduceASN1Object e (Modern Ed25519.SecretKey) where
+    asn1s (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
+      where
+        v     = gIntVal 0
+        alg   = asn1Container Sequence (gOID [1,3,101,112])
+        bs    = innerEddsaASN1S privKey
+        att   = attributesASN1S (Container Context 0) attrs
+
+instance Monoid e => ParseASN1Object e (Modern Ed25519.SecretKey) where
+    parse = onNextContainer Sequence $ do
+        skipVersion
+        onNextContainer Sequence $ do { OID [1,3,101,112] <- getNext; return () }
+        (attrs, bs) <- parseAttrKeys
+        Modern attrs <$> parseInnerEddsa "Ed25519" Ed25519.secretKey bs
+
+instance ASN1Elem e => ProduceASN1Object e (Modern Ed448.SecretKey) where
+    asn1s (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
+      where
+        v     = gIntVal 0
+        alg   = asn1Container Sequence (gOID [1,3,101,113])
+        bs    = innerEddsaASN1S privKey
+        att   = attributesASN1S (Container Context 0) attrs
+
+instance Monoid e => ParseASN1Object e (Modern Ed448.SecretKey) where
+    parse = onNextContainer Sequence $ do
+        skipVersion
+        onNextContainer Sequence $ do { OID [1,3,101,113] <- getNext; return () }
+        (attrs, bs) <- parseAttrKeys
+        Modern attrs <$> parseInnerEddsa "Ed448" Ed448.secretKey bs
+
+innerEddsaASN1S :: (ASN1Elem e, ByteArrayAccess key) => key -> ASN1Stream e
+innerEddsaASN1S key = gOctetString (encodeASN1S inner)
+  where inner = gOctetString (convert key)
+
+parseInnerEddsa :: Monoid e
+                => String
+                -> (B.ByteString -> CryptoFailable key)
+                -> B.ByteString
+                -> ParseASN1 e key
+parseInnerEddsa name buildKey input =
+    case either strError (runParseASN1 parser) (decodeASN1' BER input) of
+        Left err -> throwParseError ("PKCS8: error parsing inner " ++ name ++ ": " ++ err)
+        Right privKey -> return privKey
+  where
+    innerMsg = "PKCS8: error decoding inner " ++ name ++ ": "
+    strError = Left . (innerMsg ++) . show
+    parser   = do
+        OctetString bs <- getNext
+        case buildKey bs of
+            CryptoPassed privKey -> return privKey
+            CryptoFailed _       ->
+                throwParseError ("PKCS8: parsed invalid " ++ name ++ " secret key")

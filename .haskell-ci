@@ -1,11 +1,11 @@
 # compiler supported and their equivalent LTS
 compiler: ghc-8.0 lts-9.21
 compiler: ghc-8.2 lts-11.22
-compiler: ghc-8.4 lts-12.12
-compiler: ghc-8.6 nightly-2018-10-12
+compiler: ghc-8.4 lts-12.17
+compiler: ghc-8.6 nightly-2018-11-05
 
 # options
-option: cryptomin extradep=basement-0.0.7 extradep=foundation-0.0.20 extradep=memory-0.14.16 extradep=cryptonite-0.25 extradep=x509-1.7.3
+option: cryptomin extradep=basement-0.0.7 extradep=foundation-0.0.20 extradep=memory-0.14.16 extradep=cryptonite-0.25 extradep=x509-1.7.5
 
 # builds
 build: ghc-8.0 cryptomin
