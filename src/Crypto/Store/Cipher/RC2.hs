@@ -5,6 +5,9 @@
 -- Stability   : stable
 -- Portability : good
 --
+-- Implementation of RC2 block cipher, a legacy algorithm providing weak
+-- security.  Use only for compatibility with software requiring this cipher and
+-- data which is not sensitive.
 module Crypto.Store.Cipher.RC2
     ( RC2
     , rc2WithEffectiveKeyLength
