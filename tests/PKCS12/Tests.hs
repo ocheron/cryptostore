@@ -74,9 +74,9 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         c <- arbitraryPKCS12 pE
         let r = readP12FileFromMemory $ writeUnprotectedP12FileToMemory c
         return $ Right (Right c) === (recover (fromString "not-used") <$> r)
-    , testProperty "marshalling with authentication" $ \params -> do
-        pE <- arbitraryPassword
-        c <- arbitraryPKCS12 pE
+    , testProperty "marshalling with authentication" $ do
+        params <- arbitraryIntegrityParams
+        c <- arbitraryPassword >>= arbitraryPKCS12
         pI <- arbitraryPassword
         let r = readP12FileFromMemory <$> writeP12FileToMemory params pI c
         return $ Right (Right (Right c)) === (fmap (recover pI) <$> r)

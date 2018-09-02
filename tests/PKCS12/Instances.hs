@@ -2,6 +2,7 @@
 -- | Orphan instances.
 module PKCS12.Instances
     ( arbitraryPassword
+    , arbitraryIntegrityParams
     , arbitraryPKCS12
     ) where
 
@@ -19,6 +20,9 @@ import PKCS8.Instances ()
 
 arbitrarySmall :: Gen ByteString
 arbitrarySmall = resize 10 (B.pack <$> arbitrary)
+
+arbitraryIntegrityParams :: Gen IntegrityParams
+arbitraryIntegrityParams = (,) <$> arbitraryIntegrityDigest <*> arbitrary
 
 arbitraryPKCS12 :: Password -> Gen PKCS12
 arbitraryPKCS12 pwd = do

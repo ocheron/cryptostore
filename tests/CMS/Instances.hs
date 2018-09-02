@@ -3,6 +3,7 @@
 module CMS.Instances
     ( arbitraryPassword
     , arbitraryAttributes
+    , arbitraryIntegrityDigest
     , arbitrarySigVer
     , arbitraryEnvDev
     ) where
@@ -119,7 +120,9 @@ arbitraryAttributes = resize 3 arbitrary
 
 instance Arbitrary DigestType where
     arbitrary = elements
-        [ DigestType MD5
+        [ DigestType MD2
+        , DigestType MD4
+        , DigestType MD5
         , DigestType SHA1
         , DigestType SHA224
         , DigestType SHA256
@@ -127,8 +130,18 @@ instance Arbitrary DigestType where
         , DigestType SHA512
         ]
 
+arbitraryIntegrityDigest :: Gen DigestType
+arbitraryIntegrityDigest = elements
+    [ DigestType MD5
+    , DigestType SHA1
+    , DigestType SHA224
+    , DigestType SHA256
+    , DigestType SHA384
+    , DigestType SHA512
+    ]
+
 instance Arbitrary MACAlgorithm where
-    arbitrary = (\(DigestType alg) -> HMAC alg) <$> arbitrary
+    arbitrary = (\(DigestType alg) -> HMAC alg) <$> arbitraryIntegrityDigest
 
 instance Arbitrary OAEPParams where
     arbitrary = do
