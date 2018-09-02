@@ -198,7 +198,7 @@ encrypt ed448
 
 # Public keys
 
-for TYPE in rsa dsa ecdsa-p256; do
+for TYPE in rsa dsa ecdsa-p256 x25519 x448 ed25519 ed448; do
   "$OPENSSL" pkey -pubout \
     -in "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
     -out "$DEST_DIR"/"$TYPE"-public.pem
@@ -211,10 +211,21 @@ done
 
 # Certificates
 
-for TYPE in rsa dsa ecdsa-p256 ecdsa-epc; do
+for TYPE in rsa dsa ecdsa-p256 ecdsa-epc ed25519 ed448; do
   "$OPENSSL" req -x509 -new -subj /emailAddress=test@example.com \
     -key "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
     -out "$DEST_DIR"/"$TYPE"-self-signed-cert.pem
+done
+
+for TYPE in x25519 x448; do
+  "$OPENSSL" req -new -subj /emailAddress=test@example.com \
+    -key "$DEST_DIR"/rsa-unencrypted-pkcs8.pem \
+  | "$OPENSSL" x509 -req \
+    -CA "$DEST_DIR"/rsa-self-signed-cert.pem \
+    -CAkey "$DEST_DIR"/rsa-unencrypted-pkcs8.pem \
+    -force_pubkey "$DEST_DIR"/"$TYPE"-public.pem \
+    -set_serial 1 \
+    -out "$DEST_DIR"/"$TYPE"-self-signed-cert.pem # FIXME: misleading filename
 done
 
 

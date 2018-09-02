@@ -61,6 +61,10 @@ instance Arbitrary PubKey where
                       , PubKeyDSA . fst <$> arbitraryDSA
                       , PubKeyEC . fst  <$> arbitraryNamedEC
                       --, PubKeyEC . fst  <$> arbitraryExplicitPrimeCurve
+                      , PubKeyX25519 . fst <$> arbitraryX25519
+                      , PubKeyX448 . fst   <$> arbitraryX448
+                      , PubKeyEd25519 . fst <$> arbitraryEd25519
+                      , PubKeyEd448 . fst   <$> arbitraryEd448
                       ]
 
 instance Arbitrary PrivKey where
@@ -247,6 +251,9 @@ instance Arbitrary SignatureALG where
         , SignatureALG HashSHA256 PubKeyALG_EC
         , SignatureALG HashSHA384 PubKeyALG_EC
         , SignatureALG HashSHA512 PubKeyALG_EC
+
+        , SignatureALG_IntrinsicHash PubKeyALG_Ed25519
+        , SignatureALG_IntrinsicHash PubKeyALG_Ed448
         ]
 
 instance Arbitrary DateTime where

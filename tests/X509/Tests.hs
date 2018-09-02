@@ -66,5 +66,9 @@ x509Tests =
         , keyTests "DSA"                        "dsa"        1
         , keyTests "EC (named curve)"           "ecdsa-p256" 1
 --        , keyTests "EC (explicit prime curve)"  "ecdsa-epc"  1
+        , keyTests "X25519"                     "x25519"     1
+        , keyTests "X448"                       "x448"       1
+        , keyTests "Ed25519"                    "ed25519"    1
+        , keyTests "Ed448"                      "ed448"      1
         , propertyTests
         ]
