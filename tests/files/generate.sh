@@ -231,7 +231,7 @@ done
 
 # PKCS #12
 
-for TYPE in rsa ecdsa-p256; do
+for TYPE in rsa ed25519; do
   (
     "$OPENSSL" pkcs12 -export -passout pass:"$PASSWORD" \
     -inkey "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \

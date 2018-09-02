@@ -103,6 +103,6 @@ pkcs12Tests :: TestTree
 pkcs12Tests =
     testGroup "PKCS12"
         [ testType "RSA"                        "rsa"
-        , testType "EC (named curve)"           "ecdsa-p256"
+        , testType "Ed25519"                    "ed25519"
         , propertyTests
         ]
