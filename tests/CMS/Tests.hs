@@ -73,12 +73,12 @@ signedDataTests =
 envelopedDataTests :: TestTree
 envelopedDataTests =
     testGroup "EnvelopedData"
-        [ testKT "KTRI" path3
-        , testKA "KARI" path4
-        , test "KEKRI" path1 withRecipientKey
-        , test "PWRI" path2 (\_ -> withRecipientPassword pwd)
+        [ testKT "KTRI" path3 keys1
+        , testKA "KARI" path4 keys1
+        , test "KEKRI" path1 keys1 withRecipientKey
+        , test "PWRI" path2 keys2 (\_ -> withRecipientPassword pwd)
         ]
-  where test caseName path f = testCaseSteps caseName $ \step -> do
+  where test caseName path keys f = testCaseSteps caseName $ \step -> do
             cms <- readCMSFile path
             assertEqual "unexpected parse count" (length keys) (length cms)
 
@@ -90,21 +90,21 @@ envelopedDataTests =
                 let EnvelopedDataCI ev = ci
                 result <- openEnvelopedData (f key) ev
                 assertRight result (verifyInnerMessage message)
-        testKT caseName path = testCaseSteps caseName $ \step -> do
+        testKT caseName path keys = testCaseSteps caseName $ \step -> do
             let rsaPath = testFile "rsa-unencrypted-pkcs8.pem"
             [Unprotected priv] <- readKeyFile rsaPath
 
             cms <- readCMSFile path
             assertEqual "unexpected parse count" (length modes * length keys) (length cms)
 
-            let pairs = [ (c, m) | c <- map fst keys, m <- modes ]
+            let pairs = [ (c, m) | c <- map fst keys1, m <- modes ]
             forM_ (zip pairs cms) $ \((c, m), ci) -> do
                 step ("testing " ++ c ++ " with " ++ m)
                 assertBool "unexpected type" (hasType EnvelopedDataType ci)
                 let EnvelopedDataCI ev = ci
                 result <- openEnvelopedData (withRecipientKeyTrans priv) ev
                 assertRight result (verifyInnerMessage message)
-        testKA caseName path = testCaseSteps caseName $ \step -> do
+        testKA caseName path keys = testCaseSteps caseName $ \step -> do
             let ecdsaKeyPath  = testFile "ecdsa-p256-unencrypted-pkcs8.pem"
                 ecdsaCertPath = testFile "ecdsa-p256-self-signed-cert.pem"
             [Unprotected priv] <- readKeyFile ecdsaKeyPath
@@ -125,14 +125,16 @@ envelopedDataTests =
         path3 = testFile "cms-enveloped-ktri-data.pem"
         path4 = testFile "cms-enveloped-kari-data.pem"
         pwd   = fromString "dontchangeme"
-        keys  = [ ("3DES_CBC",             testKey 24)
+        keys2 = [ ("3DES_CBC",             testKey 24)
                 , ("AES128_CBC",           testKey 16)
                 , ("AES192_CBC",           testKey 24)
                 , ("AES256_CBC",           testKey 32)
                 , ("CAST5_CBC (128 bits)", testKey 16)
                 , ("Camellia128_CBC",      testKey 16)
                 , ("RC2 (128 bits)",       testKey 16)
-                , ("AES128_ECB",           testKey 16)
+                ]
+        keys1 = keys2 ++
+                [ ("AES128_ECB",           testKey 16)
                 , ("AES192_ECB",           testKey 24)
                 , ("AES256_ECB",           testKey 32)
                 , ("Camellia128_ECB",      testKey 16)

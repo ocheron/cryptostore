@@ -22,6 +22,15 @@ CIPHER_KEYS_ENVELOPED=" \
   -aes-256-ecb:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
   -camellia-128-ecb:000102030405060708090a0b0c0d0e0f"
 
+CIPHER_KEYS_ENVELOPED_CBC=" \
+  -des-ede3-cbc:000102030405060708090a0b0c0d0e0f1011121314151617 \
+  -aes-128-cbc:000102030405060708090a0b0c0d0e0f \
+  -aes-192-cbc:000102030405060708090a0b0c0d0e0f1011121314151617 \
+  -aes-256-cbc:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
+  -cast5-cbc:000102030405060708090a0b0c0d0e0f \
+  -camellia-128-cbc:000102030405060708090a0b0c0d0e0f \
+  -rc2-cbc:000102030405060708090a0b0c0d0e0f"
+
 CIPHER_KEYS_ENCRYPTED=" \
   -des-cbc:0001020304050607 \
   -des-ede3-cbc:000102030405060708090a0b0c0d0e0f1011121314151617 \
@@ -283,7 +292,7 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
 # CMS enveloped data (password)
 
 (
-  for cipher_key in $CIPHER_KEYS_ENVELOPED; do
+  for cipher_key in $CIPHER_KEYS_ENVELOPED_CBC; do
     cipher=`expr "$cipher_key" : '\([^:]*\):[^:]*'`
     key=`expr "$cipher_key" : '[^:]*:\([^:]*\)'`
 
