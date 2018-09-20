@@ -12,7 +12,7 @@ category:            Cryptography, Codec
 homepage:            https://github.com/ocheron/cryptostore
 bug-reports:         https://github.com/ocheron/cryptostore/issues
 build-type:          Simple
-extra-source-files:  ChangeLog.md, tests/files/*.pem
+extra-source-files:  README.md ChangeLog.md tests/files/*.pem
 cabal-version:       >=1.10
 
 source-repository head
