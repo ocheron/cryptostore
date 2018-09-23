@@ -99,9 +99,10 @@ arbitraryNamedEC = do
 
 arbitraryExplicitPrimeCurve :: Gen (PubKeyEC, PrivKeyEC)
 arbitraryExplicitPrimeCurve = do
-    curve@(ECC.CurveFP c) <- arbitraryPrimeCurve
+    curve <- arbitraryPrimeCurve
     pair <- ECC.generate curve
     let cc   = ECC.common_curve curve
+        c    = fp curve
         gen  = getSerializedPoint curve (ECC.ecc_g cc)
         d    = ECDSA.private_d (snd pair)
         priv =
@@ -129,6 +130,9 @@ arbitraryExplicitPrimeCurve = do
                 , pubkeyEC_seed       = 0
                 }
     return (pub, priv)
+  where
+    fp (ECC.CurveFP c) = c
+    fp _               = error "arbitraryExplicitPrimeCurve: assumption failed"
 
 arbitraryCurveName :: Gen ECC.CurveName
 arbitraryCurveName = elements allCurveNames
