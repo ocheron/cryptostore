@@ -60,7 +60,9 @@ module Crypto.Store.CMS.Algorithms
     , transportEncrypt
     , transportDecrypt
     , KeyAgreementParams(..)
+    , ECDHPair
     , ecdhGenerate
+    , ecdhPublic
     , ecdhEncrypt
     , ecdhDecrypt
     , MaskGenerationFunc(..)
@@ -126,6 +128,7 @@ import           Crypto.Store.Error
 import qualified Crypto.Store.KeyWrap.AES as AES_KW
 import qualified Crypto.Store.KeyWrap.TripleDES as TripleDES_KW
 import qualified Crypto.Store.KeyWrap.RC2 as RC2_KW
+import           Crypto.Store.PKCS8.EC
 import           Crypto.Store.Util
 
 
@@ -1497,57 +1500,63 @@ ecdhKeyMaterial (DigestAlgorithm hashAlg) kep ukm zz
                       (gOctetString $ toWord32 outBits)
          in encodeASN1S $ asn1Container Sequence (ki . eui . spi)
 
+-- | Key pair for ECDH.
+data ECDHPair
+    = PairEC ECC.Curve ECC.PrivateNumber ECC.Point
+
 -- | Generate an ephemeral ECDH key.
-ecdhGenerate :: MonadRandom m => X509.PubKey -> m (Either StoreError (ECC.Curve, ECC.PrivateNumber, X509.SerializedPoint))
+ecdhGenerate :: MonadRandom m => X509.PubKey -> m (Either StoreError ECDHPair)
 ecdhGenerate (X509.PubKeyEC pub) =
     case ecPubKeyCurveName pub of
         Nothing -> return $ Left NamedCurveRequired
         Just n  -> do
             let curve = ECC.getCurveByName n
             priv <- ECDH.generatePrivate curve
-            return $ Right (curve, priv, X509.pubkeyEC_pub pub)
+            return $ case unserializePoint curve (X509.pubkeyEC_pub pub) of
+                Nothing -> Left (InvalidInput "Invalid serialized point")
+                Just pt -> Right (PairEC curve priv pt)
 ecdhGenerate _ = return $ Left UnexpectedPublicKeyType
+
+-- | Return the serialized public key corresponding to the ECDH private key.
+ecdhPublic :: ECDHPair -> ByteString
+ecdhPublic (PairEC curve d _)  = unSerialize (getSerializedPoint curve d)
+  where unSerialize (X509.SerializedPoint pt) = pt
 
 -- | Encrypt the specified content with an ECDH key pair and key-agreement
 -- algorithm.
 ecdhEncrypt :: (MonadRandom m, ByteArray ba)
-            => KeyAgreementParams -> Maybe ByteString -> ECC.Curve -> ECC.PrivateNumber -> X509.SerializedPoint -> ba -> m (Either StoreError ba)
-ecdhEncrypt (StdDH dig kep) ukm curve d pt bs =
-    case unserializePoint curve pt of
-        Nothing  -> return $ Left (InvalidInput "Invalid serialized point")
-        Just pub -> do
-            let s = ECDH.getShared curve d pub
-                k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
-            keyEncrypt k kep bs
-ecdhEncrypt (CofactorDH dig kep) ukm curve d pt bs =
-    case unserializePoint curve pt of
-        Nothing  -> return $ Left (InvalidInput "Invalid serialized point")
-        Just pub -> do
-            let h = ECC.ecc_h (ECC.common_curve curve)
-                s = ECDH.getShared curve (h * d) pub
-                k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
-            keyEncrypt k kep bs
+            => KeyAgreementParams -> Maybe ByteString -> ECDHPair -> ba -> m (Either StoreError ba)
+ecdhEncrypt (StdDH dig kep) ukm (PairEC curve d pub) bs = do
+    let s = ECDH.getShared curve d pub
+        k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+    keyEncrypt k kep bs
+ecdhEncrypt (CofactorDH dig kep) ukm (PairEC curve d pub) bs = do
+    let h = ECC.ecc_h (ECC.common_curve curve)
+        s = ECDH.getShared curve (h * d) pub
+        k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
+    keyEncrypt k kep bs
 
 -- | Decrypt the specified content with an ECDH key pair and key-agreement
 -- algorithm.
 ecdhDecrypt :: ByteArray ba
-            => KeyAgreementParams -> Maybe ByteString -> X509.PrivKeyEC -> X509.SerializedPoint -> ba -> Either StoreError ba
-ecdhDecrypt (StdDH dig kep) ukm priv pt bs =
+            => KeyAgreementParams -> Maybe ByteString -> X509.PrivKey -> ByteString -> ba -> Either StoreError ba
+ecdhDecrypt (StdDH dig kep) ukm (X509.PrivKeyEC priv) pt bs =
     case ecPrivKeyCurve priv of
         Nothing    -> Left UnsupportedEllipticCurve
         Just curve ->
-            case unserializePoint curve pt of
+            case unserializePoint curve (X509.SerializedPoint pt) of
                 Nothing  -> Left (InvalidInput "Invalid serialized point")
                 Just pub -> do
                     let d = X509.privkeyEC_priv priv
                         s = ECDH.getShared curve d pub
                         k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
                     keyDecrypt k kep bs
-ecdhDecrypt (CofactorDH dig kep) ukm priv pt bs =
+ecdhDecrypt (StdDH _ _) _ _ _ _ = Left UnexpectedPrivateKeyType
+ecdhDecrypt (CofactorDH dig kep) ukm (X509.PrivKeyEC priv) pt bs =
     case ecPrivKeyCurve priv of
         Nothing    -> Left UnsupportedEllipticCurve
         Just curve ->
-            case unserializePoint curve pt of
+            case unserializePoint curve (X509.SerializedPoint pt) of
                 Nothing  -> Left (InvalidInput "Invalid serialized point")
                 Just pub -> do
                     let h = ECC.ecc_h (ECC.common_curve curve)
@@ -1555,6 +1564,7 @@ ecdhDecrypt (CofactorDH dig kep) ukm priv pt bs =
                         s = ECDH.getShared curve (h * d) pub
                         k = ecdhKeyMaterial dig kep ukm s :: B.ScrubbedBytes
                     keyDecrypt k kep bs
+ecdhDecrypt (CofactorDH _ _) _ _ _ _ = Left UnexpectedPrivateKeyType
 
 
 -- Utilities

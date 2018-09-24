@@ -67,7 +67,6 @@ import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 import Crypto.Store.Error
-import Crypto.Store.PKCS8.EC
 
 -- | Encrypted key.
 type EncryptedKey = ByteString
@@ -524,10 +523,10 @@ forKeyAgreeRecipient :: MonadRandom m
 forKeyAgreeRecipient cert params inkey = do
     ephemeral <- ecdhGenerate (certPubKey obj)
     case ephemeral of
-        Right (curve, d, sp) -> do
-            let SerializedPoint pt = getSerializedPoint curve d
+        Right pair -> do
+            let pt = ecdhPublic pair
                 aPub = OriginatorPublicKeyEC [] (toBitArray pt 0)
-            ek <- ecdhEncrypt params Nothing curve d sp inkey
+            ek <- ecdhEncrypt params Nothing pair inkey
             return (KARI . build aPub <$> ek)
         Left err -> return $ Left err
   where
@@ -553,16 +552,15 @@ forKeyAgreeRecipient cert params inkey = do
 -- This function can be used as parameter to
 -- 'Crypto.Store.CMS.openEnvelopedData'.
 withRecipientKeyAgree :: MonadRandom m => PrivKey -> SignedCertificate -> ConsumerOfRI m
-withRecipientKeyAgree (PrivKeyEC priv) cert (KARI KARecipientInfo{..}) =
+withRecipientKeyAgree priv cert (KARI KARecipientInfo{..}) =
     case kaOriginator of
         OriginatorPublic (OriginatorPublicKeyEC _ ba) ->
             case findRecipientEncryptedKey cert kaRecipientEncryptedKeys of
                 Nothing -> pure (Left RecipientKeyNotFound)
                 Just ek ->
-                    let pub = SerializedPoint (bitArrayGetData ba)
+                    let pub = bitArrayGetData ba
                      in pure (ecdhDecrypt kaKeyAgreementParams kaUkm priv pub ek)
         _ -> pure (Left UnsupportedOriginatorFormat)
-withRecipientKeyAgree _ _ (KARI _) = pure (Left UnexpectedPrivateKeyType)
 withRecipientKeyAgree _ _ _        = pure (Left RecipientTypeMismatch)
 
 -- | Generate a Key Encryption Key recipient from a key encryption key and
