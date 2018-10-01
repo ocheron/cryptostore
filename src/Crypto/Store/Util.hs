@@ -7,6 +7,7 @@
 --
 --
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
 module Crypto.Store.Util
     ( (&&!)
@@ -30,8 +31,12 @@ import GHC.Exts
 infixr 3 &&!
 
 -- | Reverse a bytearray.
-reverseBytes :: (ByteArrayAccess bin, ByteArray bout) => bin -> bout
+reverseBytes :: ByteArray ba => ba -> ba
+#if MIN_VERSION_memory(0,14,18)
+reverseBytes = B.reverse
+#else
 reverseBytes = B.pack . reverse . B.unpack
+#endif
 
 -- | Test if all bytes in a bytearray are equal to the value specified.  Runs in
 -- constant time.
