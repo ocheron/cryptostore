@@ -2,18 +2,17 @@
 compiler: ghc-8.0 lts-9.21
 compiler: ghc-8.2 lts-11.22
 compiler: ghc-8.4 lts-12.12
-compiler: ghc-8.6 nightly-2018-10-09
+compiler: ghc-8.6 nightly-2018-10-12
 
 # options
 option: cryptomin extradep=basement-0.0.7 extradep=foundation-0.0.20 extradep=memory-0.14.16 extradep=cryptonite-0.25 extradep=x509-1.7.3
-option: nightlydeps extradep=asn1-encoding-0.9.5 extradep=asn1-types-0.3.2 extradep=asn1-parse-0.9.4 extradep=pem-0.2.4 extradep=x509-1.7.4
 
 # builds
 build: ghc-8.0 cryptomin
 build: ghc-8.2 cryptomin
 build: ghc-8.2 cryptomin os=osx
 build: ghc-8.4
-build: ghc-8.6 nightlydeps
+build: ghc-8.6
 
 # packages
 package: '.'
