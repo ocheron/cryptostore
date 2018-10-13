@@ -71,6 +71,7 @@ import qualified Data.ByteString as BS
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup
 import qualified Data.X509 as X509
+import qualified Data.X509.Validation as X509
 
 import Crypto.Cipher.Types
 
@@ -552,14 +553,17 @@ fromCredential algChain algKey pwd (X509.CertificateChain certs, key)
             Just alg -> encrypted alg pwd scChain
             Nothing  -> Right (unencrypted scChain)
 
-    scChain     = SafeContents (map toCertBag certs)
-    toCertBag c = Bag (CertBag (Bag (CertX509 c) [])) []
+    scChain       = SafeContents (zipWith toCertBag certAttrs certs)
+    certAttrs     = attrs : repeat []
+    toCertBag a c = Bag (CertBag (Bag (CertX509 c) [])) a
 
     scKeyOrError = wrap <$> encrypt algKey pwd encodedKey
 
-    wrap shrouded = SafeContents [Bag (PKCS8ShroudedKeyBag shrouded) []]
+    wrap shrouded = SafeContents [Bag (PKCS8ShroudedKeyBag shrouded) attrs]
     encodedKey    = encodeASN1Object (FormattedKey PKCS8Format key)
 
+    X509.Fingerprint keyId = X509.getFingerprint (head certs) X509.HashSHA1
+    attrs = setLocalKeyId keyId []
 
 -- Standard attributes
 
