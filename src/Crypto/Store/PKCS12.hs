@@ -53,7 +53,9 @@ module Crypto.Store.PKCS12
     , setLocalKeyId
     -- * Credentials
     , fromCredential
+    , fromNamedCredential
     , toCredential
+    , toNamedCredential
     -- * Password-based protection
     , Password
     , OptProtected(..)
@@ -68,7 +70,8 @@ import           Data.ASN1.BinaryEncoding
 import           Data.ASN1.Encoding
 import qualified Data.ByteArray as B
 import qualified Data.ByteString as BS
-import           Data.Maybe (fromMaybe)
+import           Data.List (partition)
+import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Semigroup
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
@@ -455,22 +458,42 @@ instance ASN1Elem e => ProduceASN1Object e SafeContents where
 instance Monoid e => ParseASN1Object e SafeContents where
     parse = SafeContents <$> onNextContainer Sequence parse
 
--- | Return all private keys contained in the safe contents.
-getSafeKeys :: SafeContents -> [OptProtected X509.PrivKey]
-getSafeKeys (SafeContents scs) = loop scs
+filterBags :: ([Attribute] -> Bool) -> SafeContents -> SafeContents
+filterBags p (SafeContents scs) = SafeContents (mapMaybe f scs)
+  where
+    f (Bag (SafeContentsBag inner) attrs) =
+        Just (Bag (SafeContentsBag $ filterBags p inner) attrs)
+    f bag | p (bagAttributes bag)         = Just bag
+          | otherwise                     = Nothing
+
+filterByFriendlyName :: String -> SafeContents -> SafeContents
+filterByFriendlyName name = filterBags ((== Just name) . getFriendlyName)
+
+filterByLocalKeyId :: BS.ByteString -> SafeContents -> SafeContents
+filterByLocalKeyId d = filterBags ((== Just d) . getLocalKeyId)
+
+getSafeKeysId :: SafeContents -> [OptProtected (Id X509.PrivKey)]
+getSafeKeysId (SafeContents scs) = loop scs
   where
     loop []           = []
     loop (bag : bags) =
         case bagInfo bag of
-            KeyBag (FormattedKey _ k) -> Unprotected k : loop bags
-            PKCS8ShroudedKeyBag k     -> Protected (unshroud k) : loop bags
-            SafeContentsBag inner     -> getSafeKeys inner ++ loop bags
+            KeyBag (FormattedKey _ k) -> Unprotected (mkId k bag) : loop bags
+            PKCS8ShroudedKeyBag k     -> Protected (unshroud k bag) : loop bags
+            SafeContentsBag inner     -> getSafeKeysId inner ++ loop bags
             _                         -> loop bags
 
-    unshroud shrouded pwd = do
+    unshroud shrouded bag pwd = do
         bs <- decrypt shrouded pwd
         FormattedKey _ k <- decode bs
-        return k
+        return (mkId k bag)
+
+-- | Return all private keys contained in the safe contents.
+getSafeKeys :: SafeContents -> [OptProtected X509.PrivKey]
+getSafeKeys = map (fmap unId) . getSafeKeysId
+
+getAllSafeKeysId :: [SafeContents] -> OptProtected [Id X509.PrivKey]
+getAllSafeKeysId = applySamePassword . concatMap getSafeKeysId
 
 -- | Return all private keys contained in the safe content list.  All shrouded
 -- private keys must derive from the same password.
@@ -482,31 +505,37 @@ getSafeKeys (SafeContents scs) = loop scs
 getAllSafeKeys :: [SafeContents] -> OptProtected [X509.PrivKey]
 getAllSafeKeys = applySamePassword . concatMap getSafeKeys
 
--- | Return all X.509 certificates contained in the safe contents.
-getSafeX509Certs :: SafeContents -> [X509.SignedCertificate]
-getSafeX509Certs (SafeContents scs) = loop scs
+getSafeX509CertsId :: SafeContents -> [Id X509.SignedCertificate]
+getSafeX509CertsId (SafeContents scs) = loop scs
   where
     loop []           = []
     loop (bag : bags) =
         case bagInfo bag of
-            CertBag (Bag (CertX509 c) _) -> c : loop bags
-            SafeContentsBag inner        -> getSafeX509Certs inner ++ loop bags
+            CertBag (Bag (CertX509 c) _) -> mkId c bag : loop bags
+            SafeContentsBag inner        -> getSafeX509CertsId inner ++ loop bags
             _                            -> loop bags
+
+-- | Return all X.509 certificates contained in the safe contents.
+getSafeX509Certs :: SafeContents -> [X509.SignedCertificate]
+getSafeX509Certs = map unId . getSafeX509CertsId
 
 -- | Return all X.509 certificates contained in the safe content list.
 getAllSafeX509Certs :: [SafeContents] -> [X509.SignedCertificate]
 getAllSafeX509Certs = concatMap getSafeX509Certs
 
--- | Return all X.509 CRLs contained in the safe contents.
-getSafeX509CRLs :: SafeContents -> [X509.SignedCRL]
-getSafeX509CRLs (SafeContents scs) = loop scs
+getSafeX509CRLsId :: SafeContents -> [Id X509.SignedCRL]
+getSafeX509CRLsId (SafeContents scs) = loop scs
   where
     loop []           = []
     loop (bag : bags) =
         case bagInfo bag of
-            CRLBag (Bag (CRLX509 c) _) -> c : loop bags
-            SafeContentsBag inner      -> getSafeX509CRLs inner ++ loop bags
+            CRLBag (Bag (CRLX509 c) _) -> mkId c bag : loop bags
+            SafeContentsBag inner      -> getSafeX509CRLsId inner ++ loop bags
             _                          -> loop bags
+
+-- | Return all X.509 CRLs contained in the safe contents.
+getSafeX509CRLs :: SafeContents -> [X509.SignedCRL]
+getSafeX509CRLs = map unId . getSafeX509CRLsId
 
 -- | Return all X.509 CRLs contained in the safe content list.
 getAllSafeX509CRLs :: [SafeContents] -> [X509.SignedCRL]
@@ -516,14 +545,31 @@ getAllSafeX509CRLs = concatMap getSafeX509CRLs
 -- Conversion to/from credentials
 
 getInnerCredential :: [SafeContents] -> SamePassword (Maybe (X509.CertificateChain, X509.PrivKey))
-getInnerCredential l = SamePassword (fn <$> getAllSafeKeys l)
+getInnerCredential l = SamePassword (fn <$> getAllSafeKeysId l)
   where
-    certs = getAllSafeX509Certs l
-
-    fn []               = Nothing
-    fn [k] | null certs = Nothing
-           | otherwise  = Just (X509.CertificateChain certs, k)
-    fn _                = Nothing
+    certs     = getAllSafeX509Certs l
+    fn idKeys = do
+        iKey <- single idKeys
+        let k = unId iKey
+        case idKeyId iKey of
+            Just d  -> do
+                -- locate a single certificate with same ID as private key
+                -- and follow the issuers to get all certificates in the chain
+                let filtered = map (filterByLocalKeyId d) l
+                leaf <- single (getAllSafeX509Certs filtered)
+                pure (buildCertificateChain leaf certs, k)
+            Nothing ->
+                case idName iKey of
+                    Just name -> do
+                        -- same but using friendly name of private key
+                        let filtered = map (filterByFriendlyName name) l
+                        leaf <- single (getAllSafeX509Certs filtered)
+                        pure (buildCertificateChain leaf certs, k)
+                    Nothing   -> do
+                        -- no identifier available, so we simply return all
+                        -- certificates with input order
+                        guard (not $ null certs)
+                        pure (X509.CertificateChain certs, k)
 
 -- | Extract the private key and certificate chain from a 'PKCS12' value.  A
 -- credential is returned when the structure contains exactly one private key
@@ -531,6 +577,23 @@ getInnerCredential l = SamePassword (fn <$> getAllSafeKeys l)
 toCredential :: PKCS12 -> OptProtected (Maybe (X509.CertificateChain, X509.PrivKey))
 toCredential p12 =
     unSamePassword (SamePassword (unPKCS12 p12) >>= getInnerCredential)
+
+getInnerCredentialNamed :: String -> [SafeContents] -> SamePassword (Maybe (X509.CertificateChain, X509.PrivKey))
+getInnerCredentialNamed name l = SamePassword (fn <$> getAllSafeKeys filtered)
+  where
+    certs    = getAllSafeX509Certs l
+    filtered = map (filterByFriendlyName name) l
+    fn keys  = do
+        k <- single keys
+        leaf <- single (getAllSafeX509Certs filtered)
+        pure (buildCertificateChain leaf certs, k)
+
+-- | Extract a private key and certificate chain with the specified friendly
+-- name from a 'PKCS12' value.  A credential is returned when the structure
+-- contains exactly one private key and one X.509 certificate with the name.
+toNamedCredential :: String -> PKCS12 -> OptProtected (Maybe (X509.CertificateChain, X509.PrivKey))
+toNamedCredential name p12 = unSamePassword $
+    SamePassword (unPKCS12 p12) >>= getInnerCredentialNamed name
 
 -- | Build a 'PKCS12' value containing a private key and certificate chain.
 -- Distinct encryption is applied for both.  Encrypting the certificate chain is
@@ -543,7 +606,30 @@ fromCredential :: Maybe EncryptionScheme -- for certificates
                -> Password
                -> (X509.CertificateChain, X509.PrivKey)
                -> Either StoreError PKCS12
-fromCredential algChain algKey pwd (X509.CertificateChain certs, key)
+fromCredential = fromCredential' id
+
+-- | Build a 'PKCS12' value containing a private key and certificate chain
+-- identified with the specified friendly name.  Distinct encryption is applied
+-- for private key and certificates.  Encrypting the certificate chain is
+-- optional.
+--
+-- Note: advice is to always generate fresh and independent 'EncryptionScheme'
+-- values so that the salt is not reused twice in the encryption process.
+fromNamedCredential :: String
+                    -> Maybe EncryptionScheme -- for certificates
+                    -> EncryptionScheme       -- for private key
+                    -> Password
+                    -> (X509.CertificateChain, X509.PrivKey)
+                    -> Either StoreError PKCS12
+fromNamedCredential name = fromCredential' (setFriendlyName name)
+
+fromCredential' :: ([Attribute] -> [Attribute])
+                -> Maybe EncryptionScheme -- for certificates
+                -> EncryptionScheme       -- for private key
+                -> Password
+                -> (X509.CertificateChain, X509.PrivKey)
+                -> Either StoreError PKCS12
+fromCredential' trans algChain algKey pwd (X509.CertificateChain certs, key)
     | null certs = Left (InvalidInput "Empty certificate chain")
     | otherwise  = (<>) <$> pkcs12Chain <*> pkcs12Key
   where
@@ -563,7 +649,7 @@ fromCredential algChain algKey pwd (X509.CertificateChain certs, key)
     encodedKey    = encodeASN1Object (FormattedKey PKCS8Format key)
 
     X509.Fingerprint keyId = X509.getFingerprint (head certs) X509.HashSHA1
-    attrs = setLocalKeyId keyId []
+    attrs = trans (setLocalKeyId keyId [])
 
 -- Standard attributes
 
@@ -637,6 +723,20 @@ instance Monad SamePassword where
 applySamePassword :: [OptProtected a] -> OptProtected [a]
 applySamePassword = unSamePassword . traverse SamePassword
 
+single :: [a] -> Maybe a
+single [x] = Just x
+single _   = Nothing
+
+data Id a = Id
+    { unId    :: a
+    , idKeyId :: Maybe BS.ByteString
+    , idName  :: Maybe String
+    }
+
+mkId :: a -> Bag info -> Id a
+mkId val bag = val `seq` Id val (getLocalKeyId attrs) (getFriendlyName attrs)
+  where attrs = bagAttributes bag
+
 decode :: ParseASN1Object [ASN1Event] obj => BS.ByteString -> Either StoreError obj
 decode bs =
     case decodeASN1Repr' BER bs of
@@ -654,3 +754,20 @@ parseOctetStringObject name = do
     case decode bs of
         Left e  -> throwParseError (name ++ ": " ++ show e)
         Right c -> return c
+
+buildCertificateChain :: X509.SignedCertificate -> [X509.SignedCertificate]
+                      -> X509.CertificateChain
+buildCertificateChain leaf authorities =
+    X509.CertificateChain (leaf : findAuthorities leaf authorities)
+  where
+    findAuthorities cert others
+        | subject cert == issuer cert = []
+        | otherwise                   =
+            case partition (\c -> subject c == issuer cert) others of
+                ([c], others') -> c : findAuthorities c others'
+                _              -> []
+
+    signedCert = X509.signedObject . X509.getSigned
+
+    subject c = X509.certSubjectDN (signedCert c)
+    issuer c  = X509.certIssuerDN (signedCert c)

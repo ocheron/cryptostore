@@ -81,14 +81,23 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         let r = readP12FileFromMemory <$> writeP12FileToMemory params pI c
         return $ Right (Right (Right c)) === (fmap (recover pI) <$> r)
     , localOption (QuickCheckTests 20) $ testProperty "converting credentials" $
+        \pChain pKey privKey ->
+            testCredConv privKey toCredential (fromCredential pChain pKey)
+    , localOption (QuickCheckTests 20) $ testProperty "converting named credentials" $
         \pChain pKey privKey -> do
-            pwd <- arbitraryPassword
-            chain <- arbitrary >>= arbitraryCertificateChain
-            let cred = (chain, privKey)
-                pkcs12 = fromCredential pChain pKey pwd cred
-                r = pkcs12 >>= recover pwd . toCredential
-            return $ Right (Just cred) === r
+            name <- arbitraryAlias
+            testCredConv privKey
+                (toNamedCredential name)
+                (fromNamedCredential name pChain pKey)
     ]
+  where
+    testCredConv privKey to from = do
+        pwd <- arbitraryPassword
+        chain <- arbitrary >>= arbitraryCertificateChain
+        chain' <- shuffleCertificateChain chain
+        let cred = (chain, privKey)
+            r = from pwd (chain', privKey) >>= recover pwd . to
+        return $ Right (Just cred) === r
 
 pkcs12Tests :: TestTree
 pkcs12Tests =

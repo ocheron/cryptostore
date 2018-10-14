@@ -137,8 +137,6 @@ Right ()
 
 The API also provides functions to generate/extract a pair containing a private
 key and a certificate chain.  This pair is the type alias `Credential` in `tls`.
-Currently the functions assume that the PKCS #12 file contains no other data
-than the credential.
 
 ```haskell
 > :set -XOverloadedStrings
@@ -169,6 +167,9 @@ than the credential.
 > let iParams = (DigestAlgorithm SHA256, PBEParameter salt 2048)
 > writeP12File "/path/to/newfile.p12" iParams "myintegrityassword" pkcs12'
 ```
+
+Variants `toNamedCredential` and `fromNamedCredential` are also available when
+PKCS #12 elements need an alias (friendly name).
 
 ## Cryptographic Message Syntax
 

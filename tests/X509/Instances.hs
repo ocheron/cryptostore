@@ -8,11 +8,15 @@ module X509.Instances
     , arbitraryNamedEC
     , arbitrarySignedCertificate
     , arbitraryCertificateChain
+    , shuffleCertificateChain
     ) where
+
+import           Control.Monad (zipWithM)
 
 import           Data.ASN1.Types
 import qualified Data.ByteArray as B
 import           Data.Hourglass
+import           Data.List (nub)
 import           Data.X509
 
 import Test.Tasty.QuickCheck
@@ -218,16 +222,25 @@ instance Arbitrary DateTime where
         let arbitraryElapsed = Elapsed . Seconds <$> choose (1, 100000000)
          in timeConvert <$> arbitraryElapsed
 
-arbitraryCertificate :: PubKey -> Gen Certificate
-arbitraryCertificate pubKey =
+arbitraryCertificateWithDNs :: PubKey
+                            -> DistinguishedName -- issuer
+                            -> DistinguishedName -- subject
+                            -> Gen Certificate
+arbitraryCertificateWithDNs pubKey issuerDN subjectDN =
     Certificate <$> pure 2
                 <*> arbitrary
                 <*> arbitrary
-                <*> arbitraryDN
+                <*> pure issuerDN
                 <*> arbitrary
-                <*> arbitraryDN
+                <*> pure subjectDN
                 <*> pure pubKey
                 <*> pure (Extensions Nothing)
+
+arbitraryCertificate :: PubKey -> Gen Certificate
+arbitraryCertificate pubKey = do
+    issuerDN  <- arbitraryDN
+    subjectDN <- arbitraryDN
+    arbitraryCertificateWithDNs pubKey issuerDN subjectDN
 
 instance Arbitrary Certificate where
     arbitrary = arbitrary >>= arbitraryCertificate
@@ -262,6 +275,25 @@ instance (Show a, Eq a, ASN1Object a, Arbitrary a) => Arbitrary (SignedExact a) 
 
 arbitraryCertificateChain :: PubKey -> Gen CertificateChain
 arbitraryCertificateChain pubKey = do
-    leaf <- arbitrarySignedCertificate pubKey
-    others <- resize 3 $ listOf (arbitrary >>= arbitrarySignedCertificate)
-    return $ CertificateChain (leaf:others)
+    rootDN <- arbitraryDN
+    otherDNs <- nub <$> resize 3 (listOf (arbitraryDN `suchThat` (/= rootDN)))
+    if null otherDNs
+        then do
+            root <- generateCert pubKey (rootDN, rootDN)
+            return $ CertificateChain [root]
+        else do
+            rootKey <- arbitrary
+            root <- generateCert rootKey (rootDN, rootDN)
+            let dnPairs = zip (rootDN : otherDNs) otherDNs -- (issuer, subject)
+            keys <- vectorOf (length otherDNs - 1) arbitrary
+            certs <- zipWithM generateCert (keys ++ [pubKey]) dnPairs
+            return $ CertificateChain $ reverse (root : certs)
+  where
+    generateCert key (issuerDN, subjectDN) =
+        arbitraryCertificateWithDNs key issuerDN subjectDN
+            >>= arbitrarySignedExact
+
+shuffleCertificateChain :: CertificateChain -> Gen CertificateChain
+shuffleCertificateChain (CertificateChain []) = fail "empty certificate chain"
+shuffleCertificateChain (CertificateChain (leaf : auths)) =
+    CertificateChain . (leaf :) <$> shuffle auths
