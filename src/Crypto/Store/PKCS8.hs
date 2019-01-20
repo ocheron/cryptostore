@@ -376,11 +376,7 @@ instance Monoid e => ParseASN1Object e (Traditional RSA.PrivateKey) where
         IntVal pexp1 <- getNext
         IntVal pexp2 <- getNext
         IntVal pcoef <- getNext
-        let calculate_modulus m i =
-                if (2 ^ (i * 8)) > m
-                    then i
-                    else calculate_modulus m (i+1)
-            pubKey  = RSA.PublicKey { RSA.public_size = calculate_modulus n 1
+        let pubKey  = RSA.PublicKey { RSA.public_size = numBytes n
                                     , RSA.public_n    = n
                                     , RSA.public_e    = e
                                     }

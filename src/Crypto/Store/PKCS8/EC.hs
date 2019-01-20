@@ -22,7 +22,7 @@ import           Data.Maybe (fromMaybe)
 import Data.X509
 import Data.X509.EC
 
-import Crypto.Number.Basic (numBits)
+import Crypto.Number.Basic (numBits, numBytes)
 import Crypto.Number.Serialize (i2ospOf_)
 import Crypto.PubKey.ECC.Prim
 import Crypto.PubKey.ECC.Types
@@ -32,10 +32,6 @@ import Crypto.Store.CMS.Util
 -- | Number of bytes necessary to serialize n bits.
 bitsToBytes :: Int -> Int
 bitsToBytes n = (n + 7) `div` 8
-
--- | Number of bytes necessary to serialize an integer.
-numBytes :: Integer -> Int
-numBytes = bitsToBytes . numBits
 
 -- | Number of bytes to serialize a field element.
 curveSizeBytes :: Curve -> Int

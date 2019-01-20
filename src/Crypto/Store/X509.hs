@@ -40,6 +40,7 @@ import Data.Maybe
 import Data.Proxy
 import qualified Data.X509 as X509
 import qualified Data.ByteString as B
+import           Crypto.Number.Basic (numBytes)
 import qualified Crypto.PubKey.RSA as RSA
 
 import Crypto.Store.ASN1.Generate
@@ -167,12 +168,8 @@ instance Monoid e => ParseASN1Object e RSAPublicKey where
     parse = onNextContainer Sequence $ do
         IntVal modulus <- getNext
         IntVal pubexp <- getNext
-        let pub = RSA.PublicKey { RSA.public_size = calculate_modulus modulus 1
+        let pub = RSA.PublicKey { RSA.public_size = numBytes modulus
                                 , RSA.public_n    = modulus
                                 , RSA.public_e    = pubexp
                                 }
         return (RSAPublicKey pub)
-      where
-        calculate_modulus n i
-            | (2 ^ (i * 8)) > n = i
-            | otherwise         = calculate_modulus n (i + 1)
