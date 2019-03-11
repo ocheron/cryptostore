@@ -38,19 +38,19 @@ type ContentEncryptionKey = B.ByteString
 type EncryptedContent = B.ByteString
 
 -- | Encrypted content information.
-data EncryptedData = EncryptedData
+data EncryptedData content = EncryptedData
     { edContentType :: ContentType
       -- ^ Inner content type
     , edContentEncryptionParams :: ContentEncryptionParams
       -- ^ Encryption algorithm
-    , edEncryptedContent :: EncryptedContent
+    , edEncryptedContent :: content
       -- ^ Encrypted content info
     , edUnprotectedAttrs :: [Attribute]
       -- ^ Optional unprotected attributes
     }
     deriving (Show,Eq)
 
-instance ASN1Elem e => ProduceASN1Object e EncryptedData where
+instance ASN1Elem e => ProduceASN1Object e (EncryptedData EncryptedContent) where
     asn1s EncryptedData{..} =
         asn1Container Sequence (ver . eci . ua)
       where
@@ -59,7 +59,7 @@ instance ASN1Elem e => ProduceASN1Object e EncryptedData where
                   (edContentType, edContentEncryptionParams, edEncryptedContent)
         ua  = attributesASN1S (Container Context 1) edUnprotectedAttrs
 
-instance Monoid e => ParseASN1Object e EncryptedData where
+instance Monoid e => ParseASN1Object e (EncryptedData EncryptedContent) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

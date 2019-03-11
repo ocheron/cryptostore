@@ -34,7 +34,7 @@ import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
 -- | Authenticated-enveloped content information.
-data AuthEnvelopedData = AuthEnvelopedData
+data AuthEnvelopedData content = AuthEnvelopedData
     { aeOriginatorInfo :: OriginatorInfo
       -- ^ Optional information about the originator
     , aeRecipientInfos :: [RecipientInfo]
@@ -43,7 +43,7 @@ data AuthEnvelopedData = AuthEnvelopedData
       -- ^ Inner content type
     , aeContentEncryptionParams :: ASN1ObjectExact AuthContentEncryptionParams
       -- ^ Encryption algorithm
-    , aeEncryptedContent :: EncryptedContent
+    , aeEncryptedContent :: content
       -- ^ Encrypted content info
     , aeAuthAttrs :: [Attribute]
       -- ^ Optional authenticated attributes
@@ -54,7 +54,7 @@ data AuthEnvelopedData = AuthEnvelopedData
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object ASN1P AuthEnvelopedData where
+instance ProduceASN1Object ASN1P (AuthEnvelopedData EncryptedContent) where
     asn1s AuthEnvelopedData{..} =
         asn1Container Sequence (ver . oi . ris . eci . aa . tag . ua)
       where
@@ -69,7 +69,7 @@ instance ProduceASN1Object ASN1P AuthEnvelopedData where
         oi | aeOriginatorInfo == mempty = id
            | otherwise = originatorInfoASN1S (Container Context 0) aeOriginatorInfo
 
-instance ParseASN1Object [ASN1Event] AuthEnvelopedData where
+instance ParseASN1Object [ASN1Event] (AuthEnvelopedData EncryptedContent) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

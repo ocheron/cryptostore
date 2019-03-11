@@ -423,7 +423,7 @@ isPwriOri (KEKRI _)      = False
 isPwriOri (PasswordRI _) = True
 
 -- | Enveloped content information.
-data EnvelopedData = EnvelopedData
+data EnvelopedData content = EnvelopedData
     { evOriginatorInfo :: OriginatorInfo
       -- ^ Optional information about the originator
     , evRecipientInfos :: [RecipientInfo]
@@ -432,14 +432,14 @@ data EnvelopedData = EnvelopedData
       -- ^ Inner content type
     , evContentEncryptionParams :: ContentEncryptionParams
       -- ^ Encryption algorithm
-    , evEncryptedContent :: EncryptedContent
+    , evEncryptedContent :: content
       -- ^ Encrypted content info
     , evUnprotectedAttrs :: [Attribute]
       -- ^ Optional unprotected attributes
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object ASN1P EnvelopedData where
+instance ProduceASN1Object ASN1P (EnvelopedData EncryptedContent) where
     asn1s EnvelopedData{..} =
         asn1Container Sequence (ver . oi . ris . eci . ua)
       where
@@ -459,7 +459,7 @@ instance ProduceASN1Object ASN1P EnvelopedData where
           | all isVersion0 evRecipientInfos = 0
           | otherwise                       = 2
 
-instance ParseASN1Object [ASN1Event] EnvelopedData where
+instance ParseASN1Object [ASN1Event] (EnvelopedData EncryptedContent) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

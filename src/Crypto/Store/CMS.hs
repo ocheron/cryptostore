@@ -204,7 +204,7 @@ encryptData key params attrs ci =
 
 -- | Decrypt an encrypted content info using the specified key.
 decryptData :: ContentEncryptionKey
-            -> EncryptedData
+            -> EncryptedData EncryptedContent
             -> Either StoreError ContentInfo
 decryptData key EncryptedData{..} = do
     decrypted <- contentDecrypt key edContentEncryptionParams edEncryptedContent
@@ -244,7 +244,7 @@ envelopData oinfo key params envFns attrs ci =
 -- function.
 openEnvelopedData :: Monad m
                   => ConsumerOfRI m
-                  -> EnvelopedData
+                  -> EnvelopedData EncryptedContent
                   -> m (Either StoreError ContentInfo)
 openEnvelopedData devFn EnvelopedData{..} = do
     r <- riAttempts (map (fmap (>>= decr) . devFn) evRecipientInfos)
@@ -372,7 +372,7 @@ authEnvelopData oinfo key params envFns aAttrs uAttrs ci =
 -- 'ConsumerOfRI' function.
 openAuthEnvelopedData :: Monad m
                       => ConsumerOfRI m
-                      -> AuthEnvelopedData
+                      -> AuthEnvelopedData EncryptedContent
                       -> m (Either StoreError ContentInfo)
 openAuthEnvelopedData devFn AuthEnvelopedData{..} = do
     r <- riAttempts (map (fmap (>>= decr) . devFn) aeRecipientInfos)

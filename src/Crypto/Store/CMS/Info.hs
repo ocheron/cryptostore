@@ -64,13 +64,20 @@ getContentType (AuthEnvelopedDataCI _) = AuthEnvelopedDataType
 -- ContentInfo
 
 -- | CMS content information.
-data ContentInfo = DataCI ByteString                     -- ^ Arbitrary octet string
-                 | SignedDataCI SignedData               -- ^ Signed content info
-                 | EnvelopedDataCI EnvelopedData         -- ^ Enveloped content info
-                 | DigestedDataCI DigestedData           -- ^ Content info with associated digest
-                 | EncryptedDataCI EncryptedData         -- ^ Encrypted content info
-                 | AuthenticatedDataCI AuthenticatedData -- ^ Authenticatedcontent info
-                 | AuthEnvelopedDataCI AuthEnvelopedData -- ^ Authenticated-enveloped content info
+data ContentInfo = DataCI ByteString
+                   -- ^ Arbitrary octet string
+                 | SignedDataCI SignedData
+                   -- ^ Signed content info
+                 | EnvelopedDataCI (EnvelopedData EncryptedContent)
+                   -- ^ Enveloped content info
+                 | DigestedDataCI DigestedData
+                   -- ^ Content info with associated digest
+                 | EncryptedDataCI (EncryptedData EncryptedContent)
+                   -- ^ Encrypted content info
+                 | AuthenticatedDataCI AuthenticatedData
+                   -- ^ Authenticatedcontent info
+                 | AuthEnvelopedDataCI (AuthEnvelopedData EncryptedContent)
+                   -- ^ Authenticated-enveloped content info
                  deriving (Show,Eq)
 
 instance ProduceASN1Object ASN1P ContentInfo where
