@@ -36,25 +36,25 @@ instance Arbitrary ContentInfo where
         if n == 0
             then DataCI <$> arbitraryMessage
             else oneof [ DataCI <$> arbitraryMessage
-                       , arbitrarySignedData
-                       , arbitraryEnvelopedData
-                       , arbitraryDigestedData
-                       , arbitraryEncryptedData
-                       , arbitraryAuthenticatedData
-                       , arbitraryAuthEnvelopedData
+                       , SignedDataCI <$> arbitrarySignedData
+                       , EnvelopedDataCI <$> arbitraryEnvelopedData
+                       , DigestedDataCI <$> arbitraryDigestedData
+                       , EncryptedDataCI <$> arbitraryEncryptedData
+                       , AuthenticatedDataCI <$> arbitraryAuthenticatedData
+                       , AuthEnvelopedDataCI <$> arbitraryAuthEnvelopedData
                        ]
       where
         arbitraryMessage :: Gen ByteString
         arbitraryMessage = resize 2048 (B.pack <$> arbitrary)
 
-        arbitrarySignedData :: Gen ContentInfo
+        arbitrarySignedData :: Gen SignedData
         arbitrarySignedData = do
             alg   <- arbitrary
             (sigFns, _) <- arbitrarySigVer alg
             inner <- scale (subtract $ length sigFns) arbitrary
             signData sigFns inner >>= failIfError
 
-        arbitraryEnvelopedData :: Gen ContentInfo
+        arbitraryEnvelopedData :: Gen (EnvelopedData EncryptedContent)
         arbitraryEnvelopedData = do
             oinfo <- arbitrary
             (alg, key, attrs) <- getCommon
@@ -62,19 +62,19 @@ instance Arbitrary ContentInfo where
             inner <- scale (subtract $ length envFns) arbitrary
             envelopData oinfo key alg envFns attrs inner >>= failIfError
 
-        arbitraryDigestedData :: Gen ContentInfo
+        arbitraryDigestedData :: Gen DigestedData
         arbitraryDigestedData = do
             inner <- scale pred arbitrary
             dt <- arbitrary
             return $ digestData dt inner
 
-        arbitraryEncryptedData :: Gen ContentInfo
+        arbitraryEncryptedData :: Gen (EncryptedData EncryptedContent)
         arbitraryEncryptedData = do
             (alg, key, attrs) <- getCommon
             inner <- scale pred arbitrary
             failIfError $ encryptData key alg attrs inner
 
-        arbitraryAuthenticatedData :: Gen ContentInfo
+        arbitraryAuthenticatedData :: Gen AuthenticatedData
         arbitraryAuthenticatedData = do
             (oinfo, alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
             dig <- arbitrary
@@ -82,7 +82,7 @@ instance Arbitrary ContentInfo where
             generateAuthenticatedData oinfo key alg dig envFns aAttrs uAttrs inner
                 >>= failIfError
 
-        arbitraryAuthEnvelopedData :: Gen ContentInfo
+        arbitraryAuthEnvelopedData :: Gen (AuthEnvelopedData EncryptedContent)
         arbitraryAuthEnvelopedData = do
             (oinfo, alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
             inner <- scale (subtract $ length envFns) arbitrary

@@ -165,8 +165,8 @@ import Crypto.Store.Error
 -- DigestedData
 
 -- | Add a digested-data layer on the specified content info.
-digestData :: DigestAlgorithm -> ContentInfo -> ContentInfo
-digestData (DigestAlgorithm alg) ci = DigestedDataCI dd
+digestData :: DigestAlgorithm -> ContentInfo -> DigestedData
+digestData (DigestAlgorithm alg) ci = dd
   where dd = DigestedData
                  { ddDigestAlgorithm = alg
                  , ddContentInfo     = ci
@@ -191,9 +191,9 @@ encryptData :: ContentEncryptionKey
             -> ContentEncryptionParams
             -> [Attribute]
             -> ContentInfo
-            -> Either StoreError ContentInfo
+            -> Either StoreError (EncryptedData EncryptedContent)
 encryptData key params attrs ci =
-    EncryptedDataCI . build <$> contentEncrypt key params (encapsulate ci)
+    build <$> contentEncrypt key params (encapsulate ci)
   where
     build ec = EncryptedData
                    { edContentType = getContentType ci
@@ -225,12 +225,12 @@ envelopData :: Applicative f
             -> [ProducerOfRI f]
             -> [Attribute]
             -> ContentInfo
-            -> f (Either StoreError ContentInfo)
+            -> f (Either StoreError (EnvelopedData EncryptedContent))
 envelopData oinfo key params envFns attrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
     ebs = contentEncrypt key params (encapsulate ci)
-    f ris = EnvelopedDataCI <$> (build <$> ebs <*> ris)
+    f ris = build <$> ebs <*> ris
     build bs ris = EnvelopedData
                        { evOriginatorInfo = oinfo
                        , evRecipientInfos = ris
@@ -275,7 +275,7 @@ generateAuthenticatedData :: Applicative f
                           -> [Attribute]
                           -> [Attribute]
                           -> ContentInfo
-                          -> f (Either StoreError ContentInfo)
+                          -> f (Either StoreError AuthenticatedData)
 generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
@@ -291,7 +291,7 @@ generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
                 in (l, encodeAuthAttrs l)
 
     ebs   = mac macAlg key input
-    f ris = AuthenticatedDataCI <$> (build ebs <$> ris)
+    f ris = build ebs <$> ris
     build authTag ris = AuthenticatedData
                             { adOriginatorInfo = oinfo
                             , adRecipientInfos = ris
@@ -349,14 +349,14 @@ authEnvelopData :: Applicative f
                 -> [Attribute]
                 -> [Attribute]
                 -> ContentInfo
-                -> f (Either StoreError ContentInfo)
+                -> f (Either StoreError (AuthEnvelopedData EncryptedContent))
 authEnvelopData oinfo key params envFns aAttrs uAttrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
     raw = encodeASN1Object params
     aad = encodeAuthAttrs aAttrs
     ebs = authContentEncrypt key params raw aad (encapsulate ci)
-    f ris = AuthEnvelopedDataCI <$> (build <$> ebs <*> ris)
+    f ris = build <$> ebs <*> ris
     build (authTag, bs) ris = AuthEnvelopedData
                        { aeOriginatorInfo = oinfo
                        , aeRecipientInfos = ris
@@ -391,13 +391,13 @@ openAuthEnvelopedData devFn AuthEnvelopedData{..} = do
 -- processed by one or several 'ProducerOfSI' functions to create signer info
 -- elements.
 signData :: Applicative f
-         => [ProducerOfSI f] -> ContentInfo -> f (Either StoreError ContentInfo)
+         => [ProducerOfSI f] -> ContentInfo -> f (Either StoreError SignedData)
 signData sigFns ci =
     f <$> (sequence <$> traverse (\fn -> fn ct msg) sigFns)
   where
     msg = encapsulate ci
     ct  = getContentType ci
-    f   = fmap (SignedDataCI . build . unzip3)
+    f   = fmap (build . unzip3)
 
     build (sis, certLists, crlLists) =
         SignedData

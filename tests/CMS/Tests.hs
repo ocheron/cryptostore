@@ -165,7 +165,8 @@ digestedDataTests =
             assertJust result (verifyInnerMessage message)
 
             step ("digesting " ++ name)
-            let ci' = digestData alg (DataCI message)
+            let dd' = digestData alg (DataCI message)
+                ci' = DigestedDataCI dd'
             ci @?= ci'
   where path  = testFile "cms-digested-data.pem"
         algs  = [ ("MD5",    DigestAlgorithm MD5)
@@ -193,7 +194,8 @@ encryptedDataTests =
 
             step ("encrypting " ++ name)
             let params = edContentEncryptionParams ed
-                ci'    = encryptData key params [] (DataCI message)
+                ed'    = encryptData key params [] (DataCI message)
+                ci'    = EncryptedDataCI <$> ed'
             Right ci @?= ci'
   where path  = testFile "cms-encrypted-data.pem"
         keys  = [ ("DES_CBC",              testKey  8)
@@ -246,32 +248,32 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         collect alg $ do
             (sigFns, verFn) <- scale succ (arbitrarySigVer alg)
             r <- signData sigFns ci
-            let Right (SignedDataCI sd) = r
+            let Right sd = r
             r' <- verifySignedData verFn sd
             return (Just ci === r')
     , testProperty "enveloping" $ \alg ci ->
         collect alg $ do
             (oinfo, key, envFns, devFn, attrs) <- getCommon alg
             r <- envelopData oinfo key alg envFns attrs ci
-            let Right (EnvelopedDataCI ev) = r
+            let Right ev = r
             r' <- openEnvelopedData devFn ev
             return (Right ci === r')
     , testProperty "digesting" $ \alg ci ->
         collect alg $
-            let DigestedDataCI dd = digestData alg ci
+            let dd = digestData alg ci
              in Just ci === digestVerify dd
     , testProperty "encrypting" $ \alg ci ->
         collect alg $ do
             key <- generateKey alg
             attrs <- arbitraryAttributes
-            let Right (EncryptedDataCI ed) = encryptData key alg attrs ci
+            let Right ed = encryptData key alg attrs ci
             return (Right ci === decryptData key ed)
     , testProperty "authenticating" $ \alg dig ci ->
         collect alg $ do
             (oinfo, key, envFns, devFn, uAttrs) <- getCommon alg
             aAttrs <- if isNothing dig then pure [] else arbitraryAttributes
             r <- generateAuthenticatedData oinfo key alg dig envFns aAttrs uAttrs ci
-            let Right (AuthenticatedDataCI ad) = r
+            let Right ad = r
             r' <- verifyAuthenticatedData devFn ad
             return (Right ci === r')
     , testProperty "enveloping with authentication" $ \alg ci ->
@@ -279,7 +281,7 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
             (oinfo, key, envFns, devFn, uAttrs) <- getCommon alg
             aAttrs <- arbitraryAttributes
             r <- authEnvelopData oinfo key alg envFns aAttrs uAttrs ci
-            let Right (AuthEnvelopedDataCI ae) = r
+            let Right ae = r
             r' <- openAuthEnvelopedData devFn ae
             return (Right ci === r')
     ]
