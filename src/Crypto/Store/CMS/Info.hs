@@ -16,6 +16,7 @@
 module Crypto.Store.CMS.Info
     ( ContentInfo(..)
     , getContentType
+    , EncapsulatedContent
     , SignedData(..)
     , DigestedData(..)
     , AuthenticatedData(..)
@@ -60,6 +61,9 @@ getContentType (EncryptedDataCI _)     = EncryptedDataType
 getContentType (AuthenticatedDataCI _) = AuthenticatedDataType
 getContentType (AuthEnvelopedDataCI _) = AuthEnvelopedDataType
 
+
+-- | Encapsulated content.
+type EncapsulatedContent = ByteString
 
 -- ContentInfo
 
@@ -122,20 +126,21 @@ parseData = do
         OctetString bs -> return bs
         _              -> throwParseError "Data: parsed unexpected content"
 
-isData :: ContentInfo -> Bool
-isData (DataCI _) = True
-isData _          = False
+isData :: ContentType -> Bool
+isData DataType = True
+isData _        = False
 
 
 -- SignedData
 
 -- | Signed content information.
 data SignedData = SignedData
-    { sdDigestAlgorithms :: [DigestAlgorithm] -- ^ Digest algorithms
-    , sdContentInfo :: ContentInfo            -- ^ Inner content info
-    , sdCertificates :: [CertificateChoice]   -- ^ The collection of certificates
-    , sdCRLs  :: [RevocationInfoChoice]       -- ^ The collection of CRLs
-    , sdSignerInfos :: [SignerInfo]           -- ^ Per-signer information
+    { sdDigestAlgorithms :: [DigestAlgorithm]      -- ^ Digest algorithms
+    , sdContentType :: ContentType                 -- ^ Inner content type
+    , sdEncapsulatedContent :: EncapsulatedContent -- ^ Encapsulated content
+    , sdCertificates :: [CertificateChoice]        -- ^ The collection of certificates
+    , sdCRLs  :: [RevocationInfoChoice]            -- ^ The collection of CRLs
+    , sdSignerInfos :: [SignerInfo]                -- ^ Per-signer information
     }
     deriving (Show,Eq)
 
@@ -145,7 +150,7 @@ instance ProduceASN1Object ASN1P SignedData where
       where
         ver = gIntVal v
         dig = asn1Container Set (digestTypesASN1S sdDigestAlgorithms)
-        ci  = encapsulatedContentInfoASN1S sdContentInfo
+        ci  = encapsulatedContentInfoASN1S sdContentType sdEncapsulatedContent
         certs = gen 0 sdCertificates
         crls  = gen 1 sdCRLs
         sis = asn1Container Set (asn1s sdSignerInfos)
@@ -157,7 +162,7 @@ instance ProduceASN1Object ASN1P SignedData where
         v | hasChoiceOther sdCertificates = 5
           | hasChoiceOther sdCRLs         = 5
           | any isVersion3 sdSignerInfos  = 3
-          | isData sdContentInfo          = 1
+          | isData sdContentType          = 1
           | otherwise                     = 3
 
 
@@ -168,12 +173,13 @@ instance ParseASN1Object [ASN1Event] SignedData where
             when (v > 5) $
                 throwParseError ("SignedData: parsed invalid version: " ++ show v)
             dig <- onNextContainer Set parseDigestTypes
-            inner <- parseEncapsulatedContentInfo
+            (ct, bs) <- parseEncapsulatedContentInfo
             certs <- parseOptList 0
             crls  <- parseOptList 1
             sis <- onNextContainer Set parse
             return SignedData { sdDigestAlgorithms = dig
-                              , sdContentInfo = inner
+                              , sdContentType = ct
+                              , sdEncapsulatedContent = bs
                               , sdCertificates = certs
                               , sdCRLs = crls
                               , sdSignerInfos = sis
@@ -194,7 +200,8 @@ parseDigestTypes = getMany (parseAlgorithm Sequence)
 -- | Digested content information.
 data DigestedData = forall hashAlg. HashAlgorithm hashAlg => DigestedData
     { ddDigestAlgorithm :: DigestProxy hashAlg     -- ^ Digest algorithm
-    , ddContentInfo :: ContentInfo                 -- ^ Inner content info
+    , ddContentType :: ContentType                 -- ^ Inner content type
+    , ddEncapsulatedContent :: EncapsulatedContent -- ^ Encapsulated content
     , ddDigest :: Digest hashAlg                   -- ^ Digest value
     }
 
@@ -202,24 +209,25 @@ instance Show DigestedData where
     showsPrec d DigestedData{..} = showParen (d > 10) $
         showString "DigestedData "
             . showString "{ ddDigestAlgorithm = " . shows ddDigestAlgorithm
-            . showString ", ddContentInfo = " . shows ddContentInfo
+            . showString ", ddContentType = " . shows ddContentType
+            . showString ", ddEncapsulatedContent = " . shows ddEncapsulatedContent
             . showString ", ddDigest = " . shows ddDigest
             . showString " }"
 
 instance Eq DigestedData where
-    DigestedData a1 i1 d1 == DigestedData a2 i2 d2 =
-        DigestAlgorithm a1 == DigestAlgorithm a2 && d1 `B.eq` d2 && i1 == i2
+    DigestedData a1 t1 e1 d1 == DigestedData a2 t2 e2 d2 =
+        DigestAlgorithm a1 == DigestAlgorithm a2 && d1 `B.eq` d2 && t1 == t2 && e1 == e2
 
 instance ASN1Elem e => ProduceASN1Object e DigestedData where
     asn1s DigestedData{..} =
         asn1Container Sequence (ver . alg . ci . dig)
       where
-        v = if isData ddContentInfo then 0 else 2
+        v = if isData ddContentType then 0 else 2
         d = DigestAlgorithm ddDigestAlgorithm
 
         ver = gIntVal v
         alg = algorithmASN1S Sequence d
-        ci  = encapsulatedContentInfoASN1S ddContentInfo
+        ci  = encapsulatedContentInfoASN1S ddContentType ddEncapsulatedContent
         dig = gOctetString (B.convert ddDigest)
 
 instance Monoid e => ParseASN1Object e DigestedData where
@@ -229,15 +237,16 @@ instance Monoid e => ParseASN1Object e DigestedData where
             when (v /= 0 && v /= 2) $
                 throwParseError ("DigestedData: parsed invalid version: " ++ show v)
             alg <- parseAlgorithm Sequence
-            inner <- parseEncapsulatedContentInfo
-            OctetString bs <- getNext
+            (ct, bs) <- parseEncapsulatedContentInfo
+            OctetString digValue <- getNext
             case alg of
                 DigestAlgorithm digAlg ->
-                    case digestFromByteString bs of
+                    case digestFromByteString digValue of
                         Nothing -> throwParseError "DigestedData: parsed invalid digest"
                         Just d  ->
                             return DigestedData { ddDigestAlgorithm = digAlg
-                                                , ddContentInfo = inner
+                                                , ddContentType = ct
+                                                , ddEncapsulatedContent = bs
                                                 , ddDigest = d
                                                 }
 
@@ -254,8 +263,10 @@ data AuthenticatedData = AuthenticatedData
       -- ^ MAC algorithm
     , adDigestAlgorithm :: Maybe DigestAlgorithm
       -- ^ Optional digest algorithm
-    , adContentInfo :: ContentInfo
-      -- ^ Inner content info
+    , adContentType :: ContentType
+      -- ^ Inner content type
+    , adEncapsulatedContent :: EncapsulatedContent
+      -- ^ Encapsulated content
     , adAuthAttrs :: [Attribute]
       -- ^ Optional authenticated attributes
     , adMAC :: MessageAuthenticationCode
@@ -273,7 +284,7 @@ instance ProduceASN1Object ASN1P AuthenticatedData where
         ris = asn1Container Set (asn1s adRecipientInfos)
         alg = algorithmASN1S Sequence adMACAlgorithm
         dig = algorithmMaybeASN1S (Container Context 1) adDigestAlgorithm
-        ci  = encapsulatedContentInfoASN1S adContentInfo
+        ci  = encapsulatedContentInfoASN1S adContentType adEncapsulatedContent
         aa  = attributesASN1S(Container Context 2) adAuthAttrs
         tag = gOctetString (B.convert adMAC)
         ua  = attributesASN1S (Container Context 3) adUnauthAttrs
@@ -294,7 +305,7 @@ instance ParseASN1Object [ASN1Event] AuthenticatedData where
             ris <- onNextContainer Set parse
             alg <- parseAlgorithm Sequence
             dig <- parseAlgorithmMaybe (Container Context 1)
-            inner <- parseEncapsulatedContentInfo
+            (ct, bs) <- parseEncapsulatedContentInfo
             aAttrs <- parseAttributes (Container Context 2)
             OctetString tag <- getNext
             uAttrs <- parseAttributes (Container Context 3)
@@ -302,7 +313,8 @@ instance ParseASN1Object [ASN1Event] AuthenticatedData where
                                      , adRecipientInfos = ris
                                      , adMACAlgorithm = alg
                                      , adDigestAlgorithm = dig
-                                     , adContentInfo = inner
+                                     , adContentType = ct
+                                     , adEncapsulatedContent = bs
                                      , adAuthAttrs = aAttrs
                                      , adMAC = AuthTag $ B.convert tag
                                      , adUnauthAttrs = uAttrs
@@ -335,13 +347,13 @@ decapsulate EncryptedDataType bs     = EncryptedDataCI <$> decode parse bs
 decapsulate AuthenticatedDataType bs = AuthenticatedDataCI <$> decode parse bs
 decapsulate AuthEnvelopedDataType bs = AuthEnvelopedDataCI <$> decode parse bs
 
-encapsulatedContentInfoASN1S :: ASN1Elem e => ContentInfo -> ASN1Stream e
-encapsulatedContentInfoASN1S ci = asn1Container Sequence (oid . cont)
-  where oid = gOID $ getObjectID $ getContentType ci
+encapsulatedContentInfoASN1S :: ASN1Elem e => ContentType -> EncapsulatedContent -> ASN1Stream e
+encapsulatedContentInfoASN1S ct bs = asn1Container Sequence (oid . cont)
+  where oid = gOID (getObjectID ct)
         cont = asn1Container (Container Context 0) inner
-        inner = gOctetString (encapsulate ci)
+        inner = gOctetString bs
 
-parseEncapsulatedContentInfo :: Monoid e => ParseASN1 e ContentInfo
+parseEncapsulatedContentInfo :: Monoid e => ParseASN1 e (ContentType, EncapsulatedContent)
 parseEncapsulatedContentInfo =
     onNextContainer Sequence $ do
         OID oid <- getNext
@@ -350,10 +362,7 @@ parseEncapsulatedContentInfo =
   where
     parseInner ct = do
         bs <- parseContentSingle <|> parseContentChunks
-        case decapsulate ct bs of
-            Left err -> throwParseError
-                ("Unable to decode and parse encapsulated ASN.1: " ++ show err)
-            Right ci -> return ci
+        return (ct, bs)
 
     parseContentSingle = do { OctetString bs <- getNext; return bs }
     parseContentChunks = onNextContainer (Container Universal 4) $

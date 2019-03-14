@@ -31,6 +31,7 @@ module Crypto.Store.CMS
     -- * Signed data
     , SignatureValue
     , SignatureAlg(..)
+    , EncapsulatedContent
     , SignedData(..)
     , ProducerOfSI
     , ConsumerOfSI
@@ -169,15 +170,16 @@ digestData :: DigestAlgorithm -> ContentInfo -> DigestedData
 digestData (DigestAlgorithm alg) ci = dd
   where dd = DigestedData
                  { ddDigestAlgorithm = alg
-                 , ddContentInfo     = ci
-                 , ddDigest          = hash (encapsulate ci)
+                 , ddContentType = getContentType ci
+                 , ddEncapsulatedContent = encapsulate ci
+                 , ddDigest = hash (encapsulate ci)
                  }
 
 -- | Return the inner content info but only if the digest is valid.
 digestVerify :: DigestedData -> Either StoreError ContentInfo
 digestVerify DigestedData{..} =
-    if ddDigest == hash (encapsulate ddContentInfo)
-        then Right ddContentInfo
+    if ddDigest == hash ddEncapsulatedContent
+        then decapsulate ddContentType ddEncapsulatedContent
         else Left DigestMismatch
 
 
@@ -297,7 +299,8 @@ generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
                             , adRecipientInfos = ris
                             , adMACAlgorithm = macAlg
                             , adDigestAlgorithm = digAlg
-                            , adContentInfo = ci
+                            , adContentType = getContentType ci
+                            , adEncapsulatedContent = encapsulate ci
                             , adAuthAttrs = aAttrs'
                             , adMAC = authTag
                             , adUnauthAttrs = uAttrs
@@ -313,8 +316,8 @@ verifyAuthenticatedData :: Monad m
 verifyAuthenticatedData devFn AuthenticatedData{..} =
     riAttempts (map (fmap (>>= unwrap) . devFn) adRecipientInfos)
   where
-    msg = encapsulate adContentInfo
-    ct  = getContentType adContentInfo
+    msg = adEncapsulatedContent
+    ct  = adContentType
 
     noAttr    = null adAuthAttrs
     mdMatch   = case adDigestAlgorithm of
@@ -329,7 +332,7 @@ verifyAuthenticatedData devFn AuthenticatedData{..} =
         | isJust adDigestAlgorithm && noAttr  = Left (InvalidInput "Missing auth attributes")
         | not noAttr && not attrMatch         = Left (InvalidInput "Invalid auth attributes")
         | adMAC /= mac adMACAlgorithm k input = Left BadContentMAC
-        | otherwise                           = Right adContentInfo
+        | otherwise                           = decapsulate adContentType adEncapsulatedContent
 
 
 -- AuthEnvelopedData
@@ -402,7 +405,8 @@ signData sigFns ci =
     build (sis, certLists, crlLists) =
         SignedData
             { sdDigestAlgorithms = nub (map siDigestAlgorithm sis)
-            , sdContentInfo = ci
+            , sdContentType = getContentType ci
+            , sdEncapsulatedContent = encapsulate ci
             , sdCertificates = concat certLists
             , sdCRLs = concat crlLists
             , sdSignerInfos = sis
@@ -416,10 +420,11 @@ verifySignedData :: Monad m
 verifySignedData verFn SignedData{..} =
     f <$> siAttemps valid sdSignerInfos
   where
-    msg      = encapsulate sdContentInfo
-    ct       = getContentType sdContentInfo
+    msg      = sdEncapsulatedContent
+    ct       = sdContentType
     valid si = verFn ct msg si sdCertificates sdCRLs
-    f bool   = if bool then Right sdContentInfo else Left SignatureNotVerified
+    f bool   = if bool then decapsulate sdContentType sdEncapsulatedContent
+                       else Left SignatureNotVerified
 
 
 -- Utilities
