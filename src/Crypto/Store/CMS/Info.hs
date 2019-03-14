@@ -20,15 +20,11 @@ module Crypto.Store.CMS.Info
     , SignedData(..)
     , DigestedData(..)
     , AuthenticatedData(..)
-    , encapsulate
-    , decapsulate
     ) where
 
 import Control.Applicative
 import Control.Monad
 
-import           Data.ASN1.BinaryEncoding
-import           Data.ASN1.Encoding
 import           Data.ASN1.Types
 import           Data.ByteString (ByteString)
 import qualified Data.ByteArray as B
@@ -48,8 +44,6 @@ import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Signed
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
-import Crypto.Store.Error
-import Crypto.Store.Util
 
 -- | Get the type of a content info.
 getContentType :: ContentInfo -> ContentType
@@ -318,30 +312,6 @@ instance ParseASN1Object [ASN1Event] AuthenticatedData where
 
 
 -- Utilities
-
-decode :: ParseASN1 [ASN1Event] a -> ByteString -> Either StoreError a
-decode parser bs = vals >>= mapLeft ParseFailure . runParseASN1_ parser
-  where vals = mapLeft DecodingError (decodeASN1Repr' BER bs)
-
--- | Encode the information for encapsulation in another content info.
-encapsulate :: ContentInfo -> ByteString
-encapsulate (DataCI bs)              = bs
-encapsulate (SignedDataCI ed)        = encodeASN1Object ed
-encapsulate (EnvelopedDataCI ed)     = encodeASN1Object ed
-encapsulate (DigestedDataCI dd)      = encodeASN1Object dd
-encapsulate (EncryptedDataCI ed)     = encodeASN1Object ed
-encapsulate (AuthenticatedDataCI ad) = encodeASN1Object ad
-encapsulate (AuthEnvelopedDataCI ae) = encodeASN1Object ae
-
--- | Decode the information from encapsulated content.
-decapsulate :: ContentType -> ByteString -> Either StoreError ContentInfo
-decapsulate DataType bs              = pure (DataCI bs)
-decapsulate SignedDataType bs        = SignedDataCI <$> decode parse bs
-decapsulate EnvelopedDataType bs     = EnvelopedDataCI <$> decode parse bs
-decapsulate DigestedDataType bs      = DigestedDataCI <$> decode parse bs
-decapsulate EncryptedDataType bs     = EncryptedDataCI <$> decode parse bs
-decapsulate AuthenticatedDataType bs = AuthenticatedDataCI <$> decode parse bs
-decapsulate AuthEnvelopedDataType bs = AuthEnvelopedDataCI <$> decode parse bs
 
 encapsulatedContentInfoASN1S :: ASN1Elem e => ContentType -> EncapsulatedContent -> ASN1Stream e
 encapsulatedContentInfoASN1S ct bs = asn1Container Sequence (oid . cont)

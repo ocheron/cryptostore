@@ -144,11 +144,15 @@ module Crypto.Store.CMS
     , ASN1ObjectExact
     ) where
 
+import Data.ASN1.BinaryEncoding
+import Data.ASN1.Encoding
+import Data.ByteString (ByteString)
 import Data.Maybe (isJust)
 import Data.List (nub, unzip3)
 
 import Crypto.Hash
 
+import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.AuthEnveloped
@@ -161,6 +165,7 @@ import Crypto.Store.CMS.Signed
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 import Crypto.Store.Error
+import Crypto.Store.Util
 
 
 -- DigestedData
@@ -444,3 +449,27 @@ siAttemps :: Monad m => (a -> m Bool) -> [a] -> m Bool
 siAttemps _ []     = pure False
 siAttemps f (x:xs) = f x >>= orTail
   where orTail bool = if bool then return True else siAttemps f xs
+
+decode :: ParseASN1 [ASN1Event] a -> ByteString -> Either StoreError a
+decode parser bs = vals >>= mapLeft ParseFailure . runParseASN1_ parser
+  where vals = mapLeft DecodingError (decodeASN1Repr' BER bs)
+
+-- | Encode the information for encapsulation in another content info.
+encapsulate :: ContentInfo -> ByteString
+encapsulate (DataCI bs)              = bs
+encapsulate (SignedDataCI ed)        = encodeASN1Object ed
+encapsulate (EnvelopedDataCI ed)     = encodeASN1Object ed
+encapsulate (DigestedDataCI dd)      = encodeASN1Object dd
+encapsulate (EncryptedDataCI ed)     = encodeASN1Object ed
+encapsulate (AuthenticatedDataCI ad) = encodeASN1Object ad
+encapsulate (AuthEnvelopedDataCI ae) = encodeASN1Object ae
+
+-- | Decode the information from encapsulated content.
+decapsulate :: ContentType -> ByteString -> Either StoreError ContentInfo
+decapsulate DataType bs              = pure (DataCI bs)
+decapsulate SignedDataType bs        = SignedDataCI <$> decode parse bs
+decapsulate EnvelopedDataType bs     = EnvelopedDataCI <$> decode parse bs
+decapsulate DigestedDataType bs      = DigestedDataCI <$> decode parse bs
+decapsulate EncryptedDataType bs     = EncryptedDataCI <$> decode parse bs
+decapsulate AuthenticatedDataType bs = AuthenticatedDataCI <$> decode parse bs
+decapsulate AuthEnvelopedDataType bs = AuthEnvelopedDataCI <$> decode parse bs
