@@ -126,10 +126,6 @@ parseData = do
         OctetString bs -> return bs
         _              -> throwParseError "Data: parsed unexpected content"
 
-isData :: ContentType -> Bool
-isData DataType = True
-isData _        = False
-
 
 -- SignedData
 
@@ -162,7 +158,7 @@ instance ProduceASN1Object ASN1P SignedData where
         v | hasChoiceOther sdCertificates = 5
           | hasChoiceOther sdCRLs         = 5
           | any isVersion3 sdSignerInfos  = 3
-          | isData sdContentType          = 1
+          | sdContentType == DataType     = 1
           | otherwise                     = 3
 
 
@@ -222,7 +218,7 @@ instance ASN1Elem e => ProduceASN1Object e DigestedData where
     asn1s DigestedData{..} =
         asn1Container Sequence (ver . alg . ci . dig)
       where
-        v = if isData ddContentType then 0 else 2
+        v = if ddContentType == DataType then 0 else 2
         d = DigestAlgorithm ddDigestAlgorithm
 
         ver = gIntVal v
