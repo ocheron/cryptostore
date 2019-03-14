@@ -174,11 +174,11 @@ digestData (DigestAlgorithm alg) ci = dd
                  }
 
 -- | Return the inner content info but only if the digest is valid.
-digestVerify :: DigestedData -> Maybe ContentInfo
+digestVerify :: DigestedData -> Either StoreError ContentInfo
 digestVerify DigestedData{..} =
     if ddDigest == hash (encapsulate ddContentInfo)
-        then Just ddContentInfo
-        else Nothing
+        then Right ddContentInfo
+        else Left DigestMismatch
 
 
 -- EncryptedData
@@ -412,14 +412,14 @@ signData sigFns ci =
 -- Verification of at least one signer info must be successful in order to
 -- return the inner content info.
 verifySignedData :: Monad m
-                 => ConsumerOfSI m -> SignedData -> m (Maybe ContentInfo)
+                 => ConsumerOfSI m -> SignedData -> m (Either StoreError ContentInfo)
 verifySignedData verFn SignedData{..} =
     f <$> siAttemps valid sdSignerInfos
   where
     msg      = encapsulate sdContentInfo
     ct       = getContentType sdContentInfo
     valid si = verFn ct msg si sdCertificates sdCRLs
-    f bool   = if bool then Just sdContentInfo else Nothing
+    f bool   = if bool then Right sdContentInfo else Left SignatureNotVerified
 
 
 -- Utilities

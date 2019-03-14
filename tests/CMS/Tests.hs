@@ -61,7 +61,7 @@ signedDataTests =
             assertBool "unexpected type" (hasType SignedDataType ci)
             let SignedDataCI sd = ci
             result <- verifySignedData withSignerKey sd
-            assertJust result (verifyInnerMessage message)
+            assertRight result (verifyInnerMessage message)
   where path  = testFile "cms-signed-data.pem"
         names = [ "RSA"
                 , "DSA"
@@ -162,7 +162,7 @@ digestedDataTests =
             assertBool "unexpected type" (hasType DigestedDataType ci)
             let DigestedDataCI dd = ci
                 result = digestVerify dd
-            assertJust result (verifyInnerMessage message)
+            assertRight result (verifyInnerMessage message)
 
             step ("digesting " ++ name)
             let dd' = digestData alg (DataCI message)
@@ -250,7 +250,7 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
             r <- signData sigFns ci
             let Right sd = r
             r' <- verifySignedData verFn sd
-            return (Just ci === r')
+            return (Right ci === r')
     , testProperty "enveloping" $ \alg ci ->
         collect alg $ do
             (oinfo, key, envFns, devFn, attrs) <- getCommon alg
@@ -261,7 +261,7 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
     , testProperty "digesting" $ \alg ci ->
         collect alg $
             let dd = digestData alg ci
-             in Just ci === digestVerify dd
+             in Right ci === digestVerify dd
     , testProperty "encrypting" $ \alg ci ->
         collect alg $ do
             key <- generateKey alg

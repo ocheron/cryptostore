@@ -32,6 +32,10 @@ data StoreError =
       -- ^ MAC verification failed, incorrect key or password?
     | BadChecksum
       -- ^ Checksum verification failed, incorrect key or password?
+    | DigestMismatch
+      -- ^ Digest verification failed
+    | SignatureNotVerified
+      -- ^ Signature verification failed
     | InvalidInput String
       -- ^ Some condition is not met about input to algorithm
     | InvalidPassword String
