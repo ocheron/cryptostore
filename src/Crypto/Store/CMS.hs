@@ -78,7 +78,7 @@ module Crypto.Store.CMS
     , forKeyRecipient
     , withRecipientKey
      -- ** Password recipients
-   , PasswordRecipientInfo(..)
+    , PasswordRecipientInfo(..)
     , forPasswordRecipient
     , withRecipientPassword
     -- * Digested data
