@@ -10,26 +10,30 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.Store.CMS.Signed
-    ( SignerInfo(..)
+    ( EncapsulatedContent
+    , SignedData(..)
+    , SignerInfo(..)
     , SignerIdentifier(..)
     , IssuerAndSerialNumber(..)
-    , isVersion3
     , ProducerOfSI
     , ConsumerOfSI
     , certSigner
     , withPublicKey
     , withSignerKey
     , withSignerCertificate
+    , encapsulatedContentInfoASN1S
+    , parseEncapsulatedContentInfo
     ) where
 
 import Control.Applicative
 import Control.Monad
 
-import Data.ASN1.Types
-import Data.ByteString (ByteString)
-import Data.List
-import Data.Maybe
-import Data.X509
+import           Data.ASN1.Types
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as B
+import           Data.List
+import           Data.Maybe
+import           Data.X509
 
 import Crypto.Random (MonadRandom)
 
@@ -43,6 +47,9 @@ import Crypto.Store.CMS.OriginatorInfo
 import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 import Crypto.Store.Error
+
+-- | Encapsulated content.
+type EncapsulatedContent = ByteString
 
 -- | Information related to a signer of a 'Crypto.Store.CMS.SignedData'.  An
 -- element contains the signature material that was produced.
@@ -240,3 +247,85 @@ withSignerCertificate validate ct msg SignerInfo{..} certs crls =
 
     asX509 (CertificateCertificate c) = Just c
     asX509 _                          = Nothing
+
+-- | Signed content information.
+data SignedData = SignedData
+    { sdDigestAlgorithms :: [DigestAlgorithm]      -- ^ Digest algorithms
+    , sdContentType :: ContentType                 -- ^ Inner content type
+    , sdEncapsulatedContent :: EncapsulatedContent -- ^ Encapsulated content
+    , sdCertificates :: [CertificateChoice]        -- ^ The collection of certificates
+    , sdCRLs  :: [RevocationInfoChoice]            -- ^ The collection of CRLs
+    , sdSignerInfos :: [SignerInfo]                -- ^ Per-signer information
+    }
+    deriving (Show,Eq)
+
+instance ProduceASN1Object ASN1P SignedData where
+    asn1s SignedData{..} =
+        asn1Container Sequence (ver . dig . ci . certs . crls . sis)
+      where
+        ver = gIntVal v
+        dig = asn1Container Set (digestTypesASN1S sdDigestAlgorithms)
+        ci  = encapsulatedContentInfoASN1S sdContentType sdEncapsulatedContent
+        certs = gen 0 sdCertificates
+        crls  = gen 1 sdCRLs
+        sis = asn1Container Set (asn1s sdSignerInfos)
+
+        gen tag list
+            | null list = id
+            | otherwise = asn1Container (Container Context tag) (asn1s list)
+
+        v | hasChoiceOther sdCertificates = 5
+          | hasChoiceOther sdCRLs         = 5
+          | any isVersion3 sdSignerInfos  = 3
+          | sdContentType == DataType     = 1
+          | otherwise                     = 3
+
+
+instance ParseASN1Object [ASN1Event] SignedData where
+    parse =
+        onNextContainer Sequence $ do
+            IntVal v <- getNext
+            when (v > 5) $
+                throwParseError ("SignedData: parsed invalid version: " ++ show v)
+            dig <- onNextContainer Set parseDigestTypes
+            (ct, bs) <- parseEncapsulatedContentInfo
+            certs <- parseOptList 0
+            crls  <- parseOptList 1
+            sis <- onNextContainer Set parse
+            return SignedData { sdDigestAlgorithms = dig
+                              , sdContentType = ct
+                              , sdEncapsulatedContent = bs
+                              , sdCertificates = certs
+                              , sdCRLs = crls
+                              , sdSignerInfos = sis
+                              }
+      where
+        parseOptList tag =
+            fromMaybe [] <$> onNextContainerMaybe (Container Context tag) parse
+
+encapsulatedContentInfoASN1S :: ASN1Elem e => ContentType -> EncapsulatedContent -> ASN1Stream e
+encapsulatedContentInfoASN1S ct bs = asn1Container Sequence (oid . cont)
+  where oid = gOID (getObjectID ct)
+        cont = asn1Container (Container Context 0) inner
+        inner = gOctetString bs
+
+parseEncapsulatedContentInfo :: Monoid e => ParseASN1 e (ContentType, EncapsulatedContent)
+parseEncapsulatedContentInfo =
+    onNextContainer Sequence $ do
+        OID oid <- getNext
+        withObjectID "content type" oid $ \ct ->
+            onNextContainer (Container Context 0) (parseInner ct)
+  where
+    parseInner ct = do
+        bs <- parseContentSingle <|> parseContentChunks
+        return (ct, bs)
+
+    parseContentSingle = do { OctetString bs <- getNext; return bs }
+    parseContentChunks = onNextContainer (Container Universal 4) $
+        B.concat <$> getMany parseContentSingle
+
+digestTypesASN1S :: ASN1Elem e => [DigestAlgorithm] -> ASN1Stream e
+digestTypesASN1S list cont = foldr (algorithmASN1S Sequence) cont list
+
+parseDigestTypes :: Monoid e => ParseASN1 e [DigestAlgorithm]
+parseDigestTypes = getMany (parseAlgorithm Sequence)

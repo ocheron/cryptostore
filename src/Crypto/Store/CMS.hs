@@ -155,7 +155,9 @@ import Crypto.Hash
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Attribute
+import Crypto.Store.CMS.Authenticated
 import Crypto.Store.CMS.AuthEnveloped
+import Crypto.Store.CMS.Digested
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.OriginatorInfo
