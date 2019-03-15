@@ -173,7 +173,7 @@ import Crypto.Store.Util
 -- DigestedData
 
 -- | Add a digested-data layer on the specified content info.
-digestData :: DigestAlgorithm -> ContentInfo -> DigestedData
+digestData :: DigestAlgorithm -> ContentInfo -> DigestedData EncapsulatedContent
 digestData (DigestAlgorithm alg) ci = dd
   where dd = DigestedData
                  { ddDigestAlgorithm = alg
@@ -183,7 +183,7 @@ digestData (DigestAlgorithm alg) ci = dd
                  }
 
 -- | Return the inner content info but only if the digest is valid.
-digestVerify :: DigestedData -> Either StoreError ContentInfo
+digestVerify :: DigestedData EncapsulatedContent -> Either StoreError ContentInfo
 digestVerify DigestedData{..} =
     if ddDigest == hash ddEncapsulatedContent
         then decapsulate ddContentType ddEncapsulatedContent
@@ -284,7 +284,7 @@ generateAuthenticatedData :: Applicative f
                           -> [Attribute]
                           -> [Attribute]
                           -> ContentInfo
-                          -> f (Either StoreError AuthenticatedData)
+                          -> f (Either StoreError (AuthenticatedData EncapsulatedContent))
 generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
     f <$> (sequence <$> traverse ($ key) envFns)
   where
@@ -318,7 +318,7 @@ generateAuthenticatedData oinfo key macAlg digAlg envFns aAttrs uAttrs ci =
 -- could be verified.
 verifyAuthenticatedData :: Monad m
                         => ConsumerOfRI m
-                        -> AuthenticatedData
+                        -> AuthenticatedData EncapsulatedContent
                         -> m (Either StoreError ContentInfo)
 verifyAuthenticatedData devFn AuthenticatedData{..} =
     riAttempts (map (fmap (>>= unwrap) . devFn) adRecipientInfos)
@@ -401,7 +401,7 @@ openAuthEnvelopedData devFn AuthEnvelopedData{..} = do
 -- processed by one or several 'ProducerOfSI' functions to create signer info
 -- elements.
 signData :: Applicative f
-         => [ProducerOfSI f] -> ContentInfo -> f (Either StoreError SignedData)
+         => [ProducerOfSI f] -> ContentInfo -> f (Either StoreError (SignedData EncapsulatedContent))
 signData sigFns ci =
     f <$> (sequence <$> traverse (\fn -> fn ct msg) sigFns)
   where
@@ -423,7 +423,7 @@ signData sigFns ci =
 -- Verification of at least one signer info must be successful in order to
 -- return the inner content info.
 verifySignedData :: Monad m
-                 => ConsumerOfSI m -> SignedData -> m (Either StoreError ContentInfo)
+                 => ConsumerOfSI m -> SignedData EncapsulatedContent -> m (Either StoreError ContentInfo)
 verifySignedData verFn SignedData{..} =
     f <$> siAttemps valid sdSignerInfos
   where

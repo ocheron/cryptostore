@@ -47,7 +47,7 @@ instance Arbitrary ContentInfo where
         arbitraryMessage :: Gen ByteString
         arbitraryMessage = resize 2048 (B.pack <$> arbitrary)
 
-        arbitrarySignedData :: Gen SignedData
+        arbitrarySignedData :: Gen (SignedData EncapsulatedContent)
         arbitrarySignedData = do
             alg   <- arbitrary
             (sigFns, _) <- arbitrarySigVer alg
@@ -62,7 +62,7 @@ instance Arbitrary ContentInfo where
             inner <- scale (subtract $ length envFns) arbitrary
             envelopData oinfo key alg envFns attrs inner >>= failIfError
 
-        arbitraryDigestedData :: Gen DigestedData
+        arbitraryDigestedData :: Gen (DigestedData EncapsulatedContent)
         arbitraryDigestedData = do
             inner <- scale pred arbitrary
             dt <- arbitrary
@@ -74,7 +74,7 @@ instance Arbitrary ContentInfo where
             inner <- scale pred arbitrary
             failIfError $ encryptData key alg attrs inner
 
-        arbitraryAuthenticatedData :: Gen AuthenticatedData
+        arbitraryAuthenticatedData :: Gen (AuthenticatedData EncapsulatedContent)
         arbitraryAuthenticatedData = do
             (oinfo, alg, key, envFns, aAttrs, uAttrs) <- getCommonAuth
             dig <- arbitrary

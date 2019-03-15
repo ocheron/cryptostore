@@ -32,7 +32,7 @@ import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
 -- | Authenticated content information.
-data AuthenticatedData = AuthenticatedData
+data AuthenticatedData content = AuthenticatedData
     { adOriginatorInfo :: OriginatorInfo
       -- ^ Optional information about the originator
     , adRecipientInfos :: [RecipientInfo]
@@ -43,7 +43,7 @@ data AuthenticatedData = AuthenticatedData
       -- ^ Optional digest algorithm
     , adContentType :: ContentType
       -- ^ Inner content type
-    , adEncapsulatedContent :: EncapsulatedContent
+    , adEncapsulatedContent :: content
       -- ^ Encapsulated content
     , adAuthAttrs :: [Attribute]
       -- ^ Optional authenticated attributes
@@ -54,7 +54,7 @@ data AuthenticatedData = AuthenticatedData
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object ASN1P AuthenticatedData where
+instance ProduceASN1Object ASN1P (AuthenticatedData EncapsulatedContent) where
     asn1s AuthenticatedData{..} =
         asn1Container Sequence (ver . oi . ris . alg . dig . ci . aa . tag . ua)
       where
@@ -73,7 +73,7 @@ instance ProduceASN1Object ASN1P AuthenticatedData where
         v | hasChoiceOther adOriginatorInfo = 3
           | otherwise                       = 0
 
-instance ParseASN1Object [ASN1Event] AuthenticatedData where
+instance ParseASN1Object [ASN1Event] (AuthenticatedData EncapsulatedContent) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

@@ -249,17 +249,17 @@ withSignerCertificate validate ct msg SignerInfo{..} certs crls =
     asX509 _                          = Nothing
 
 -- | Signed content information.
-data SignedData = SignedData
+data SignedData content = SignedData
     { sdDigestAlgorithms :: [DigestAlgorithm]      -- ^ Digest algorithms
     , sdContentType :: ContentType                 -- ^ Inner content type
-    , sdEncapsulatedContent :: EncapsulatedContent -- ^ Encapsulated content
+    , sdEncapsulatedContent :: content             -- ^ Encapsulated content
     , sdCertificates :: [CertificateChoice]        -- ^ The collection of certificates
     , sdCRLs  :: [RevocationInfoChoice]            -- ^ The collection of CRLs
     , sdSignerInfos :: [SignerInfo]                -- ^ Per-signer information
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object ASN1P SignedData where
+instance ProduceASN1Object ASN1P (SignedData EncapsulatedContent) where
     asn1s SignedData{..} =
         asn1Container Sequence (ver . dig . ci . certs . crls . sis)
       where
@@ -281,7 +281,7 @@ instance ProduceASN1Object ASN1P SignedData where
           | otherwise                     = 3
 
 
-instance ParseASN1Object [ASN1Event] SignedData where
+instance ParseASN1Object [ASN1Event] (SignedData EncapsulatedContent) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

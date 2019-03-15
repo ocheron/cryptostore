@@ -29,14 +29,14 @@ import Crypto.Store.CMS.Type
 import Crypto.Store.CMS.Util
 
 -- | Digested content information.
-data DigestedData = forall hashAlg. HashAlgorithm hashAlg => DigestedData
+data DigestedData content = forall hashAlg. HashAlgorithm hashAlg => DigestedData
     { ddDigestAlgorithm :: DigestProxy hashAlg     -- ^ Digest algorithm
     , ddContentType :: ContentType                 -- ^ Inner content type
-    , ddEncapsulatedContent :: EncapsulatedContent -- ^ Encapsulated content
+    , ddEncapsulatedContent :: content             -- ^ Encapsulated content
     , ddDigest :: Digest hashAlg                   -- ^ Digest value
     }
 
-instance Show DigestedData where
+instance Show content => Show (DigestedData content) where
     showsPrec d DigestedData{..} = showParen (d > 10) $
         showString "DigestedData "
             . showString "{ ddDigestAlgorithm = " . shows ddDigestAlgorithm
@@ -45,11 +45,11 @@ instance Show DigestedData where
             . showString ", ddDigest = " . shows ddDigest
             . showString " }"
 
-instance Eq DigestedData where
+instance Eq content => Eq (DigestedData content) where
     DigestedData a1 t1 e1 d1 == DigestedData a2 t2 e2 d2 =
         DigestAlgorithm a1 == DigestAlgorithm a2 && d1 `B.eq` d2 && t1 == t2 && e1 == e2
 
-instance ASN1Elem e => ProduceASN1Object e DigestedData where
+instance ASN1Elem e => ProduceASN1Object e (DigestedData EncapsulatedContent) where
     asn1s DigestedData{..} =
         asn1Container Sequence (ver . alg . ci . dig)
       where
@@ -61,7 +61,7 @@ instance ASN1Elem e => ProduceASN1Object e DigestedData where
         ci  = encapsulatedContentInfoASN1S ddContentType ddEncapsulatedContent
         dig = gOctetString (B.convert ddDigest)
 
-instance Monoid e => ParseASN1Object e DigestedData where
+instance Monoid e => ParseASN1Object e (DigestedData EncapsulatedContent) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

@@ -46,15 +46,15 @@ getContentType (AuthEnvelopedDataCI _) = AuthEnvelopedDataType
 -- | CMS content information.
 data ContentInfo = DataCI ByteString
                    -- ^ Arbitrary octet string
-                 | SignedDataCI SignedData
+                 | SignedDataCI (SignedData EncapsulatedContent)
                    -- ^ Signed content info
                  | EnvelopedDataCI (EnvelopedData EncryptedContent)
                    -- ^ Enveloped content info
-                 | DigestedDataCI DigestedData
+                 | DigestedDataCI (DigestedData EncapsulatedContent)
                    -- ^ Content info with associated digest
                  | EncryptedDataCI (EncryptedData EncryptedContent)
                    -- ^ Encrypted content info
-                 | AuthenticatedDataCI AuthenticatedData
+                 | AuthenticatedDataCI (AuthenticatedData EncapsulatedContent)
                    -- ^ Authenticatedcontent info
                  | AuthEnvelopedDataCI (AuthEnvelopedData EncryptedContent)
                    -- ^ Authenticated-enveloped content info
