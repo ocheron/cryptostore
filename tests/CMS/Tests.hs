@@ -49,8 +49,17 @@ dataTests =
         count = 1
 
 signedDataTests :: TestTree
-signedDataTests =
-    testCaseSteps "SignedData" $ \step -> do
+signedDataTests = signedDataAnyTests "SignedData" path getAttached
+  where path  = testFile "cms-signed-data.pem"
+
+signedDataDetachedTests :: TestTree
+signedDataDetachedTests =
+    signedDataAnyTests "SignedDataDetached" path (getDetached message)
+  where path  = testFile "cms-signed-data-detached.pem"
+
+signedDataAnyTests :: TestName -> FilePath -> (SignedData (Encap EncapsulatedContent) -> IO (SignedData EncapsulatedContent)) -> TestTree
+signedDataAnyTests caseName path getInner =
+    testCaseSteps caseName $ \step -> do
         cms <- readCMSFile path
         assertEqual "unexpected parse count" (length names) (length cms)
 
@@ -60,11 +69,10 @@ signedDataTests =
             step ("verifying " ++ name)
             assertBool "unexpected type" (hasType SignedDataType ci)
             let SignedDataCI sdEncap = ci
-            sd <- getAttached sdEncap
+            sd <- getInner sdEncap
             result <- verifySignedData withSignerKey sd
             assertRight result (verifyInnerMessage message)
-  where path  = testFile "cms-signed-data.pem"
-        names = [ "RSA"
+  where names = [ "RSA"
                 , "DSA"
                 , "EC (named curve)"
                 , "EC (explicit prime curve)"
@@ -313,6 +321,7 @@ cmsTests =
     testGroup "CMS"
         [ dataTests
         , signedDataTests
+        , signedDataDetachedTests
         , envelopedDataTests
         , digestedDataTests
         , encryptedDataTests

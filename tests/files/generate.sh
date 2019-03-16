@@ -291,6 +291,26 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
 ) > "$DEST_DIR"/cms-signed-data.pem
 
 
+# CMS signed data (detached)
+
+(
+  for TYPE in rsa dsa ecdsa-p256 ecdsa-epc; do
+    echo "$MESSAGE" | "$OPENSSL" cms -sign -outform PEM \
+      -md sha256 \
+      -inkey "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
+      -signer "$DEST_DIR"/"$TYPE"-self-signed-cert.pem
+  done
+
+  for MODE in pss; do
+    echo "$MESSAGE" | "$OPENSSL" cms -sign -outform PEM \
+      -md sha256 \
+      -inkey "$DEST_DIR"/rsa-unencrypted-pkcs8.pem \
+      -signer "$DEST_DIR"/rsa-self-signed-cert.pem \
+      -keyopt rsa_padding_mode:"$MODE"
+  done
+) > "$DEST_DIR"/cms-signed-data-detached.pem
+
+
 # CMS enveloped data (key transport)
 
 (
