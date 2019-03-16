@@ -95,9 +95,7 @@ envelopedDataTests =
                 let (name, key) = keys !! index
 
                 step ("testing " ++ name)
-                assertBool "unexpected type" (hasType EnvelopedDataType ci)
-                let EnvelopedDataCI evEncap = ci
-                ev <- getAttached evEncap
+                ev <- getEnveloppedAttached ci
                 result <- openEnvelopedData (f key) ev
                 assertRight result (verifyInnerMessage message)
         testKT caseName path keys = testCaseSteps caseName $ \step -> do
@@ -110,9 +108,7 @@ envelopedDataTests =
             let pairs = [ (c, m) | c <- map fst keys1, m <- modes ]
             forM_ (zip pairs cms) $ \((c, m), ci) -> do
                 step ("testing " ++ c ++ " with " ++ m)
-                assertBool "unexpected type" (hasType EnvelopedDataType ci)
-                let EnvelopedDataCI evEncap = ci
-                ev <- getAttached evEncap
+                ev <- getEnveloppedAttached ci
                 result <- openEnvelopedData (withRecipientKeyTrans priv) ev
                 assertRight result (verifyInnerMessage message)
         testKA caseName path keys = testCaseSteps caseName $ \step -> do
@@ -127,11 +123,13 @@ envelopedDataTests =
             let pairs = [ (c, h) | c <- map fst keys, h <- mds ]
             forM_ (zip pairs cms) $ \((c, h), ci) -> do
                 step ("testing " ++ c ++ " with " ++ h)
-                assertBool "unexpected type" (hasType EnvelopedDataType ci)
-                let EnvelopedDataCI evEncap = ci
-                ev <- getAttached evEncap
+                ev <- getEnveloppedAttached ci
                 result <- openEnvelopedData (withRecipientKeyAgree priv cert) ev
                 assertRight result (verifyInnerMessage message)
+        getEnveloppedAttached ci = do
+            assertBool "unexpected type" (hasType EnvelopedDataType ci)
+            let EnvelopedDataCI evEncap = ci
+            getAttached evEncap
         path1 = testFile "cms-enveloped-kekri-data.pem"
         path2 = testFile "cms-enveloped-pwri-data.pem"
         path3 = testFile "cms-enveloped-ktri-data.pem"
