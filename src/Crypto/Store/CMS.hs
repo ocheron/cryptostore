@@ -28,6 +28,16 @@ module Crypto.Store.CMS
     , getContentType
     -- * Reading and writing PEM files
     , module Crypto.Store.CMS.PEM
+    -- * Content encapsulation
+    , Encap(..)
+    , fromEncap
+    , Encapsulates
+    , isAttached
+    , fromAttached
+    , toAttachedCI
+    , isDetached
+    , fromDetached
+    , toDetachedCI
     -- * Signed data
     , SignatureValue
     , SignatureAlg(..)

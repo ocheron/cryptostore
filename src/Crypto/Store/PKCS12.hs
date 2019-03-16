@@ -284,7 +284,7 @@ instance ASN1Elem e => ProduceASN1Object e ASElement where
         cont = asn1Container (Container Context 0) inner
         inner = asn1Container Sequence (gIntVal 0 . eci)
         eci = encryptedContentInfoASN1S
-                  (DataType, encryptionAlgorithm, encryptedData)
+                  (DataType, encryptionAlgorithm, Attached encryptedData)
 
 instance Monoid e => ParseASN1Object e ASElement where
     parse = onNextContainer Sequence $ do
@@ -300,7 +300,7 @@ instance Monoid e => ParseASN1Object e ASElement where
         parseUnencrypted = parseOctetStringObject "PKCS12"
         parseEncrypted = onNextContainer Sequence $ do
             IntVal 0 <- getNext
-            (DataType, eScheme, ed) <- parseEncryptedContentInfo
+            (DataType, eScheme, Attached ed) <- parseEncryptedContentInfo
             return PKCS5 { encryptionAlgorithm = eScheme, encryptedData = ed }
 
 

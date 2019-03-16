@@ -3,14 +3,20 @@
 module Util
     ( assertJust
     , assertRight
+    , getAttached
+    , getDetached
     , testFile
     , TestKey(..)
     , TestIV(..)
     ) where
 
+import Control.Monad (when)
+
 import Data.ByteString (ByteString, pack)
+import Data.Maybe (isNothing)
 
 import Crypto.Cipher.Types
+import Crypto.Store.CMS
 
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
@@ -23,6 +29,20 @@ assertRight :: Show a => Either a b -> (b -> Assertion) -> Assertion
 assertRight (Right b)  f = f b
 assertRight (Left val) _ =
     assertFailure ("expecting Right but got: Left " ++ show val)
+
+getAttached :: Encapsulates struct => struct (Encap a) -> IO (struct a)
+getAttached e = do
+    let m = fromAttached e
+    when (isNothing m) $
+        assertFailure "expecting attached but got detached content"
+    let Just r = m in return r
+
+getDetached :: Encapsulates struct => a -> struct (Encap a) -> IO (struct a)
+getDetached c e = do
+    let m = fromDetached c e
+    when (isNothing m) $
+        assertFailure "expecting detached but got attached content"
+    let Just r = m in return r
 
 testFile :: String -> FilePath
 testFile name = "tests/files/" ++ name

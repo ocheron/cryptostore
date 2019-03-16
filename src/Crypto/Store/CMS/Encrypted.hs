@@ -50,7 +50,7 @@ data EncryptedData content = EncryptedData
     }
     deriving (Show,Eq)
 
-instance ASN1Elem e => ProduceASN1Object e (EncryptedData EncryptedContent) where
+instance ASN1Elem e => ProduceASN1Object e (EncryptedData (Encap EncryptedContent)) where
     asn1s EncryptedData{..} =
         asn1Container Sequence (ver . eci . ua)
       where
@@ -59,7 +59,7 @@ instance ASN1Elem e => ProduceASN1Object e (EncryptedData EncryptedContent) wher
                   (edContentType, edContentEncryptionParams, edEncryptedContent)
         ua  = attributesASN1S (Container Context 1) edUnprotectedAttrs
 
-instance Monoid e => ParseASN1Object e (EncryptedData EncryptedContent) where
+instance Monoid e => ParseASN1Object e (EncryptedData (Encap EncryptedContent)) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext
@@ -75,21 +75,27 @@ instance Monoid e => ParseASN1Object e (EncryptedData EncryptedContent) where
 
 -- | Generate ASN.1 for EncryptedContentInfo.
 encryptedContentInfoASN1S :: (ASN1Elem e, ProduceASN1Object e alg)
-                          => (ContentType, alg, B.ByteString) -> ASN1Stream e
+                          => (ContentType, alg, Encap EncryptedContent) -> ASN1Stream e
 encryptedContentInfoASN1S (ct, alg, ec) =
     asn1Container Sequence (ct' . alg' . ec')
   where
     ct'  = gOID (getObjectID ct)
     alg' = asn1s alg
-    ec'  = asn1Container (Container Context 0) (gOctetString ec)
+    ec'  = encapsulatedASN1S (Container Context 0) ec
+
+encapsulatedASN1S :: ASN1Elem e
+                  => ASN1ConstructionType -> Encap EncryptedContent -> ASN1Stream e
+encapsulatedASN1S _   Detached     = id
+encapsulatedASN1S ty (Attached bs) = asn1Container ty (gOctetString bs)
 
 -- | Parse EncryptedContentInfo from ASN.1.
 parseEncryptedContentInfo :: ParseASN1Object e alg
-                          => ParseASN1 e (ContentType, alg, B.ByteString)
+                          => ParseASN1 e (ContentType, alg, Encap EncryptedContent)
 parseEncryptedContentInfo = onNextContainer Sequence $ do
     OID oid <- getNext
     alg <- parse
-    ec <- parseEncryptedContent
+    b <- hasNext
+    ec <- if b then Attached <$> parseEncryptedContent else return Detached
     withObjectID "content type" oid $ \ct -> return (ct, alg, ec)
   where
     parseEncryptedContent = parseWrapped <|> parsePrimitive

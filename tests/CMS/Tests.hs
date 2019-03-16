@@ -59,7 +59,8 @@ signedDataTests =
 
             step ("verifying " ++ name)
             assertBool "unexpected type" (hasType SignedDataType ci)
-            let SignedDataCI sd = ci
+            let SignedDataCI sdEncap = ci
+            sd <- getAttached sdEncap
             result <- verifySignedData withSignerKey sd
             assertRight result (verifyInnerMessage message)
   where path  = testFile "cms-signed-data.pem"
@@ -87,7 +88,8 @@ envelopedDataTests =
 
                 step ("testing " ++ name)
                 assertBool "unexpected type" (hasType EnvelopedDataType ci)
-                let EnvelopedDataCI ev = ci
+                let EnvelopedDataCI evEncap = ci
+                ev <- getAttached evEncap
                 result <- openEnvelopedData (f key) ev
                 assertRight result (verifyInnerMessage message)
         testKT caseName path keys = testCaseSteps caseName $ \step -> do
@@ -101,7 +103,8 @@ envelopedDataTests =
             forM_ (zip pairs cms) $ \((c, m), ci) -> do
                 step ("testing " ++ c ++ " with " ++ m)
                 assertBool "unexpected type" (hasType EnvelopedDataType ci)
-                let EnvelopedDataCI ev = ci
+                let EnvelopedDataCI evEncap = ci
+                ev <- getAttached evEncap
                 result <- openEnvelopedData (withRecipientKeyTrans priv) ev
                 assertRight result (verifyInnerMessage message)
         testKA caseName path keys = testCaseSteps caseName $ \step -> do
@@ -117,7 +120,8 @@ envelopedDataTests =
             forM_ (zip pairs cms) $ \((c, h), ci) -> do
                 step ("testing " ++ c ++ " with " ++ h)
                 assertBool "unexpected type" (hasType EnvelopedDataType ci)
-                let EnvelopedDataCI ev = ci
+                let EnvelopedDataCI evEncap = ci
+                ev <- getAttached evEncap
                 result <- openEnvelopedData (withRecipientKeyAgree priv cert) ev
                 assertRight result (verifyInnerMessage message)
         path1 = testFile "cms-enveloped-kekri-data.pem"
@@ -160,13 +164,14 @@ digestedDataTests =
 
             step ("verifying " ++ name)
             assertBool "unexpected type" (hasType DigestedDataType ci)
-            let DigestedDataCI dd = ci
-                result = digestVerify dd
+            let DigestedDataCI ddEncap = ci
+            dd <- getAttached ddEncap
+            let result = digestVerify dd
             assertRight result (verifyInnerMessage message)
 
             step ("digesting " ++ name)
             let dd' = digestData alg (DataCI message)
-                ci' = DigestedDataCI dd'
+                ci' = toAttachedCI dd'
             ci @?= ci'
   where path  = testFile "cms-digested-data.pem"
         algs  = [ ("MD5",    DigestAlgorithm MD5)
@@ -188,14 +193,15 @@ encryptedDataTests =
 
             step ("decrypting " ++ name)
             assertBool "unexpected type" (hasType EncryptedDataType ci)
-            let EncryptedDataCI ed = ci
-                result = decryptData key ed
+            let EncryptedDataCI edEncap = ci
+            ed <- getAttached edEncap
+            let result = decryptData key ed
             assertRight result (verifyInnerMessage message)
 
             step ("encrypting " ++ name)
             let params = edContentEncryptionParams ed
                 ed'    = encryptData key params [] (DataCI message)
-                ci'    = EncryptedDataCI <$> ed'
+                ci'    = toAttachedCI <$> ed'
             Right ci @?= ci'
   where path  = testFile "cms-encrypted-data.pem"
         keys  = [ ("DES_CBC",              testKey  8)
@@ -225,13 +231,15 @@ authEnvelopedDataTests =
         forM_ (zip [0..] cms) $ \(index, ci) -> do
             step ("testing vector " ++ show (index :: Int))
             assertBool "unexpected type" (hasType AuthEnvelopedDataType ci)
-            let AuthEnvelopedDataCI ae = ci
+            let AuthEnvelopedDataCI aeEncap = ci
+            ae <- getAttached aeEncap
             result <- openAuthEnvelopedData (withRecipientPassword pwd) ae
             assertRight result (verifyInnerMessage msg)
 
             step ("testing encoded vector " ++ show index)
             let [Just ci'] = pemToContentInfo [] (contentInfoToPEM ci)
-                AuthEnvelopedDataCI ae' = ci'
+                AuthEnvelopedDataCI aeEncap' = ci'
+            ae' <- getAttached aeEncap'
             result' <- openAuthEnvelopedData (withRecipientPassword pwd) ae'
             assertRight result' (verifyInnerMessage msg)
   where path  = testFile "cms-auth-enveloped-data-rfc6476.pem"

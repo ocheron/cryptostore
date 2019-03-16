@@ -54,7 +54,7 @@ data AuthEnvelopedData content = AuthEnvelopedData
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object ASN1P (AuthEnvelopedData EncryptedContent) where
+instance ProduceASN1Object ASN1P (AuthEnvelopedData (Encap EncryptedContent)) where
     asn1s AuthEnvelopedData{..} =
         asn1Container Sequence (ver . oi . ris . eci . aa . tag . ua)
       where
@@ -69,7 +69,7 @@ instance ProduceASN1Object ASN1P (AuthEnvelopedData EncryptedContent) where
         oi | aeOriginatorInfo == mempty = id
            | otherwise = originatorInfoASN1S (Container Context 0) aeOriginatorInfo
 
-instance ParseASN1Object [ASN1Event] (AuthEnvelopedData EncryptedContent) where
+instance ParseASN1Object [ASN1Event] (AuthEnvelopedData (Encap EncryptedContent)) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

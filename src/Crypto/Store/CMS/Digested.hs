@@ -49,7 +49,7 @@ instance Eq content => Eq (DigestedData content) where
     DigestedData a1 t1 e1 d1 == DigestedData a2 t2 e2 d2 =
         DigestAlgorithm a1 == DigestAlgorithm a2 && d1 `B.eq` d2 && t1 == t2 && e1 == e2
 
-instance ASN1Elem e => ProduceASN1Object e (DigestedData EncapsulatedContent) where
+instance ASN1Elem e => ProduceASN1Object e (DigestedData (Encap EncapsulatedContent)) where
     asn1s DigestedData{..} =
         asn1Container Sequence (ver . alg . ci . dig)
       where
@@ -61,7 +61,7 @@ instance ASN1Elem e => ProduceASN1Object e (DigestedData EncapsulatedContent) wh
         ci  = encapsulatedContentInfoASN1S ddContentType ddEncapsulatedContent
         dig = gOctetString (B.convert ddDigest)
 
-instance Monoid e => ParseASN1Object e (DigestedData EncapsulatedContent) where
+instance Monoid e => ParseASN1Object e (DigestedData (Encap EncapsulatedContent)) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext

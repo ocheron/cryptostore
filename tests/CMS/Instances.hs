@@ -36,16 +36,19 @@ instance Arbitrary ContentInfo where
         if n == 0
             then DataCI <$> arbitraryMessage
             else oneof [ DataCI <$> arbitraryMessage
-                       , SignedDataCI <$> arbitrarySignedData
-                       , EnvelopedDataCI <$> arbitraryEnvelopedData
-                       , DigestedDataCI <$> arbitraryDigestedData
-                       , EncryptedDataCI <$> arbitraryEncryptedData
-                       , AuthenticatedDataCI <$> arbitraryAuthenticatedData
-                       , AuthEnvelopedDataCI <$> arbitraryAuthEnvelopedData
+                       , arbitraryMode <*> arbitrarySignedData
+                       , arbitraryMode <*> arbitraryEnvelopedData
+                       , arbitraryMode <*> arbitraryDigestedData
+                       , arbitraryMode <*> arbitraryEncryptedData
+                       , arbitraryMode <*> arbitraryAuthenticatedData
+                       , arbitraryMode <*> arbitraryAuthEnvelopedData
                        ]
       where
         arbitraryMessage :: Gen ByteString
         arbitraryMessage = resize 2048 (B.pack <$> arbitrary)
+
+        arbitraryMode :: Encapsulates struct => Gen (struct ByteString -> ContentInfo)
+        arbitraryMode = elements [ toAttachedCI, snd . toDetachedCI ]
 
         arbitrarySignedData :: Gen (SignedData EncapsulatedContent)
         arbitrarySignedData = do

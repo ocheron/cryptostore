@@ -259,7 +259,7 @@ data SignedData content = SignedData
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object ASN1P (SignedData EncapsulatedContent) where
+instance ProduceASN1Object ASN1P (SignedData (Encap EncapsulatedContent)) where
     asn1s SignedData{..} =
         asn1Container Sequence (ver . dig . ci . certs . crls . sis)
       where
@@ -281,7 +281,7 @@ instance ProduceASN1Object ASN1P (SignedData EncapsulatedContent) where
           | otherwise                     = 3
 
 
-instance ParseASN1Object [ASN1Event] (SignedData EncapsulatedContent) where
+instance ParseASN1Object [ASN1Event] (SignedData (Encap EncapsulatedContent)) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext
@@ -303,22 +303,27 @@ instance ParseASN1Object [ASN1Event] (SignedData EncapsulatedContent) where
         parseOptList tag =
             fromMaybe [] <$> onNextContainerMaybe (Container Context tag) parse
 
-encapsulatedContentInfoASN1S :: ASN1Elem e => ContentType -> EncapsulatedContent -> ASN1Stream e
-encapsulatedContentInfoASN1S ct bs = asn1Container Sequence (oid . cont)
+encapsulatedContentInfoASN1S :: ASN1Elem e => ContentType -> Encap EncapsulatedContent -> ASN1Stream e
+encapsulatedContentInfoASN1S ct ec = asn1Container Sequence (oid . cont)
   where oid = gOID (getObjectID ct)
-        cont = asn1Container (Container Context 0) inner
-        inner = gOctetString bs
+        cont = encapsulatedASN1S (Container Context 0) ec
 
-parseEncapsulatedContentInfo :: Monoid e => ParseASN1 e (ContentType, EncapsulatedContent)
+encapsulatedASN1S :: ASN1Elem e
+                  => ASN1ConstructionType -> Encap B.ByteString -> ASN1Stream e
+encapsulatedASN1S _   Detached     = id
+encapsulatedASN1S ty (Attached bs) = asn1Container ty (gOctetString bs)
+
+parseEncapsulatedContentInfo :: Monoid e => ParseASN1 e (ContentType, Encap EncapsulatedContent)
 parseEncapsulatedContentInfo =
     onNextContainer Sequence $ do
         OID oid <- getNext
         withObjectID "content type" oid $ \ct ->
-            onNextContainer (Container Context 0) (parseInner ct)
+            wrap ct <$> onNextContainerMaybe (Container Context 0) parseInner
   where
-    parseInner ct = do
-        bs <- parseContentSingle <|> parseContentChunks
-        return (ct, bs)
+    wrap ct Nothing  = (ct, Detached)
+    wrap ct (Just c) = (ct, Attached c)
+
+    parseInner = parseContentSingle <|> parseContentChunks
 
     parseContentSingle = do { OctetString bs <- getNext; return bs }
     parseContentChunks = onNextContainer (Container Universal 4) $

@@ -188,7 +188,6 @@ Implemented content types are:
 
 Notable omissions:
 
-* detached content
 * streaming
 * compressed data
 * and S/MIME external format (only PEM is supported, i.e. the textual encoding
@@ -218,8 +217,10 @@ password recipient, then decrypt the data to recover the content.
 > keParams <- generateEncryptionParams (CBC AES128)
 > let pri = forPasswordRecipient "mypassword" kdf (PWRIKEK keParams)
 
--- Generate the enveloped structure for this single recipient
-> Right envelopedCI <- envelopData mempty ceKey ceParams [pri] [] info
+-- Generate the enveloped structure for this single recipient.  Encrypted
+-- content is kept attached in the structure.
+> Right envelopedData <- envelopData mempty ceKey ceParams [pri] [] info
+> let envelopedCI = toAttachedCI envelopedData
 > writeCMSFile "/path/to/enveloped.pem" [envelopedCI]
 ```
 
@@ -231,7 +232,8 @@ password recipient, then decrypt the data to recover the content.
 
 -- Then this recipient just has to read the file and recover enveloped
 -- content using the password
-> [EnvelopedDataCI envelopedData] <- readCMSFile "/path/to/enveloped.pem"
+> [EnvelopedDataCI envelopedEncapData] <- readCMSFile "/path/to/enveloped.pem"
+> envelopedData <- fromAttached envelopedEncapData
 > openEnvelopedData (withRecipientPassword "mypassword") envelopedData
 Right (DataCI "Hi, what will you need from the cryptostore?")
 ```

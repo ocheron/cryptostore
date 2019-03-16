@@ -439,7 +439,7 @@ data EnvelopedData content = EnvelopedData
     }
     deriving (Show,Eq)
 
-instance ProduceASN1Object ASN1P (EnvelopedData EncryptedContent) where
+instance ProduceASN1Object ASN1P (EnvelopedData (Encap EncryptedContent)) where
     asn1s EnvelopedData{..} =
         asn1Container Sequence (ver . oi . ris . eci . ua)
       where
@@ -459,7 +459,7 @@ instance ProduceASN1Object ASN1P (EnvelopedData EncryptedContent) where
           | all isVersion0 evRecipientInfos = 0
           | otherwise                       = 2
 
-instance ParseASN1Object [ASN1Event] (EnvelopedData EncryptedContent) where
+instance ParseASN1Object [ASN1Event] (EnvelopedData (Encap EncryptedContent)) where
     parse =
         onNextContainer Sequence $ do
             IntVal v <- getNext
