@@ -303,6 +303,7 @@ instance ParseASN1Object [ASN1Event] (SignedData (Encap EncapsulatedContent)) wh
         parseOptList tag =
             fromMaybe [] <$> onNextContainerMaybe (Container Context tag) parse
 
+-- | Generate ASN.1 for EncapsulatedContentInfo.
 encapsulatedContentInfoASN1S :: ASN1Elem e => ContentType -> Encap EncapsulatedContent -> ASN1Stream e
 encapsulatedContentInfoASN1S ct ec = asn1Container Sequence (oid . cont)
   where oid = gOID (getObjectID ct)
@@ -313,6 +314,7 @@ encapsulatedASN1S :: ASN1Elem e
 encapsulatedASN1S _   Detached     = id
 encapsulatedASN1S ty (Attached bs) = asn1Container ty (gOctetString bs)
 
+-- | Parse EncapsulatedContentInfo from ASN.1.
 parseEncapsulatedContentInfo :: Monoid e => ParseASN1 e (ContentType, Encap EncapsulatedContent)
 parseEncapsulatedContentInfo =
     onNextContainer Sequence $ do
