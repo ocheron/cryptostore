@@ -43,7 +43,7 @@ import Data.Monoid
 import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (MonadPlus(..), liftM2)
-import Control.Monad.Fail
+import Control.Monad.Fail as Fail
 
 data State e = State [(ASN1, e)] !e
 
@@ -70,7 +70,7 @@ instance Monad (ParseASN1 e) where
         case runP m1 s of
             Left err      -> Left err
             Right (a, s2) -> runP (m2 a) s2
-    fail        = throwParseError
+    fail        = Fail.fail
 instance MonadFail (ParseASN1 e) where
     fail = throwParseError
 instance MonadPlus (ParseASN1 e) where

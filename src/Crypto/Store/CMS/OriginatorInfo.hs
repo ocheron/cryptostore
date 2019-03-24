@@ -54,8 +54,7 @@ instance Semigroup OriginatorInfo where
 
 instance Monoid OriginatorInfo where
     mempty = OriginatorInfo [] []
-    mappend (OriginatorInfo a b) (OriginatorInfo c d) =
-        OriginatorInfo (mappend a c) (mappend b d)
+    mappend = (<>)
 
 instance HasChoiceOther OriginatorInfo where
     hasChoiceOther OriginatorInfo{..} =
