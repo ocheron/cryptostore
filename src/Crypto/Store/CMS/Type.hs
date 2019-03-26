@@ -51,11 +51,11 @@ instance OIDable ContentType where
 instance OIDNameable ContentType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
 
--- | Denotes the state of encapsulated content in a CMS data structure.  This
+-- | Denote the state of encapsulated content in a CMS data structure.  This
 -- type is isomorphic to 'Maybe'.
 data Encap a
-    = Detached    -- content is stored externally to the structure
-    | Attached a  -- content is stored inside the CMS struture
+    = Detached    -- ^ Content is stored externally to the structure
+    | Attached a  -- ^ Content is stored inside the CMS struture
     deriving (Show,Eq)
 
 instance Functor Encap where
