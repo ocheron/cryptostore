@@ -52,10 +52,11 @@ wrapc :: (BlockCipher aes, ByteArray ba)
 wrapc cipher iiv list = uncurry (:) $ foldl' pass (iiv, list) [0 .. 5]
   where
     !n = fromIntegral (length list)
-    pass (a, l) j = mapAccumL f a $ zip [n * j + 1 ..] l
-    f a (i, r) =
-        let (msb, lsb) = aes cipher (a, r)
-         in (xorWith msb i, lsb)
+    pass (a, l) j = go a (n * j + 1) l
+    go a !_ [] = (a, [])
+    go a !i (r : rs) =
+        let (a', t) = aes cipher (a, r)
+         in (t :) <$> go (xorWith a' i) (succ i) rs
 
 unwrapc :: (BlockCipher aes, ByteArray ba)
         => aes -> Chunked ba -> Either StoreError (ba, Chunked ba)
@@ -64,8 +65,11 @@ unwrapc cipher (iv:list)  = Right (iiv, reverse out)
   where
     (iiv, out) = foldl' pass (iv, reverse list) (reverse [0 .. 5])
     !n = fromIntegral (length list)
-    pass (a, l) j = mapAccumL f a $ zip (reverse [n * j + 1 .. n * j + n]) l
-    f a (i, r) = aesrev cipher (xorWith a i, r)
+    pass (a, l) j = go a (n * j + n) l
+    go a !_ [] = (a, [])
+    go a !i (r : rs) =
+        let (a', t) = aesrev cipher (xorWith a i, r)
+         in (t :) <$> go a' (pred i) rs
 
 -- | Wrap a key with the specified AES cipher.
 wrap :: (BlockCipher aes, ByteArray ba) => aes -> ba -> Either StoreError ba
