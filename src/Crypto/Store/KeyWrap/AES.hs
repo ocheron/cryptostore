@@ -9,6 +9,7 @@
 -- Key Wrap (<https://tools.ietf.org/html/rfc5649 RFC 5649>)
 --
 -- Should be used with a cipher from module "Crypto.Cipher.AES".
+{-# LANGUAGE BangPatterns #-}
 module Crypto.Store.KeyWrap.AES
     ( wrap
     , unwrap
@@ -50,7 +51,7 @@ wrapc :: (BlockCipher aes, ByteArray ba)
       => aes -> ba -> Chunked ba -> Chunked ba
 wrapc cipher iiv list = uncurry (:) $ foldl' pass (iiv, list) [0 .. 5]
   where
-    n = fromIntegral (length list)
+    !n = fromIntegral (length list)
     pass (a, l) j = mapAccumL f a $ zip [n * j + 1 ..] l
     f a (i, r) =
         let (msb, lsb) = aes cipher (a, r)
@@ -62,7 +63,7 @@ unwrapc _      []         = Left (InvalidInput "KeyWrap.AES: input too short")
 unwrapc cipher (iv:list)  = Right (iiv, reverse out)
   where
     (iiv, out) = foldl' pass (iv, reverse list) (reverse [0 .. 5])
-    n = fromIntegral (length list)
+    !n = fromIntegral (length list)
     pass (a, l) j = mapAccumL f a $ zip (reverse [n * j + 1 .. n * j + n]) l
     f a (i, r) = aesrev cipher (xorWith a i, r)
 
@@ -125,11 +126,11 @@ unwrapPad cipher bs = unpad inlen =<< doUnwrap
         | otherwise   = fmap unchunks <$> (unwrapc cipher =<< chunks bs)
 
 xorWith :: (ByteArrayAccess bin, ByteArray bout) => bin -> Word64 -> bout
-xorWith bs i = B.copyAndFreeze bs $ \dst -> loop dst len i
-  where len = B.length bs
-        loop _ 0 _ = return ()
-        loop _ _ 0 = return () -- return early (constant-time not needed)
-        loop p n j = do
+xorWith bs !i = B.copyAndFreeze bs $ \dst -> loop dst len i
+  where !len = B.length bs
+        loop _ 0 !_ = return ()
+        loop _ _ 0  = return () -- return early (constant-time not needed)
+        loop p n j  = do
             b <- peekByteOff p (n - 1)
             let mask = fromIntegral j :: Word8
             pokeByteOff p (n - 1) (xor b mask)
