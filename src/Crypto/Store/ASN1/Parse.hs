@@ -18,6 +18,7 @@
 --
 -- * The 'fail' function returns a parse error so that pattern matching makes
 --   monadic parsing code easier to write.
+{-# LANGUAGE CPP #-}
 module Crypto.Store.ASN1.Parse
     ( ParseASN1
     -- * run
@@ -43,7 +44,9 @@ import Data.Monoid
 import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (MonadPlus(..), liftM2)
+#if !(MIN_VERSION_base(4,13,0))
 import Control.Monad.Fail as Fail
+#endif
 
 data State e = State [(ASN1, e)] !e
 
@@ -70,7 +73,9 @@ instance Monad (ParseASN1 e) where
         case runP m1 s of
             Left err      -> Left err
             Right (a, s2) -> runP (m2 a) s2
+#if !(MIN_VERSION_base(4,13,0))
     fail        = Fail.fail
+#endif
 instance MonadFail (ParseASN1 e) where
     fail = throwParseError
 instance MonadPlus (ParseASN1 e) where
