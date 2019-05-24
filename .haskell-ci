@@ -5,14 +5,15 @@ compiler: ghc-8.4 lts-12.26
 compiler: ghc-8.6 lts-13.20
 
 # options
-option: cryptomin extradep=basement-0.0.7 extradep=foundation-0.0.20 extradep=memory-0.14.16 extradep=cryptonite-0.25 extradep=x509-1.7.5
+option: x509min extradep=basement-0.0.7 extradep=foundation-0.0.20 extradep=memory-0.14.18 extradep=cryptonite-0.26 extradep=x509-1.7.5
+option: cryptomin extradep=cryptonite-0.26
 
 # builds
-build: ghc-8.0 cryptomin
-build: ghc-8.2 cryptomin
-build: ghc-8.2 cryptomin os=osx
-build: ghc-8.4
-build: ghc-8.6
+build: ghc-8.0 x509min
+build: ghc-8.2 x509min
+build: ghc-8.2 x509min os=osx
+build: ghc-8.4 cryptomin
+build: ghc-8.6 cryptomin
 
 # packages
 package: '.'

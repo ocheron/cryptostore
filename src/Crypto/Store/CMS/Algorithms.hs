@@ -277,8 +277,10 @@ instance AlgorithmId DigestAlgorithm where
     parseParameter Type_SHA512       = parseDigestParam (DigestAlgorithm SHA512)
     parseParameter Type_SHAKE128_256 = parseDigestParam (DigestAlgorithm SHAKE128_256)
     parseParameter Type_SHAKE256_512 = parseDigestParam (DigestAlgorithm SHAKE256_512)
-    parseParameter Type_SHAKE128_Len = parseBitLen 256 (DigestAlgorithm $ SHAKE128 p256)
-    parseParameter Type_SHAKE256_Len = parseBitLen 512 (DigestAlgorithm $ SHAKE256 p512)
+    parseParameter Type_SHAKE128_Len = parseBitLen $
+        \(SomeNat p) -> DigestAlgorithm (SHAKE128 p)
+    parseParameter Type_SHAKE256_Len = parseBitLen $
+        \(SomeNat p) -> DigestAlgorithm (SHAKE256 p)
 
 -- | Compute the digest of a message.
 digest :: ByteArrayAccess message => DigestAlgorithm -> message -> ByteString
@@ -294,17 +296,12 @@ hashFromProxy _ = undefined
 parseDigestParam :: Monoid e => DigestAlgorithm -> ParseASN1 e DigestAlgorithm
 parseDigestParam p = getNextMaybe nullOrNothing >> return p
 
-parseBitLen :: Monoid e => Integer -> a -> ParseASN1 e a
-parseBitLen expected res = do
+parseBitLen :: Monoid e => (SomeNat -> a) -> ParseASN1 e a
+parseBitLen build = do
     IntVal n <- getNext
-    if n == expected
-        then return res
-        else throwParseError ("Invalid bit length: " ++ show n)
-        -- FIXME: should allow any input size but cryptonite requires
-        -- divisibility by 8.  For now we restrict to 256/512 bits only.
-
-p256 :: Proxy 256
-p256 = Proxy
+    case someNatVal n of
+        Nothing -> throwParseError ("Invalid bit length: " ++ show n)
+        Just sn -> return (build sn)
 
 p512 :: Proxy 512
 p512 = Proxy

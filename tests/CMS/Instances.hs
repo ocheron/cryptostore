@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Orphan instances.
 module CMS.Instances
@@ -12,8 +11,9 @@ module CMS.Instances
 import           Data.ASN1.Types
 import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
-import           Data.Proxy
 import           Data.X509
+
+import GHC.TypeLits
 
 import Test.Tasty.QuickCheck
 
@@ -123,11 +123,9 @@ instance Arbitrary Attribute where
 arbitraryAttributes :: Gen [Attribute]
 arbitraryAttributes = resize 3 arbitrary
 
-p256 :: Proxy 256
-p256 = Proxy
-
-p512 :: Proxy 512
-p512 = Proxy
+arbitraryNat :: Gen SomeNat
+arbitraryNat = unwrap <$> arbitrary
+  where unwrap (Positive i) = let Just n = someNatVal i in n
 
 instance Arbitrary DigestAlgorithm where
     arbitrary = oneof
@@ -141,8 +139,8 @@ instance Arbitrary DigestAlgorithm where
         , pure $ DigestAlgorithm SHA512
         , pure $ DigestAlgorithm SHAKE128_256
         , pure $ DigestAlgorithm SHAKE256_512
-        , pure $ DigestAlgorithm (SHAKE128 p256)
-        , pure $ DigestAlgorithm (SHAKE256 p512)
+        , (\(SomeNat p) -> DigestAlgorithm (SHAKE128 p)) <$> arbitraryNat
+        , (\(SomeNat p) -> DigestAlgorithm (SHAKE256 p)) <$> arbitraryNat
         ]
 
 arbitraryIntegrityDigest :: Gen DigestAlgorithm
