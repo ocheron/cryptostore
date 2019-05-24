@@ -42,7 +42,7 @@ arbitraryPKCS12 pwd = do
     arbitraryEncrypted sc = do
         alg <- arbitrary
         case encrypted alg pwd sc of
-            Left e -> fail (show e)
+            Left e -> error ("failed generating PKCS12: " ++ show e)
             Right aSafe -> return aSafe
 
 instance Arbitrary SafeContents where

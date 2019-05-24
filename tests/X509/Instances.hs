@@ -333,6 +333,6 @@ arbitraryCertificateChain pubKey = do
             >>= arbitrarySignedExact
 
 shuffleCertificateChain :: CertificateChain -> Gen CertificateChain
-shuffleCertificateChain (CertificateChain []) = fail "empty certificate chain"
+shuffleCertificateChain (CertificateChain []) = error "empty certificate chain"
 shuffleCertificateChain (CertificateChain (leaf : auths)) =
     CertificateChain . (leaf :) <$> shuffle auths

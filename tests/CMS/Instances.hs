@@ -112,7 +112,7 @@ instance Arbitrary ContentInfo where
             return (alg, key, attrs)
 
         failIfError :: Either StoreError a -> Gen a
-        failIfError = either (fail . show) return
+        failIfError = either (error . show) return
 
 instance Arbitrary Attribute where
     arbitrary = do
