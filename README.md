@@ -193,10 +193,12 @@ Notable omissions:
 * and S/MIME external format (only PEM is supported, i.e. the textual encoding
   of [RFC 7468](https://tools.ietf.org/html/rfc7468))
 
+### Enveloped data
+
 The following examples generate a CMS structure enveloping some data to a
 password recipient, then decrypt the data to recover the content.
 
-### Generating enveloped data
+#### Generating enveloped data
 
 ```haskell
 > :set -XOverloadedStrings
@@ -224,7 +226,7 @@ password recipient, then decrypt the data to recover the content.
 > writeCMSFile "/path/to/enveloped.pem" [envelopedCI]
 ```
 
-### Opening the enveloped data
+#### Opening the enveloped data
 
 ```haskell
 > :set -XOverloadedStrings
@@ -236,6 +238,60 @@ password recipient, then decrypt the data to recover the content.
 > envelopedData <- fromAttached envelopedEncapData
 > openEnvelopedData (withRecipientPassword "mypassword") envelopedData
 Right (DataCI "Hi, what will you need from the cryptostore?")
+```
+
+### Signed data
+
+The following examples generate a CMS structure signing data with an RSA key
+and certificate, then verify the signature and recover the content.
+
+#### Signing data
+
+```haskell
+> :set -XOverloadedStrings
+> :m Crypto.Store.CMS Data.X509 Crypto.Store.X509 Crypto.Store.PKCS8
+
+-- Input content info
+> let info = DataCI "Some trustworthy content"
+
+-- Read signer certificate and private key
+> (key : _) <- readKeyFile "/path/to/privkey.pem" -- assuming single key
+> let Right priv = recover "mypassword" key
+> chain <- readSignedObject "/path/to/cert.pem" :: IO [SignedCertificate]
+> let cert = CertificateChain chain
+
+-- Signature will use RSASSA-PSS and SHA-256
+> let sha256 = DigestAlgorithm SHA256
+> let params = PSSParams sha256 (MGF1 sha256) 16
+
+-- Generate the signed structure with a single signer.  Signed content is
+-- kept attached in the structure.
+> let signer = certSigner (RSAPSS params) priv cert (Just []) []
+> Right signedData <- signData [signer] info
+> let signedCI = toAttachedCI signedData
+> writeCMSFile "/path/to/signed.pem" [signedCI]
+```
+
+#### Verifying signed data
+
+```haskell
+-- Read certificate authorities to be trusted for validation
+> :m Crypto.Store.X509 Data.X509.CertificateStore
+> store <- makeCertificateStore <$> readSignedObject "/path/to/cacert.pem"
+
+-- Assume we will not verify the signer FQHN.  Instead the certificate could be
+-- related to an identity from which we received the signed data.
+> :m Data.Default.Class Data.X509 Data.X509.Validation
+> let validateNoFQHN = validate HashSHA256 def def { checkFQHN = False }
+> let noServiceID = (undefined, undefined)
+
+-- Read the signed data and validate it to recover the content
+> :m Crypto.Store.CMS Data.Default.Class
+> [SignedDataCI signedEncapData] <- readCMSFile "/path/to/signed.pem"
+> signedData <- fromAttached signedEncapData
+> let doValidation chain = null <$> validateNoFQHN store def noServiceID chain
+> verifySignedData (withSignerCertificate doValidation) signedData
+Right (DataCI "Some trustworthy content")
 ```
 
 ## Algorithms and security
