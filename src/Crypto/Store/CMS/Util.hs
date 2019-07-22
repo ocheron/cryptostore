@@ -30,7 +30,7 @@ module Crypto.Store.CMS.Util
     , ProduceASN1Object(..)
     , encodeASN1Object
     , ParseASN1Object(..)
-    , fromASN1Repr
+    , decodeASN1Object
     -- * Algorithm Identifiers
     , AlgorithmId(..)
     , algorithmASN1S
@@ -41,9 +41,10 @@ module Crypto.Store.CMS.Util
     , orElse
     ) where
 
+import           Data.ASN1.BinaryEncoding
 import           Data.ASN1.BinaryEncoding.Raw
+import           Data.ASN1.Encoding
 import           Data.ASN1.OID
-import           Data.ASN1.Stream
 import           Data.ASN1.Types
 import           Data.ByteString (ByteString)
 import           Data.List (find)
@@ -53,6 +54,7 @@ import Time.Types (DateTime)
 
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
+import Crypto.Store.Error
 
 -- | Try to parse a 'Null' ASN.1 value.
 nullOrNothing :: ASN1 -> Maybe ()
@@ -152,10 +154,16 @@ instance (Show a, Eq a, ASN1Object a) => ParseASN1Object [ASN1Event] (SignedExac
                 Right se -> return se
                 Left err -> throwParseError ("SignedExact: " ++ err)
 
--- | Create an object from the ASN.1 stream.
-fromASN1Repr :: ParseASN1Object [ASN1Event] obj
-             => [ASN1Repr] -> Either String (obj, [ASN1Repr])
-fromASN1Repr = runParseASN1State_ parse
+-- | Create an ASN.1 object from a bytearray in BER format.
+decodeASN1Object :: ParseASN1Object [ASN1Event] obj => ByteString -> Either StoreError obj
+decodeASN1Object bs =
+    case decodeASN1Repr' BER bs of
+        Left e     -> Left (DecodingError e)
+        Right asn1 ->
+            case runParseASN1State_ parse asn1 of
+                Right (obj, []) -> Right obj
+                Right _         -> Left (ParseFailure "Incomplete parse")
+                Left e          -> Left (ParseFailure e)
 
 -- | An ASN.1 object associated with the raw data it was parsed from.
 data ASN1ObjectExact a = ASN1ObjectExact

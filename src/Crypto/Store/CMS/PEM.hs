@@ -9,19 +9,20 @@
 module Crypto.Store.CMS.PEM
     ( readCMSFile
     , readCMSFileFromMemory
+    , berToContentInfo
     , pemToContentInfo
     , writeCMSFile
     , writeCMSFileToMemory
+    , contentInfoToDER
     , contentInfoToPEM
     ) where
 
-import           Data.ASN1.BinaryEncoding
-import           Data.ASN1.Encoding
 import qualified Data.ByteString as B
 import           Data.Maybe (catMaybes)
 
 import Crypto.Store.CMS.Info
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 import Crypto.Store.PEM
 
 
@@ -38,6 +39,10 @@ readCMSFileFromMemory = either (const []) accumulate . pemParseBS
 accumulate :: [PEM] -> [ContentInfo]
 accumulate = catMaybes . foldr (flip pemToContentInfo) []
 
+-- | Read a content info from a bytearray in BER format.
+berToContentInfo :: B.ByteString -> Either StoreError ContentInfo
+berToContentInfo = decodeASN1Object
+
 -- | Read a content info from a 'PEM' element and add it to the accumulator
 -- list.
 pemToContentInfo :: [Maybe ContentInfo] -> PEM -> [Maybe ContentInfo]
@@ -47,12 +52,9 @@ pemToContentInfo acc pem
   where
     names = [ "CMS", "PKCS7" ]
     decode bs =
-        case decodeASN1Repr' BER bs of
+        case berToContentInfo bs of
             Left _ -> Nothing : acc
-            Right asn1 ->
-                case fromASN1Repr asn1 of
-                    Right (info, []) -> Just info : acc
-                    _                -> Nothing : acc
+            Right info -> Just info : acc
 
 
 -- Writing to PEM format
@@ -65,7 +67,11 @@ writeCMSFile path = B.writeFile path . writeCMSFileToMemory
 writeCMSFileToMemory :: [ContentInfo] -> B.ByteString
 writeCMSFileToMemory = pemsWriteBS . map contentInfoToPEM
 
+-- | Generate a bytearray in DER format for a content info.
+contentInfoToDER :: ContentInfo -> B.ByteString
+contentInfoToDER = encodeASN1Object
+
 -- | Generate PEM for a content info.
 contentInfoToPEM :: ContentInfo -> PEM
 contentInfoToPEM info = PEM { pemName = "CMS", pemHeader = [], pemContent = bs}
-  where bs = encodeASN1Object info
+  where bs = contentInfoToDER info

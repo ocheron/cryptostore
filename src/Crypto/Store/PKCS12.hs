@@ -66,8 +66,6 @@ module Crypto.Store.PKCS12
 import Control.Monad
 
 import           Data.ASN1.Types
-import           Data.ASN1.BinaryEncoding
-import           Data.ASN1.Encoding
 import qualified Data.ByteArray as B
 import qualified Data.ByteString as BS
 import           Data.List (partition)
@@ -738,14 +736,7 @@ mkId val bag = val `seq` Id val (getLocalKeyId attrs) (getFriendlyName attrs)
   where attrs = bagAttributes bag
 
 decode :: ParseASN1Object [ASN1Event] obj => BS.ByteString -> Either StoreError obj
-decode bs =
-    case decodeASN1Repr' BER bs of
-        Left e     -> Left (DecodingError e)
-        Right asn1 ->
-            case fromASN1Repr asn1 of
-                Right (obj, []) -> Right obj
-                Right _         -> Left (ParseFailure "Incomplete parse")
-                Left e          -> Left (ParseFailure e)
+decode = decodeASN1Object
 
 parseOctetStringObject :: (Monoid e, ParseASN1Object [ASN1Event] obj)
                        => String -> ParseASN1 e obj
