@@ -41,10 +41,12 @@ instance Arbitrary PrivateKeyFormat where
 instance Arbitrary (FormattedKey PrivKey) where
     arbitrary = do
         key <- arbitrary
-        fmt <- case key of
-                   PrivKeyX25519  _ -> return PKCS8Format
-                   PrivKeyX448    _ -> return PKCS8Format
-                   PrivKeyEd25519 _ -> return PKCS8Format
-                   PrivKeyEd448   _ -> return PKCS8Format
-                   _                -> arbitrary
+        fmt <- if pkcs8only key then return PKCS8Format else arbitrary
         return (FormattedKey fmt key)
+
+pkcs8only :: PrivKey -> Bool
+pkcs8only (PrivKeyX25519  _)   = True
+pkcs8only (PrivKeyX448    _)   = True
+pkcs8only (PrivKeyEd25519 _)   = True
+pkcs8only (PrivKeyEd448   _)   = True
+pkcs8only _                    = False
