@@ -12,8 +12,8 @@ option: cryptomin extradep=cryptonite-0.26
 # builds
 build: ghc-8.0 x509min
 build: ghc-8.2 x509min
-build: ghc-8.2 x509min
 build: ghc-8.4 cryptomin
+build: ghc-8.6 cryptomin
 build: ghc-8.6 cryptomin os=osx
 build: ghc-8.8
 
