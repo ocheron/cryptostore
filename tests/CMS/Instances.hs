@@ -125,7 +125,7 @@ arbitraryAttributes = resize 3 arbitrary
 
 arbitraryNat :: Gen SomeNat
 arbitraryNat = unwrap <$> arbitrary
-  where unwrap (Positive i) = let Just n = someNatVal i in n
+  where unwrap (Positive i) = let Just n = someNatVal (127 + i) in n
 
 instance Arbitrary DigestAlgorithm where
     arbitrary = oneof

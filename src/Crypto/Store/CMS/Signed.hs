@@ -209,6 +209,7 @@ withPublicKey :: Applicative f => PubKey -> ConsumerOfSI f
 withPublicKey pub ct msg SignerInfo{..} _ _ = pure $
     fromMaybe False $ do
         guard (noAttr || attrMatch)
+        guard mdAccept
         alg <- signatureCheckHash siDigestAlgorithm siSignatureAlg
         return (signatureVerify alg pub input siSignature)
   where
@@ -216,6 +217,7 @@ withPublicKey pub ct msg SignerInfo{..} _ _ = pure $
     mdMatch   = mdAttr == Just (digest siDigestAlgorithm msg)
     attrMatch = ctAttr == Just ct && mdMatch
     mdAttr    = getMessageDigestAttr siSignedAttrs
+    mdAccept  = securityAcceptable siDigestAlgorithm
     ctAttr    = getContentTypeAttr siSignedAttrs
     input     = if noAttr then msg else encodeAuthAttrs siSignedAttrs
 

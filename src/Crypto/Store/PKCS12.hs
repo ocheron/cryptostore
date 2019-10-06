@@ -108,6 +108,8 @@ readP12FileFromMemory ber = decode ber >>= integrity
         case digAlg of
             DigestAlgorithm d ->
                 let fn key macAlg bs
+                        | not (securityAcceptable macAlg) =
+                            Left (InvalidParameter "Integrity MAC too weak")
                         | macValue == mac macAlg key bs = decode bs
                         | otherwise = Left BadContentMAC
                  in pkcs12mac Left fn d macParams content pwdUTF8

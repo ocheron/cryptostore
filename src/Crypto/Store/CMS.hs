@@ -194,10 +194,12 @@ digestData (DigestAlgorithm alg) ci = dd
 
 -- | Return the inner content info but only if the digest is valid.
 digestVerify :: DigestedData EncapsulatedContent -> Either StoreError ContentInfo
-digestVerify DigestedData{..} =
-    if ddDigest == hash ddEncapsulatedContent
-        then decapsulate ddContentType ddEncapsulatedContent
-        else Left DigestMismatch
+digestVerify DigestedData{..}
+    | not acceptable = Left (InvalidParameter "Digest too weak")
+    | ddDigest == hash ddEncapsulatedContent =
+        decapsulate ddContentType ddEncapsulatedContent
+    | otherwise = Left DigestMismatch
+  where acceptable = securityAcceptable (DigestAlgorithm ddDigestAlgorithm)
 
 
 -- EncryptedData
@@ -340,6 +342,8 @@ verifyAuthenticatedData devFn AuthenticatedData{..} =
     mdMatch   = case adDigestAlgorithm of
                     Nothing  -> False
                     Just dig -> mdAttr == Just (digest dig msg)
+    mdAccept  = maybe True securityAcceptable adDigestAlgorithm
+    macAccept = securityAcceptable adMACAlgorithm
     attrMatch = ctAttr == Just ct && mdMatch
     mdAttr    = getMessageDigestAttr adAuthAttrs
     ctAttr    = getContentTypeAttr adAuthAttrs
@@ -348,6 +352,8 @@ verifyAuthenticatedData devFn AuthenticatedData{..} =
     unwrap k
         | isJust adDigestAlgorithm && noAttr  = Left (InvalidInput "Missing auth attributes")
         | not noAttr && not attrMatch         = Left (InvalidInput "Invalid auth attributes")
+        | not mdAccept                        = Left (InvalidParameter "Digest too weak")
+        | not macAccept                       = Left (InvalidParameter "MAC too weak")
         | adMAC /= mac adMACAlgorithm k input = Left BadContentMAC
         | otherwise                           = decapsulate adContentType adEncapsulatedContent
 

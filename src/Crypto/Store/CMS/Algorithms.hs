@@ -1045,12 +1045,14 @@ authContentDecrypt key params paramsRaw aad bs expected =
 
     authDecrypt :: AuthEncParams -> Either StoreError ba
     authDecrypt p@AuthEncParams{..}
+        | not acceptable    = Left (InvalidParameter "authEnc MAC too weak")
         | found == expected = contentDecrypt encKey encAlgorithm bs
         | otherwise         = badMac
       where
         (encKey, macKey) = authKeys key p
         macMsg = paramsRaw `B.append` bs `B.append` B.convert aad
         found  = mac macAlgorithm macKey macMsg
+        acceptable = securityAcceptable macAlgorithm
 
 getAEAD :: (BlockCipher cipher, ByteArray key, ByteArrayAccess iv)
         => proxy cipher -> key -> AEADMode -> iv -> Either StoreError (AEAD cipher)
@@ -1542,9 +1544,11 @@ transportDecrypt :: MonadRandom m
                  -> m (Either StoreError ByteString)
 transportDecrypt RSAES         (X509.PrivKeyRSA priv) bs =
     mapLeft RSAError <$> RSA.decryptSafer priv bs
-transportDecrypt (RSAESOAEP p) (X509.PrivKeyRSA priv) bs =
-    withOAEPParams p $ \params ->
-        mapLeft RSAError <$> RSAOAEP.decryptSafer params priv bs
+transportDecrypt (RSAESOAEP p) (X509.PrivKeyRSA priv) bs
+    | securityAcceptable p =
+        withOAEPParams p $ \params ->
+            mapLeft RSAError <$> RSAOAEP.decryptSafer params priv bs
+    | otherwise = return $ Left (InvalidParameter "OAEP parameters too weak")
 transportDecrypt _ _ _ = return $ Left UnexpectedPrivateKeyType
 
 
@@ -2040,8 +2044,10 @@ signatureVerify RSAAnyHash _ _ _ =
 signatureVerify (RSA alg)   (X509.PubKeyRSA pub) msg sig =
     withHashAlgorithmASN1 alg False $ \hashAlg ->
         RSA.verify (Just hashAlg) pub msg sig
-signatureVerify (RSAPSS p)  (X509.PubKeyRSA pub) msg sig =
-    withPSSParams p $ \params -> RSAPSS.verify params pub msg sig
+signatureVerify (RSAPSS p)  (X509.PubKeyRSA pub) msg sig
+    | securityAcceptable p =
+        withPSSParams p $ \params -> RSAPSS.verify params pub msg sig
+    | otherwise = False
 signatureVerify (DSA alg)   (X509.PubKeyDSA pub) msg sig = fromMaybe False $ do
     s <- dsaToSignature sig
     case alg of
