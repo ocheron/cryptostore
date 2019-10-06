@@ -1,5 +1,17 @@
 # Revision history for cryptostore
 
+## Next - YYYY-MM-DD
+
+* Added CMS fuctions `contentInfoToDER` and `berToContentInfo` in order to
+  generate and parse raw ASN.1.
+
+* Implementation of AES key wrap had some optimizations.
+
+* SHAKE hash algorithms now allow arbitrary output lengths.  Lengths that are
+  very small decrease security.  A protection is added so that attempts to use
+  lengths which are too small fail, although the criteria are conservative.
+  Generating and parsing content has no restriction.
+
 ## 0.2.0.0 - 2019-03-24
 
 * Added functions `toNamedCredential` and `fromNamedCredential` to handle
