@@ -24,6 +24,8 @@ module Crypto.Store.CMS.Algorithms
     , MessageAuthenticationCode
     , MACAlgorithm(..)
     , mac
+    , HasStrength
+    , securityAcceptable
     , HasKeySize(..)
     , getMaximumKeySize
     , validateKeySize
@@ -174,6 +176,23 @@ data DigestProxy hashAlg where
 deriving instance Show (DigestProxy hashAlg)
 deriving instance Eq (DigestProxy hashAlg)
 
+instance HasStrength (DigestProxy hashAlg) where
+    getSecurityBits MD2          = 64
+    getSecurityBits MD4          = 64
+    getSecurityBits MD5          = 64
+    getSecurityBits SHA1         = 80
+    getSecurityBits SHA224       = 112
+    getSecurityBits SHA256       = 128
+    getSecurityBits SHA384       = 192
+    getSecurityBits SHA512       = 256
+    getSecurityBits SHAKE128_256 = 128
+    getSecurityBits SHAKE256_512 = 256
+    getSecurityBits (SHAKE128 a) = shakeSecurityBits 128 a
+    getSecurityBits (SHAKE256 a) = shakeSecurityBits 256 a
+
+shakeSecurityBits :: KnownNat n => Int -> proxy n -> Int
+shakeSecurityBits m a = min m (fromInteger (natVal a) `div` 2)
+
 -- | CMS digest algorithm.
 data DigestAlgorithm =
     forall hashAlg . Hash.HashAlgorithm hashAlg
@@ -196,6 +215,9 @@ instance Eq DigestAlgorithm where
     DigestAlgorithm (SHAKE128 a) == DigestAlgorithm (SHAKE128 b) = natVal a == natVal b
     DigestAlgorithm (SHAKE256 a) == DigestAlgorithm (SHAKE256 b) = natVal a == natVal b
     _                            == _                            = False
+
+instance HasStrength DigestAlgorithm where
+    getSecurityBits (DigestAlgorithm a) = getSecurityBits a
 
 data DigestType
     = Type_MD2
@@ -307,6 +329,24 @@ p512 :: Proxy 512
 p512 = Proxy
 
 
+-- Security strength
+
+-- | Algorithms with known security strength.
+class HasStrength params where
+    -- | Get security strength in bits.
+    --
+    -- This returns the strength for which the algorithm was designed.
+    -- Algorithms with weaknesses have an effective strength lower than the
+    -- returned value.
+    getSecurityBits :: params -> Int
+
+-- | Whether the algorithm has acceptable security.  The goal is to eliminate
+-- variable-length algorithms, like SHAKE with 1-byte output, that would make
+-- strength lower than the weakest fixed-length algorithm.
+securityAcceptable :: HasStrength params => params -> Bool
+securityAcceptable = (>= 64) . getSecurityBits
+
+
 -- Cipher-like things
 
 -- | Algorithms that are based on a secret key.  This includes ciphers but also
@@ -353,6 +393,9 @@ deriving instance Show MACAlgorithm
 
 instance Eq MACAlgorithm where
     HMAC a1 == HMAC a2 = DigestAlgorithm a1 == DigestAlgorithm a2
+
+instance HasStrength MACAlgorithm where
+    getSecurityBits (HMAC a) = getSecurityBits (DigestAlgorithm a)
 
 instance Enumerable MACAlgorithm where
     values = [ HMAC MD5
@@ -1395,6 +1438,11 @@ data OAEPParams = OAEPParams
     }
     deriving (Show,Eq)
 
+instance HasStrength OAEPParams where
+    getSecurityBits OAEPParams{..} =
+        min (getSecurityBits oaepHashAlgorithm)
+            (getSecurityBits oaepMaskGenAlgorithm)
+
 withOAEPParams :: forall seed output a . (ByteArrayAccess seed, ByteArray output)
                => OAEPParams
                -> (forall hash . Hash.HashAlgorithm hash => RSAOAEP.OAEPParams hash seed output -> a)
@@ -1769,6 +1817,9 @@ instance OIDNameable MaskGenerationType where
 newtype MaskGenerationFunc = MGF1 DigestAlgorithm
     deriving (Show,Eq)
 
+instance HasStrength MaskGenerationFunc where
+    getSecurityBits (MGF1 d) = getSecurityBits d
+
 instance AlgorithmId MaskGenerationFunc where
     type AlgorithmType MaskGenerationFunc = MaskGenerationType
     algorithmName _  = "mask generation function"
@@ -1797,6 +1848,11 @@ data PSSParams = PSSParams
     , pssSaltLength :: Int                      -- ^ Length of the salt in bytes
     }
     deriving (Show,Eq)
+
+instance HasStrength PSSParams where
+    getSecurityBits PSSParams{..} =
+        min (getSecurityBits pssHashAlgorithm)
+            (getSecurityBits pssMaskGenAlgorithm)
 
 withPSSParams :: forall seed output a . (ByteArrayAccess seed, ByteArray output)
               => PSSParams
