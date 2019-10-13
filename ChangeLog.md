@@ -1,6 +1,6 @@
 # Revision history for cryptostore
 
-## Next - YYYY-MM-DD
+## 0.2.1.0 - 2019-10-13
 
 * Added CMS fuctions `contentInfoToDER` and `berToContentInfo` in order to
   generate and parse raw ASN.1.
