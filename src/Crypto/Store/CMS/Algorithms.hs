@@ -1174,8 +1174,8 @@ instance AlgorithmId KeyDerivationFunc where
     type AlgorithmType KeyDerivationFunc = KeyDerivationAlgorithm
 
     algorithmName _ = "key derivation algorithm"
-    algorithmType PBKDF2{..} = TypePBKDF2
-    algorithmType Scrypt{..} = TypeScrypt
+    algorithmType PBKDF2{} = TypePBKDF2
+    algorithmType Scrypt{} = TypeScrypt
 
     parameterASN1S PBKDF2{..} =
         asn1Container Sequence (salt . iters . keyLen . mprf)
