@@ -300,9 +300,9 @@ instance AlgorithmId DigestAlgorithm where
     parseParameter Type_SHAKE128_256 = parseDigestParam (DigestAlgorithm SHAKE128_256)
     parseParameter Type_SHAKE256_512 = parseDigestParam (DigestAlgorithm SHAKE256_512)
     parseParameter Type_SHAKE128_Len = parseBitLen $
-        \(SomeNat p) -> DigestAlgorithm (SHAKE128 p)
+        \(SomeNat p) -> return $ DigestAlgorithm (SHAKE128 p)
     parseParameter Type_SHAKE256_Len = parseBitLen $
-        \(SomeNat p) -> DigestAlgorithm (SHAKE256 p)
+        \(SomeNat p) -> return $ DigestAlgorithm (SHAKE256 p)
 
 -- | Compute the digest of a message.
 digest :: ByteArrayAccess message => DigestAlgorithm -> message -> ByteString
@@ -318,12 +318,12 @@ hashFromProxy _ = undefined
 parseDigestParam :: Monoid e => DigestAlgorithm -> ParseASN1 e DigestAlgorithm
 parseDigestParam p = getNextMaybe nullOrNothing >> return p
 
-parseBitLen :: Monoid e => (SomeNat -> a) -> ParseASN1 e a
-parseBitLen build = do
+parseBitLen :: Monoid e => (SomeNat -> ParseASN1 e a) -> ParseASN1 e a
+parseBitLen fn = do
     IntVal n <- getNext
     case someNatVal n of
         Nothing -> throwParseError ("Invalid bit length: " ++ show n)
-        Just sn -> return (build sn)
+        Just sn -> fn sn
 
 p512 :: Proxy 512
 p512 = Proxy
