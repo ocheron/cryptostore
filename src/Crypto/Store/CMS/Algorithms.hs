@@ -384,6 +384,12 @@ generateKey params = getRandomBytes (getMaximumKeySize params)
 -- | Message authentication code.  Equality is time constant.
 type MessageAuthenticationCode = AuthTag
 
+data MACType
+    = forall hashAlg . Hash.HashAlgorithm hashAlg
+        => TypeHMAC (DigestProxy hashAlg)
+
+deriving instance Show MACType
+
 -- | Message Authentication Code (MAC) Algorithm.
 data MACAlgorithm
     = forall hashAlg . Hash.HashAlgorithm hashAlg
@@ -397,34 +403,34 @@ instance Eq MACAlgorithm where
 instance HasStrength MACAlgorithm where
     getSecurityBits (HMAC a) = getSecurityBits (DigestAlgorithm a)
 
-instance Enumerable MACAlgorithm where
-    values = [ HMAC MD5
-             , HMAC SHA1
-             , HMAC SHA224
-             , HMAC SHA256
-             , HMAC SHA384
-             , HMAC SHA512
+instance Enumerable MACType where
+    values = [ TypeHMAC MD5
+             , TypeHMAC SHA1
+             , TypeHMAC SHA224
+             , TypeHMAC SHA256
+             , TypeHMAC SHA384
+             , TypeHMAC SHA512
              ]
 
-instance OIDable MACAlgorithm where
-    getObjectID (HMAC MD5)    = [1,3,6,1,5,5,8,1,1]
-    getObjectID (HMAC SHA1)   = [1,3,6,1,5,5,8,1,2]
-    getObjectID (HMAC SHA224) = [1,2,840,113549,2,8]
-    getObjectID (HMAC SHA256) = [1,2,840,113549,2,9]
-    getObjectID (HMAC SHA384) = [1,2,840,113549,2,10]
-    getObjectID (HMAC SHA512) = [1,2,840,113549,2,11]
+instance OIDable MACType where
+    getObjectID (TypeHMAC MD5)    = [1,3,6,1,5,5,8,1,1]
+    getObjectID (TypeHMAC SHA1)   = [1,3,6,1,5,5,8,1,2]
+    getObjectID (TypeHMAC SHA224) = [1,2,840,113549,2,8]
+    getObjectID (TypeHMAC SHA256) = [1,2,840,113549,2,9]
+    getObjectID (TypeHMAC SHA384) = [1,2,840,113549,2,10]
+    getObjectID (TypeHMAC SHA512) = [1,2,840,113549,2,11]
 
     getObjectID ty = error ("Unsupported MACAlgorithm: " ++ show ty)
 
-instance OIDNameable MACAlgorithm where
+instance OIDNameable MACType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
 
 instance AlgorithmId MACAlgorithm where
-    type AlgorithmType MACAlgorithm = MACAlgorithm
+    type AlgorithmType MACAlgorithm = MACType
     algorithmName _  = "mac algorithm"
-    algorithmType    = id
+    algorithmType (HMAC alg) = TypeHMAC alg
     parameterASN1S _ = id
-    parseParameter p = getNextMaybe nullOrNothing >> return p
+    parseParameter (TypeHMAC alg) = getNextMaybe nullOrNothing >> return (HMAC alg)
 
 instance HasKeySize MACAlgorithm where
     getKeySizeSpecifier (HMAC a) = KeySizeFixed (digestSizeFromProxy a)
