@@ -154,7 +154,11 @@ arbitraryIntegrityDigest = elements
     ]
 
 instance Arbitrary MACAlgorithm where
-    arbitrary = (\(DigestAlgorithm alg) -> HMAC alg) <$> arbitraryIntegrityDigest
+    arbitrary = oneof
+        [ (\(DigestAlgorithm alg) -> HMAC alg) <$> arbitraryIntegrityDigest
+        , (\(SomeNat p) -> KMAC_SHAKE128 p) <$> arbitraryNat <*> arbitrarySmall
+        , (\(SomeNat p) -> KMAC_SHAKE256 p) <$> arbitraryNat <*> arbitrarySmall
+        ]
 
 instance Arbitrary OAEPParams where
     arbitrary = do

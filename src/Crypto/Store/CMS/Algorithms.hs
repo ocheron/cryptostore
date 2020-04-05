@@ -112,6 +112,7 @@ import qualified Crypto.Hash as Hash
 import qualified Crypto.KDF.PBKDF2 as PBKDF2
 import qualified Crypto.KDF.Scrypt as Scrypt
 import qualified Crypto.MAC.HMAC as HMAC
+import qualified Crypto.MAC.KMAC as KMAC
 import qualified Crypto.MAC.Poly1305 as Poly1305
 import           Crypto.Number.Serialize
 import qualified Crypto.PubKey.Curve25519 as X25519
@@ -325,6 +326,9 @@ parseBitLen fn = do
         Nothing -> throwParseError ("Invalid bit length: " ++ show n)
         Just sn -> fn sn
 
+p256 :: Proxy 256
+p256 = Proxy
+
 p512 :: Proxy 512
 p512 = Proxy
 
@@ -387,6 +391,8 @@ type MessageAuthenticationCode = AuthTag
 data MACType
     = forall hashAlg . Hash.HashAlgorithm hashAlg
         => TypeHMAC (DigestProxy hashAlg)
+    | TypeKMAC_SHAKE128
+    | TypeKMAC_SHAKE256
 
 deriving instance Show MACType
 
@@ -394,14 +400,24 @@ deriving instance Show MACType
 data MACAlgorithm
     = forall hashAlg . Hash.HashAlgorithm hashAlg
         => HMAC (DigestProxy hashAlg)
+    | forall n . KnownNat n => KMAC_SHAKE128 (Proxy n) ByteString
+    | forall n . KnownNat n => KMAC_SHAKE256 (Proxy n) ByteString
 
 deriving instance Show MACAlgorithm
 
 instance Eq MACAlgorithm where
-    HMAC a1 == HMAC a2 = DigestAlgorithm a1 == DigestAlgorithm a2
+    HMAC a1             == HMAC a2             =
+        DigestAlgorithm a1 == DigestAlgorithm a2
+    KMAC_SHAKE128 p1 s1 == KMAC_SHAKE128 p2 s2 =
+        natVal p1 == natVal p2 && s1 == s2
+    KMAC_SHAKE256 p1 s1 == KMAC_SHAKE256 p2 s2 =
+        natVal p1 == natVal p2 && s1 == s2
+    _                   == _                   = False
 
 instance HasStrength MACAlgorithm where
     getSecurityBits (HMAC a) = getSecurityBits (DigestAlgorithm a)
+    getSecurityBits (KMAC_SHAKE128 p _) = shakeSecurityBits 128 p
+    getSecurityBits (KMAC_SHAKE256 p _) = shakeSecurityBits 256 p
 
 instance Enumerable MACType where
     values = [ TypeHMAC MD5
@@ -410,6 +426,8 @@ instance Enumerable MACType where
              , TypeHMAC SHA256
              , TypeHMAC SHA384
              , TypeHMAC SHA512
+             , TypeKMAC_SHAKE128
+             , TypeKMAC_SHAKE256
              ]
 
 instance OIDable MACType where
@@ -419,6 +437,8 @@ instance OIDable MACType where
     getObjectID (TypeHMAC SHA256) = [1,2,840,113549,2,9]
     getObjectID (TypeHMAC SHA384) = [1,2,840,113549,2,10]
     getObjectID (TypeHMAC SHA512) = [1,2,840,113549,2,11]
+    getObjectID TypeKMAC_SHAKE128 = [2,16,840,1,101,3,4,2,19]
+    getObjectID TypeKMAC_SHAKE256 = [2,16,840,1,101,3,4,2,20]
 
     getObjectID ty = error ("Unsupported MACAlgorithm: " ++ show ty)
 
@@ -428,13 +448,46 @@ instance OIDNameable MACType where
 instance AlgorithmId MACAlgorithm where
     type AlgorithmType MACAlgorithm = MACType
     algorithmName _  = "mac algorithm"
-    algorithmType (HMAC alg) = TypeHMAC alg
-    parameterASN1S _ = id
-    parseParameter (TypeHMAC alg) = getNextMaybe nullOrNothing >> return (HMAC alg)
+
+    algorithmType (HMAC alg)          = TypeHMAC alg
+    algorithmType (KMAC_SHAKE128 _ _) = TypeKMAC_SHAKE128
+    algorithmType (KMAC_SHAKE256 _ _) = TypeKMAC_SHAKE256
+
+    parameterASN1S (HMAC _)              = id
+    parameterASN1S (KMAC_SHAKE128 p str) = kmacASN1S 256 p str
+    parameterASN1S (KMAC_SHAKE256 p str) = kmacASN1S 512 p str
+
+    parseParameter (TypeHMAC alg)    = getNextMaybe nullOrNothing >> return (HMAC alg)
+    parseParameter TypeKMAC_SHAKE128 = parseKMAC p256 KMAC_SHAKE128
+    parseParameter TypeKMAC_SHAKE256 = parseKMAC p512 KMAC_SHAKE256
+
+kmacASN1S :: (KnownNat n, ASN1Elem e)
+          => Integer -> proxy n -> ByteString -> ASN1Stream e
+kmacASN1S n p str
+    | B.null str && n == i = id
+    | otherwise = asn1Container Sequence (gIntVal i . gOctetString str)
+  where i = natVal p
+
+parseKMAC :: (Monoid e, KnownNat n')
+          => Proxy n'
+          -> (forall n . KnownNat n => Proxy n -> ByteString -> MACAlgorithm)
+          -> ParseASN1 e MACAlgorithm
+parseKMAC p' fn = do
+    b <- hasNext
+    if b then parseParams else return (fn p' B.empty)
+  where
+    parseParams = onNextContainer Sequence $ parseBitLen $ \(SomeNat p) ->
+        getNext >>= \(OctetString str) -> return (fn p str)
 
 instance HasKeySize MACAlgorithm where
     getKeySizeSpecifier (HMAC a) = KeySizeFixed (digestSizeFromProxy a)
-      where digestSizeFromProxy = Hash.hashDigestSize . hashFromProxy
+    getKeySizeSpecifier (KMAC_SHAKE128 p _) =
+        KeySizeFixed (digestSizeFromProxy (SHAKE128 p))
+    getKeySizeSpecifier (KMAC_SHAKE256 p _) =
+        KeySizeFixed (digestSizeFromProxy (SHAKE256 p))
+
+digestSizeFromProxy :: Hash.HashAlgorithm a => proxy a -> Int
+digestSizeFromProxy = Hash.hashDigestSize . hashFromProxy
 
 -- | Invoke the MAC function.
 mac :: (ByteArrayAccess key, ByteArrayAccess message)
@@ -446,6 +499,18 @@ mac (HMAC alg) = hmacWith alg
     runHMAC :: (Hash.HashAlgorithm a, ByteArrayAccess k, ByteArrayAccess m)
         => proxy a -> k -> m -> HMAC.HMAC a
     runHMAC _ = HMAC.hmac
+
+mac (KMAC_SHAKE128 p str) = \key -> AuthTag . B.convert . run128 p str key
+  where
+    run128 :: (KnownNat n, ByteArrayAccess k, ByteArrayAccess m)
+           => proxy n -> ByteString -> k -> m -> KMAC.KMAC (Hash.SHAKE128 n)
+    run128 _ = KMAC.kmac
+
+mac (KMAC_SHAKE256 p str) = \key -> AuthTag . B.convert . run256 p str key
+  where
+    run256 :: (KnownNat n, ByteArrayAccess k, ByteArrayAccess m)
+           => proxy n -> ByteString -> k -> m -> KMAC.KMAC (Hash.SHAKE256 n)
+    run256 _ = KMAC.kmac
 
 
 -- Content encryption
