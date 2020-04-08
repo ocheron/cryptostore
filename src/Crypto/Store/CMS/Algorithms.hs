@@ -1721,8 +1721,8 @@ ecdhKeyMaterial kdf kep ukm zz =
             prx      = hashFromProxy hashAlg
 
             chunk     = B.convert . Hash.hashFinalize . hashCtx
-            hashCtx'  = Hash.hashInitWith prx
-            hashCtx i = Hash.hashUpdate (Hash.hashUpdate (Hash.hashUpdate hashCtx' zz) (toWord32 i)) otherInfo
+            hashCtx'  = Hash.hashUpdate (Hash.hashInitWith prx) zz
+            hashCtx i = Hash.hashUpdate (Hash.hashUpdate hashCtx' $ toWord32 i) otherInfo
 
   where
     outLen   = getMaximumKeySize kep
