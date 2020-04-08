@@ -63,6 +63,7 @@ module Crypto.Store.CMS.Algorithms
     , transportEncrypt
     , transportDecrypt
     , KeyAgreementParams(..)
+    , KeyAgreementKDF(..)
     , ECDHPair
     , ecdhGenerate
     , ecdhPublic
@@ -109,6 +110,7 @@ import           Crypto.Data.Padding
 import           Crypto.ECC (Curve_X25519, Curve_X448, ecdh)
 import           Crypto.Error
 import qualified Crypto.Hash as Hash
+import qualified Crypto.KDF.HKDF as HKDF
 import qualified Crypto.KDF.PBKDF2 as PBKDF2
 import qualified Crypto.KDF.Scrypt as Scrypt
 import qualified Crypto.MAC.HMAC as HMAC
@@ -1625,36 +1627,60 @@ transportDecrypt _ _ _ = return $ Left UnexpectedPrivateKeyType
 
 -- Key agreement
 
-data KeyAgreementType = TypeStdDH DigestAlgorithm
-                      | TypeCofactorDH DigestAlgorithm
+-- | Key derivation function used for key agreement.
+data KeyAgreementKDF
+    = forall hashAlg . Hash.HashAlgorithm hashAlg
+      => KA_X963_KDF (DigestProxy hashAlg)
+      -- ^ ANSI-X9.63-KDF key derivation function
+    | forall hashAlg . Hash.HashAlgorithm hashAlg
+       => KA_HKDF (DigestProxy hashAlg)
+      -- ^ Extract-and-Expand HMAC-based key derivation function
+
+deriving instance Show KeyAgreementKDF
+
+instance Eq KeyAgreementKDF where
+    KA_X963_KDF a == KA_X963_KDF b = DigestAlgorithm a == DigestAlgorithm b
+    KA_HKDF a     == KA_HKDF b     = DigestAlgorithm a == DigestAlgorithm b
+    _             == _             = False
+
+data KeyAgreementType = TypeStdDH KeyAgreementKDF
+                      | TypeCofactorDH KeyAgreementKDF
                       deriving (Show,Eq)
 
 instance Enumerable KeyAgreementType where
-    values = [ TypeStdDH (DigestAlgorithm SHA1)
-             , TypeStdDH (DigestAlgorithm SHA224)
-             , TypeStdDH (DigestAlgorithm SHA256)
-             , TypeStdDH (DigestAlgorithm SHA384)
-             , TypeStdDH (DigestAlgorithm SHA512)
+    values = [ TypeStdDH (KA_X963_KDF SHA1)
+             , TypeStdDH (KA_X963_KDF SHA224)
+             , TypeStdDH (KA_X963_KDF SHA256)
+             , TypeStdDH (KA_X963_KDF SHA384)
+             , TypeStdDH (KA_X963_KDF SHA512)
 
-             , TypeCofactorDH (DigestAlgorithm SHA1)
-             , TypeCofactorDH (DigestAlgorithm SHA224)
-             , TypeCofactorDH (DigestAlgorithm SHA256)
-             , TypeCofactorDH (DigestAlgorithm SHA384)
-             , TypeCofactorDH (DigestAlgorithm SHA512)
+             , TypeCofactorDH (KA_X963_KDF SHA1)
+             , TypeCofactorDH (KA_X963_KDF SHA224)
+             , TypeCofactorDH (KA_X963_KDF SHA256)
+             , TypeCofactorDH (KA_X963_KDF SHA384)
+             , TypeCofactorDH (KA_X963_KDF SHA512)
+
+             , TypeStdDH (KA_HKDF SHA256)
+             , TypeStdDH (KA_HKDF SHA384)
+             , TypeStdDH (KA_HKDF SHA512)
              ]
 
 instance OIDable KeyAgreementType where
-    getObjectID (TypeStdDH (DigestAlgorithm SHA1))        = [1,3,133,16,840,63,0,2]
-    getObjectID (TypeStdDH (DigestAlgorithm SHA224))      = [1,3,132,1,11,0]
-    getObjectID (TypeStdDH (DigestAlgorithm SHA256))      = [1,3,132,1,11,1]
-    getObjectID (TypeStdDH (DigestAlgorithm SHA384))      = [1,3,132,1,11,2]
-    getObjectID (TypeStdDH (DigestAlgorithm SHA512))      = [1,3,132,1,11,3]
+    getObjectID (TypeStdDH (KA_X963_KDF SHA1))        = [1,3,133,16,840,63,0,2]
+    getObjectID (TypeStdDH (KA_X963_KDF SHA224))      = [1,3,132,1,11,0]
+    getObjectID (TypeStdDH (KA_X963_KDF SHA256))      = [1,3,132,1,11,1]
+    getObjectID (TypeStdDH (KA_X963_KDF SHA384))      = [1,3,132,1,11,2]
+    getObjectID (TypeStdDH (KA_X963_KDF SHA512))      = [1,3,132,1,11,3]
 
-    getObjectID (TypeCofactorDH (DigestAlgorithm SHA1))   = [1,3,133,16,840,63,0,3]
-    getObjectID (TypeCofactorDH (DigestAlgorithm SHA224)) = [1,3,132,1,14,0]
-    getObjectID (TypeCofactorDH (DigestAlgorithm SHA256)) = [1,3,132,1,14,1]
-    getObjectID (TypeCofactorDH (DigestAlgorithm SHA384)) = [1,3,132,1,14,2]
-    getObjectID (TypeCofactorDH (DigestAlgorithm SHA512)) = [1,3,132,1,14,3]
+    getObjectID (TypeCofactorDH (KA_X963_KDF SHA1))   = [1,3,133,16,840,63,0,3]
+    getObjectID (TypeCofactorDH (KA_X963_KDF SHA224)) = [1,3,132,1,14,0]
+    getObjectID (TypeCofactorDH (KA_X963_KDF SHA256)) = [1,3,132,1,14,1]
+    getObjectID (TypeCofactorDH (KA_X963_KDF SHA384)) = [1,3,132,1,14,2]
+    getObjectID (TypeCofactorDH (KA_X963_KDF SHA512)) = [1,3,132,1,14,3]
+
+    getObjectID (TypeStdDH (KA_HKDF SHA256))  = [1,2,840,113549,1,9,16,3,19]
+    getObjectID (TypeStdDH (KA_HKDF SHA384))  = [1,2,840,113549,1,9,16,3,20]
+    getObjectID (TypeStdDH (KA_HKDF SHA512))  = [1,2,840,113549,1,9,16,3,21]
 
     getObjectID ty = error ("Unsupported KeyAgreementType: " ++ show ty)
 
@@ -1662,9 +1688,9 @@ instance OIDNameable KeyAgreementType where
     fromObjectID oid = unOIDNW <$> fromObjectID oid
 
 -- | Key agreement algorithm with associated parameters.
-data KeyAgreementParams = StdDH DigestAlgorithm KeyEncryptionParams
+data KeyAgreementParams = StdDH KeyAgreementKDF KeyEncryptionParams
                           -- ^ 1-Pass D-H with Stardard ECDH
-                        | CofactorDH DigestAlgorithm KeyEncryptionParams
+                        | CofactorDH KeyAgreementKDF KeyEncryptionParams
                           -- ^ 1-Pass D-H with Cofactor ECDH
                         deriving (Show,Eq)
 
@@ -1682,21 +1708,31 @@ instance AlgorithmId KeyAgreementParams where
     parseParameter (TypeCofactorDH d) = CofactorDH d <$> parseAlgorithm Sequence
 
 ecdhKeyMaterial :: (ByteArrayAccess bin, ByteArray bout)
-                => DigestAlgorithm -> KeyEncryptionParams -> Maybe ByteString -> bin -> bout
-ecdhKeyMaterial (DigestAlgorithm hashAlg) kep ukm zz
-    | r == 0    = B.concat (map chunk [1..d])
-    | otherwise = B.concat (map chunk [1..d]) `B.append` B.take r (chunk $ succ d)
-  where
-    (d, r)   = outLen `divMod` Hash.hashDigestSize prx
+                => KeyAgreementKDF -> KeyEncryptionParams -> Maybe ByteString -> bin -> bout
+ecdhKeyMaterial kdf kep ukm zz =
+    case kdf of
+        KA_HKDF hashAlg ->
+            HKDF.expand (extract hashAlg zz) otherInfo outLen
+        KA_X963_KDF hashAlg
+            | r == 0    -> B.concat (map chunk [1..d])
+            | otherwise -> B.concat (map chunk [1..d]) `B.append` B.take r (chunk $ succ d)
+          where
+            (d, r)   = outLen `divMod` Hash.hashDigestSize prx
+            prx      = hashFromProxy hashAlg
 
-    prx      = hashFromProxy hashAlg
+            chunk     = B.convert . Hash.hashFinalize . hashCtx
+            hashCtx'  = Hash.hashInitWith prx
+            hashCtx i = Hash.hashUpdate (Hash.hashUpdate (Hash.hashUpdate hashCtx' zz) (toWord32 i)) otherInfo
+
+  where
     outLen   = getMaximumKeySize kep
     outBits  = 8 * outLen
     toWord32 = i2ospOf_ 4 . fromIntegral
 
-    chunk     = B.convert . Hash.hashFinalize . hashCtx
-    hashCtx'  = Hash.hashInitWith prx
-    hashCtx i = Hash.hashUpdate (Hash.hashUpdate (Hash.hashUpdate hashCtx' zz) (toWord32 i)) otherInfo
+    extract :: (Hash.HashAlgorithm a, ByteArrayAccess ikm)
+            => DigestProxy a -> ikm -> HKDF.PRK a
+    extract _ = HKDF.extract (fromMaybe B.empty ukm)
+
     otherInfo =
         let ki  = algorithmASN1S Sequence kep
             eui = case ukm of

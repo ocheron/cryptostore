@@ -61,6 +61,7 @@ module Crypto.Store.CMS
     , KeyEncryptionParams(..)
     , KeyTransportParams(..)
     , KeyAgreementParams(..)
+    , KeyAgreementKDF(..)
     , RecipientInfo(..)
     , EnvelopedData(..)
     , ProducerOfRI

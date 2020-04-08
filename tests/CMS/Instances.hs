@@ -381,19 +381,24 @@ instance Arbitrary KeyIdentifier where
 arbitraryAgreeParams :: Bool -> KeyEncryptionParams -> Gen KeyAgreementParams
 arbitraryAgreeParams allowCofactorDH alg
     | allowCofactorDH = oneof
-        [ flip StdDH alg <$> arbitraryDigest
-        , flip CofactorDH alg <$> arbitraryDigest
+        [ flip StdDH alg <$> elements stdKDFs
+        , flip CofactorDH alg <$> elements cofactorKDFs
         ]
-    | otherwise = flip StdDH alg <$> arbitraryDigest
+    | otherwise = flip StdDH alg <$> elements stdKDFs
   where
-    arbitraryDigest =
-        elements
-            [ DigestAlgorithm SHA1
-            , DigestAlgorithm SHA224
-            , DigestAlgorithm SHA256
-            , DigestAlgorithm SHA384
-            , DigestAlgorithm SHA512
-            ]
+    cofactorKDFs =
+        [ KA_X963_KDF SHA1
+        , KA_X963_KDF SHA224
+        , KA_X963_KDF SHA256
+        , KA_X963_KDF SHA384
+        , KA_X963_KDF SHA512
+        ]
+
+    stdKDFs = cofactorKDFs ++
+        [ KA_HKDF SHA256
+        , KA_HKDF SHA384
+        , KA_HKDF SHA512
+        ]
 
 arbitraryEnvDev :: ContentEncryptionKey
                 -> Gen ([ProducerOfRI Gen], ConsumerOfRI Gen)
