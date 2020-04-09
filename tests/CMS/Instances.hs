@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Orphan instances.
 module CMS.Instances
@@ -156,9 +157,10 @@ arbitraryIntegrityDigest = elements
 instance Arbitrary MACAlgorithm where
     arbitrary = oneof
         [ (\(DigestAlgorithm alg) -> HMAC alg) <$> arbitraryIntegrityDigest
-        , (\(SomeNat p) -> KMAC_SHAKE128 p) <$> arbitraryNat <*> arbitrarySmall
-        , (\(SomeNat p) -> KMAC_SHAKE256 p) <$> arbitraryNat <*> arbitrarySmall
+        , (\(SomeNat p) -> KMAC_SHAKE128 p) <$> arbitraryNat <*> arbitraryCtx
+        , (\(SomeNat p) -> KMAC_SHAKE256 p) <$> arbitraryNat <*> arbitraryCtx
         ]
+      where arbitraryCtx = elements [ B.empty , "ctx" , "custom string" ]
 
 instance Arbitrary OAEPParams where
     arbitrary = do
