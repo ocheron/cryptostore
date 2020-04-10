@@ -25,11 +25,19 @@ module Crypto.Store.CMS.Attribute
     , setContentTypeAttr
     , getMessageDigestAttr
     , setMessageDigestAttr
+    , getSigningTimeAttr
+    , setSigningTimeAttr
+    , setSigningTimeAttrCurrent
     ) where
+
+import Control.Monad.IO.Class
 
 import Data.ASN1.Types
 import Data.ByteString (ByteString)
+import Data.Hourglass
 import Data.Maybe (fromMaybe)
+
+import System.Hourglass (dateCurrent)
 
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
@@ -124,3 +132,36 @@ getMessageDigestAttr attrs = runParseAttribute messageDigest attrs $ do
 -- | Add or replace the @messageDigest@ attribute in a list of attributes.
 setMessageDigestAttr :: ByteString -> [Attribute] -> [Attribute]
 setMessageDigestAttr d = setAttributeASN1S messageDigest (gOctetString d)
+
+
+-- Signing time
+
+signingTime :: OID
+signingTime = [1,2,840,113549,1,9,5]
+
+-- | Return the value of the @signingTime@ attribute.
+getSigningTimeAttr :: [Attribute] -> Maybe DateTime
+getSigningTimeAttr attrs = runParseAttribute signingTime attrs $ do
+    ASN1Time _ t offset <- getNext
+    let validOffset = maybe True (== TimezoneOffset 0) offset
+    if validOffset
+        then return t
+        else fail "getSigningTimeAttr: invalid timezone"
+
+-- | Add or replace the @signingTime@ attribute in a list of attributes.
+setSigningTimeAttr :: DateTime -> [Attribute] -> [Attribute]
+setSigningTimeAttr t =
+    let normalize val = val { dtTime = (dtTime val) { todNSec = 0 } }
+        offset = Just (TimezoneOffset 0)
+        ty | t >= timeConvert (Date 2050 January 1) = TimeGeneralized
+           | t <  timeConvert (Date 1950 January 1) = TimeGeneralized
+           | otherwise                              = TimeUTC
+     in setAttributeASN1S signingTime (gASN1Time ty (normalize t) offset)
+
+-- | Add or replace the @signingTime@ attribute in a list of attributes with the
+-- current time.  This is equivalent to calling 'setSigningTimeAttr' with the
+-- result of 'dateCurrent'.
+setSigningTimeAttrCurrent :: MonadIO m => [Attribute] -> m [Attribute]
+setSigningTimeAttrCurrent attrs = do
+    t <- liftIO dateCurrent
+    return (setSigningTimeAttr t attrs)

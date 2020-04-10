@@ -146,6 +146,10 @@ module Crypto.Store.CMS
     , findAttribute
     , setAttribute
     , filterAttributes
+    -- * CMS standard attributes
+    , getSigningTimeAttr
+    , setSigningTimeAttr
+    , setSigningTimeAttrCurrent
     -- * Originator information
     , OriginatorInfo(..)
     , CertificateChoice(..)
