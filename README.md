@@ -289,7 +289,7 @@ and certificate, then verify the signature and recover the content.
 > :m Crypto.Store.CMS Data.Default.Class
 > [SignedDataCI signedEncapData] <- readCMSFile "/path/to/signed.pem"
 > signedData <- fromAttached signedEncapData
-> let doValidation chain = null <$> validateNoFQHN store def noServiceID chain
+> let doValidation _ chain = null <$> validateNoFQHN store def noServiceID chain
 > verifySignedData (withSignerCertificate doValidation) signedData
 Right (DataCI "Some trustworthy content")
 ```

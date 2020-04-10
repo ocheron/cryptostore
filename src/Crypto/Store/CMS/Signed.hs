@@ -31,6 +31,7 @@ import Control.Monad
 import           Data.ASN1.Types
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
+import           Data.Hourglass
 import           Data.List
 import           Data.Maybe
 import           Data.X509
@@ -226,16 +227,17 @@ withPublicKey pub ct msg SignerInfo{..} _ _ = pure $
 -- valid.  All transmitted certificates are implicitely trusted and all CRLs are
 -- ignored.
 withSignerKey :: Applicative f => ConsumerOfSI f
-withSignerKey = withSignerCertificate (\_ -> pure True)
+withSignerKey = withSignerCertificate (\_ _ -> pure True)
 
 -- | Verify that the signature is valid with one of the X.509 certificates
 -- contained in the signed data, and verify that the signer certificate is valid
 -- using the validation function supplied.  All CRLs are ignored.
 withSignerCertificate :: Applicative f
-                      => (CertificateChain -> f Bool) -> ConsumerOfSI f
+                      => (Maybe DateTime -> CertificateChain -> f Bool)
+                      -> ConsumerOfSI f
 withSignerCertificate validate ct msg SignerInfo{..} certs crls =
     case getCertificateChain of
-        Just chain -> validate chain
+        Just chain -> validate mSigningTime chain
         Nothing    -> pure False
   where
     getCertificateChain = do
@@ -244,6 +246,8 @@ withSignerCertificate validate ct msg SignerInfo{..} certs crls =
         validSignature <- withPublicKey pub ct msg SignerInfo{..} certs crls
         guard validSignature
         return $ CertificateChain (cert : others)
+
+    mSigningTime = getSigningTimeAttr siSignedAttrs
 
     x509Certificates = mapMaybe asX509 certs
 
