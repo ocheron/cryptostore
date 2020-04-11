@@ -1,5 +1,20 @@
 # Revision history for cryptostore
 
+## 0.3.0.0 - YYYY-MM-DD
+
+* Added support for KMAC (Keccak Message Authentication Code) in CMS
+  authenticated data, through constructors `KMAC_SHAKE128` and `KMAC_SHAKE256`.
+
+* CMS key agreement now supports derivation with HKDF along with X9.63.  Data
+  type `KeyAgreementParams` is modified to include a KDF instead of simply the
+  digest algorithm.  HKDF has assigned OIDs only for standard DH and cannot be
+  used with cofactor DH.
+
+* Added CMS utility functions to deal with the `signingTime` attribute.
+
+* Changed `withSignerCertificate` validation callback API to include the
+  `signingTime` value when available.
+
 ## 0.2.1.0 - 2019-10-13
 
 * Added CMS fuctions `contentInfoToDER` and `berToContentInfo` in order to
