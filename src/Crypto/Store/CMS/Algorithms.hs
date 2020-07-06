@@ -176,7 +176,27 @@ data DigestProxy hashAlg where
     -- | SHAKE256 (variable size)
     SHAKE256 :: KnownNat n => Proxy n -> DigestProxy (Hash.SHAKE256 n)
 
-deriving instance Show (DigestProxy hashAlg)
+
+instance Show (DigestProxy hashAlg) where
+    showsPrec _ MD2          = showString "MD2"
+    showsPrec _ MD4          = showString "MD4"
+    showsPrec _ MD5          = showString "MD5"
+    showsPrec _ SHA1         = showString "SHA1"
+    showsPrec _ SHA224       = showString "SHA224"
+    showsPrec _ SHA256       = showString "SHA256"
+    showsPrec _ SHA384       = showString "SHA384"
+    showsPrec _ SHA512       = showString "SHA512"
+    showsPrec _ SHAKE128_256 = showString "SHAKE128_256"
+    showsPrec _ SHAKE256_512 = showString "SHAKE256_512"
+    showsPrec d (SHAKE128 p) =
+        showParen (d > 10) $ showString "SHAKE128 " . showNat 11 p
+    showsPrec d (SHAKE256 p) =
+        showParen (d > 10) $ showString "SHAKE256 " . showNat 11 p
+
+showNat :: KnownNat n => Int -> Proxy n -> ShowS
+showNat d n = showParen (d > 0) $
+    shows n . showString " :: Proxy " . shows (natVal n)
+
 deriving instance Eq (DigestProxy hashAlg)
 
 instance HasStrength (DigestProxy hashAlg) where
@@ -405,7 +425,15 @@ data MACAlgorithm
     | forall n . KnownNat n => KMAC_SHAKE128 (Proxy n) ByteString
     | forall n . KnownNat n => KMAC_SHAKE256 (Proxy n) ByteString
 
-deriving instance Show MACAlgorithm
+instance Show MACAlgorithm where
+    showsPrec d (HMAC p) = showParen (d > 10) $
+        showString "HMAC " . showsPrec 11 p
+    showsPrec d (KMAC_SHAKE128 p s) = showParen (d > 10) $
+        showString "KMAC_SHAKE128 " . showNat 11 p .
+            showChar ' ' . showsPrec 11 s
+    showsPrec d (KMAC_SHAKE256 p s) = showParen (d > 10) $
+        showString "KMAC_SHAKE256 " . showNat 11 p .
+            showChar ' ' . showsPrec 11 s
 
 instance Eq MACAlgorithm where
     HMAC a1             == HMAC a2             =
