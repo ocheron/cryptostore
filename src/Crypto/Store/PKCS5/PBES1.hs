@@ -90,8 +90,10 @@ rc4Combine key = Right . snd . RC4.combine (RC4.initialize key)
 -- | Conversion to UCS2 from UTF-8, ignoring non-BMP bits.
 toUCS2 :: (ByteArrayAccess butf8, ByteArray bucs2) => butf8 -> Maybe bucs2
 toUCS2 pwdUTF8
-    | B.null r  = Just pwdUCS2
-    | otherwise = Nothing
+    | B.null pwdUTF8  = Just $ B.empty -- per RFC 7292 B.2 step 3
+                                       -- "Note that if the password is the empty string, then so is P"
+    | B.null r        = Just pwdUCS2
+    | otherwise       = Nothing
   where
     (p, _, r) = S.fromBytes S.UTF8 $ B.snoc (B.convert pwdUTF8) 0
     pwdBlock  = fromList $ map ucs2 $ toList p :: Block (BE Word16)
