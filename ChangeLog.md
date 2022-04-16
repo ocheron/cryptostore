@@ -15,6 +15,10 @@
 * Changed `withSignerCertificate` validation callback API to include the
   `signingTime` value when available.
 
+## 0.2.2.0 - 2022-04-16
+
+* Fix buffer overrun in `pkcs12Derive`
+
 ## 0.2.1.0 - 2019-10-13
 
 * Added CMS fuctions `contentInfoToDER` and `berToContentInfo` in order to
