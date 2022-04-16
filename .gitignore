@@ -1,5 +1,6 @@
 dist/
 .stack-work/
+stack.yaml.lock
 .travis.yml.sav
 *.hi
 *.o

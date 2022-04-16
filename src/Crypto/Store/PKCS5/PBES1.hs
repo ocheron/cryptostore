@@ -288,7 +288,7 @@ bs `extendedTo` n =
     B.allocAndFreeze n $ \pout ->
         B.withByteArray bs $ \pin -> do
             mapM_ (\off -> memCopy (pout `plusPtr` off) pin len)
-                  (enumFromThenTo 0 len (n - 1))
+                  (enumFromThenTo 0 len (n - len))
             memCopy (pout `plusPtr` (n - r)) pin r
   where
     len = B.length bs
