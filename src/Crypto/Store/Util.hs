@@ -14,13 +14,18 @@ module Crypto.Store.Util
     , reverseBytes
     , constAllEq
     , mapLeft
+    , mapAsWord64LE
     ) where
 
 import           Data.Bits
 import           Data.ByteArray (ByteArray, ByteArrayAccess)
 import qualified Data.ByteArray as B
 import           Data.List
+import           Data.Memory.Endian
 import           Data.Word
+
+import           Foreign.Ptr (plusPtr)
+import           Foreign.Storable
 
 import GHC.Exts
 
@@ -48,3 +53,20 @@ constAllEq b = (== 0) . foldl' fn 0 . B.unpack
 mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft f (Left a)  = Left (f a)
 mapLeft _ (Right c) = Right c
+
+-- | Same as 'Data.ByteArray.Mapping.mapAsWord64' but with little-endian words.
+mapAsWord64LE :: ByteArray bs => (Word64 -> Word64) -> bs -> bs
+mapAsWord64LE f bs =
+    B.allocAndFreeze len $ \dst ->
+        B.withByteArray bs $ \src ->
+            loop (len `div` 8) dst src
+  where
+        len = B.length bs
+
+        loop :: Int -> Ptr (LE Word64) -> Ptr (LE Word64) -> IO ()
+        loop 0 _ _ = return ()
+        loop i d s = do
+            w <- peek s
+            let r = f (fromLE w)
+            poke d (toLE r)
+            loop (i - 1) (d `plusPtr` 8) (s `plusPtr` 8)
