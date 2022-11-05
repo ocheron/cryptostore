@@ -39,20 +39,18 @@ data Q = Q {-# UNPACK #-} !Word16 {-# UNPACK #-} !Word16
 
 decomp64 :: Word64 -> Q
 decomp64 x =
-    let f = unBE . toBE . fromIntegral
-        a = f (x `shiftR` 48)
-        b = f (x `shiftR` 32)
-        c = f (x `shiftR` 16)
-        d = f  x
+    let d = fromIntegral (x `shiftR` 48)
+        c = fromIntegral (x `shiftR` 32)
+        b = fromIntegral (x `shiftR` 16)
+        a = fromIntegral  x
     in Q a b c d
 
 comp64 :: Q -> Word64
 comp64 (Q a b c d) =
-    (f a `shiftL` 48) .|.
-    (f b `shiftL` 32) .|.
-    (f c `shiftL` 16) .|.
-     f d
-  where f = fromIntegral . unBE . toBE
+    (fromIntegral d `shiftL` 48) .|.
+    (fromIntegral c `shiftL` 32) .|.
+    (fromIntegral b `shiftL` 16) .|.
+     fromIntegral a
 
 getR :: Q -> Word8 -> Word16
 getR (Q a b c d) i =

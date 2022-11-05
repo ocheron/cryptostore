@@ -15,13 +15,13 @@ module Crypto.Store.Cipher.RC2
 
 import           Data.ByteArray (ByteArrayAccess)
 import qualified Data.ByteArray as B
-import qualified Data.ByteArray.Mapping as B
 import           Data.Maybe (fromMaybe)
 
 import  Crypto.Error
 import  Crypto.Cipher.Types
 
 import  Crypto.Store.Cipher.RC2.Primitive
+import  Crypto.Store.Util
 
 -- | RC2 block cipher.  Key is between 8 and 1024 bits.
 newtype RC2 = RC2 Key
@@ -33,8 +33,8 @@ instance Cipher RC2 where
 
 instance BlockCipher RC2 where
     blockSize _ = 8
-    ecbEncrypt (RC2 k) = B.mapAsWord64 (encrypt k)
-    ecbDecrypt (RC2 k) = B.mapAsWord64 (decrypt k)
+    ecbEncrypt (RC2 k) = mapAsWord64LE (encrypt k)
+    ecbDecrypt (RC2 k) = mapAsWord64LE (decrypt k)
 
 -- | Build a RC2 cipher with the specified effective key length (in bits).
 rc2WithEffectiveKeyLength :: ByteArrayAccess key

@@ -5,8 +5,8 @@ compiler: ghc-8.4 lts-12.26
 compiler: ghc-8.6 lts-14.27
 compiler: ghc-8.8 lts-16.31
 compiler: ghc-8.10 lts-18.28
-compiler: ghc-9.0 lts-19.2
-compiler: ghc-9.2 nightly-2022-04-09
+compiler: ghc-9.0 lts-19.31
+compiler: ghc-9.2 nightly-2022-11-02
 
 # options
 option: x509min extradep=basement-0.0.7 extradep=foundation-0.0.20 extradep=memory-0.14.18 extradep=cryptonite-0.26 extradep=x509-1.7.5
