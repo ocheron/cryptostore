@@ -1,4 +1,5 @@
 dist/
+dist-newstyle
 .stack-work/
 stack.yaml.lock
 .travis.yml.sav
