@@ -1,5 +1,9 @@
 # Revision history for cryptostore
 
+## 0.2.3.0 - 2022-11-05
+
+* Fix RC2 on big-endian architectures
+
 ## 0.2.2.0 - 2022-04-16
 
 * Fix buffer overrun in `pkcs12Derive`
