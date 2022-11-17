@@ -164,7 +164,7 @@ import Data.ASN1.BinaryEncoding
 import Data.ASN1.Encoding
 import Data.ByteString (ByteString)
 import Data.Maybe (isJust)
-import Data.List (nub, unzip3)
+import Data.List (nub)
 
 import Crypto.Hash
 
