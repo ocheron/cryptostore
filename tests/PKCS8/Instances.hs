@@ -15,6 +15,11 @@ import Crypto.Store.PKCS8
 
 import CMS.Instances
 
+instance Arbitrary ProtectionPassword where
+    arbitrary = oneof [ return emptyNotTerminated
+                      , toProtectionPassword <$> arbitraryPassword
+                      ]
+
 instance Arbitrary PBEParameter where
     arbitrary = do
         salt <- generateSalt 8

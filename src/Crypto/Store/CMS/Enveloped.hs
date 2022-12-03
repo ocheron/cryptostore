@@ -81,6 +81,10 @@ type KeyEncryptionKey = ByteString
 --
 -- Some key-derivation functions add restrictions to what characters
 -- are supported.
+--
+-- Beware: 'Data.String.fromString' truncates multi-byte characters.
+-- If the string may contain non-ASCII characters, prefer instead
+-- @'Crypto.Store.PKCS5.fromProtectionPassword' . 'Data.String.fromString'@.
 type Password = ByteString
 
 -- | Union type related to identification of the recipient.

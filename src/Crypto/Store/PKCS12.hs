@@ -57,7 +57,10 @@ module Crypto.Store.PKCS12
     , toCredential
     , toNamedCredential
     -- * Password-based protection
-    , Password
+    , ProtectionPassword
+    , emptyNotTerminated
+    , fromProtectionPassword
+    , toProtectionPassword
     , OptProtected(..)
     , recover
     , recoverA
@@ -122,7 +125,7 @@ type IntegrityParams = (DigestAlgorithm, PBEParameter)
 
 -- | Write a PKCS #12 file to disk.
 writeP12File :: FilePath
-             -> IntegrityParams -> Password
+             -> IntegrityParams -> ProtectionPassword
              -> PKCS12
              -> IO (Either StoreError ())
 writeP12File path intp pw aSafe =
@@ -131,7 +134,7 @@ writeP12File path intp pw aSafe =
         Right bs -> Right <$> BS.writeFile path bs
 
 -- | Write a PKCS #12 file to a bytearray in DER format.
-writeP12FileToMemory :: IntegrityParams -> Password
+writeP12FileToMemory :: IntegrityParams -> ProtectionPassword
                      -> PKCS12
                      -> Either StoreError BS.ByteString
 writeP12FileToMemory (alg@(DigestAlgorithm hashAlg), pbeParam) pwdUTF8 aSafe =
@@ -263,7 +266,7 @@ unencrypted :: SafeContents -> PKCS12
 unencrypted = PKCS12 . (:[]) . Unencrypted
 
 -- | Build a PKCS #12 encrypted with the specified scheme and password.
-encrypted :: EncryptionScheme -> Password -> SafeContents -> Either StoreError PKCS12
+encrypted :: EncryptionScheme -> ProtectionPassword -> SafeContents -> Either StoreError PKCS12
 encrypted alg pwd sc = PKCS12 . (:[]) . Encrypted <$> encrypt alg pwd bs
   where bs = encodeASN1Object sc
 
@@ -603,7 +606,7 @@ toNamedCredential name p12 = unSamePassword $
 -- values so that the salt is not reused twice in the encryption process.
 fromCredential :: Maybe EncryptionScheme -- for certificates
                -> EncryptionScheme       -- for private key
-               -> Password
+               -> ProtectionPassword
                -> (X509.CertificateChain, X509.PrivKey)
                -> Either StoreError PKCS12
 fromCredential = fromCredential' id
@@ -618,7 +621,7 @@ fromCredential = fromCredential' id
 fromNamedCredential :: String
                     -> Maybe EncryptionScheme -- for certificates
                     -> EncryptionScheme       -- for private key
-                    -> Password
+                    -> ProtectionPassword
                     -> (X509.CertificateChain, X509.PrivKey)
                     -> Either StoreError PKCS12
 fromNamedCredential name = fromCredential' (setFriendlyName name)
@@ -626,7 +629,7 @@ fromNamedCredential name = fromCredential' (setFriendlyName name)
 fromCredential' :: ([Attribute] -> [Attribute])
                 -> Maybe EncryptionScheme -- for certificates
                 -> EncryptionScheme       -- for private key
-                -> Password
+                -> ProtectionPassword
                 -> (X509.CertificateChain, X509.PrivKey)
                 -> Either StoreError PKCS12
 fromCredential' trans algChain algKey pwd (X509.CertificateChain certs, key)

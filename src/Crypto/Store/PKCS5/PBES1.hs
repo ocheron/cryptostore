@@ -14,6 +14,10 @@
 module Crypto.Store.PKCS5.PBES1
     ( PBEParameter(..)
     , Key
+    , ProtectionPassword
+    , emptyNotTerminated
+    , fromProtectionPassword
+    , toProtectionPassword
     , pkcs5
     , pkcs12
     , pkcs12rc2
@@ -38,6 +42,7 @@ import qualified Data.ByteArray as B
 import           Data.ByteString (ByteString)
 import           Data.Maybe (fromMaybe)
 import           Data.Memory.PtrMethods
+import           Data.String (IsString(..))
 import           Data.Word
 
 import           Foreign.Ptr (plusPtr)
@@ -48,6 +53,59 @@ import Crypto.Store.ASN1.Generate
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Util
 import Crypto.Store.Error
+
+-- | A password stored as a sequence of UTF-8 bytes.
+--
+-- Some key-derivation functions add restrictions to what characters
+-- are supported.
+--
+-- The data type provides a special value 'emptyNotTerminated' that is used
+-- as alternate representation of empty passwords on some systems and that
+-- produces encryption results different than an empty bytearray.
+--
+-- Conversion to/from a regular sequence of bytes is possible with functions
+-- 'toProtectionPassword' and 'fromProtectionPassword'.
+--
+-- Beware: the 'fromString' implementation correctly handles multi-byte
+-- characters, so here is not equivalent to the 'ByteString' counterpart.
+data ProtectionPassword = NullPassword | PasswordUTF8 ByteString
+    deriving Eq
+
+instance Show ProtectionPassword where
+    showsPrec _ NullPassword     = showString "emptyNotTerminated"
+    showsPrec d (PasswordUTF8 b) = showParen (d > 10) $
+        showString "toProtectionPassword " . showsPrec 11 b
+
+instance IsString ProtectionPassword where
+    fromString = PasswordUTF8 . B.convert . S.toBytes S.UTF8 . fromString
+
+instance ByteArrayAccess ProtectionPassword where
+    length = applyPP 0 B.length
+    withByteArray = B.withByteArray . fromProtectionPassword
+
+applyPP :: a -> (ByteString -> a) -> ProtectionPassword -> a
+applyPP d _ NullPassword     = d
+applyPP _ f (PasswordUTF8 b) = f b
+
+-- | A value denoting an empty password, but having a special encoding when
+-- deriving a symmetric key on some systems, like the certificate export
+-- wizard on Windows.
+--
+-- This value is different from @'toProtectionPassword ""'@ and can be tried
+-- when decrypting content with a password known to be empty.
+emptyNotTerminated :: ProtectionPassword
+emptyNotTerminated = NullPassword
+
+-- | Extract the UTF-8 bytes in a password value.
+fromProtectionPassword :: ProtectionPassword -> ByteString
+fromProtectionPassword = applyPP B.empty id
+
+-- | Build a password value from a sequence of UTF-8 bytes.
+--
+-- When the password is empty, the special value 'emptyNotTerminated' may
+-- be tried as well.
+toProtectionPassword :: ByteString -> ProtectionPassword
+toProtectionPassword = PasswordUTF8
 
 -- | Secret key.
 type Key = B.ScrubbedBytes
@@ -88,8 +146,9 @@ rc4Combine :: (ByteArrayAccess key, ByteArray ba) => key -> ba -> Either StoreEr
 rc4Combine key = Right . snd . RC4.combine (RC4.initialize key)
 
 -- | Conversion to UCS2 from UTF-8, ignoring non-BMP bits.
-toUCS2 :: (ByteArrayAccess butf8, ByteArray bucs2) => butf8 -> Maybe bucs2
-toUCS2 pwdUTF8
+toUCS2 :: ByteArray bucs2 => ProtectionPassword -> Maybe bucs2
+toUCS2 NullPassword = Just B.empty
+toUCS2 (PasswordUTF8 pwdUTF8)
     | B.null r  = Just pwdUCS2
     | otherwise = Nothing
   where
@@ -105,19 +164,19 @@ toUCS2 pwdUTF8
 
 -- | Apply PBKDF1 on the specified password and run an encryption or decryption
 -- function on some input using derived key and IV.
-pkcs5 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
+pkcs5 :: (Hash.HashAlgorithm hash, BlockCipher cipher)
       => (StoreError -> result)
       -> (Key -> ContentEncryptionParams -> ByteString -> result)
       -> DigestProxy hash
       -> ContentEncryptionCipher cipher
       -> PBEParameter
       -> ByteString
-      -> password
+      -> ProtectionPassword
       -> result
 pkcs5 failure encdec hashAlg cec pbeParam bs pwd
     | proxyBlockSize cec /= 8 = failure (InvalidParameter "Invalid cipher block size")
     | otherwise =
-        case pbkdf1 hashAlg pwd pbeParam 16 of
+        case pbkdf1 hashAlg (fromProtectionPassword pwd) pbeParam 16 of
             Left err -> failure err
             Right dk ->
                 let (key, iv) = B.splitAt 8 (dk :: Key)
@@ -145,14 +204,14 @@ pbkdf1 hashAlg pwd PBEParameter{..} dkLen
 
 -- | Apply PKCS #12 derivation on the specified password and run an encryption
 -- or decryption function on some input using derived key and IV.
-pkcs12 :: (Hash.HashAlgorithm hash, BlockCipher cipher, ByteArrayAccess password)
+pkcs12 :: (Hash.HashAlgorithm hash, BlockCipher cipher)
        => (StoreError -> result)
        -> (Key -> ContentEncryptionParams -> ByteString -> result)
        -> DigestProxy hash
        -> ContentEncryptionCipher cipher
        -> PBEParameter
        -> ByteString
-       -> password
+       -> ProtectionPassword
        -> result
 pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
     case toUCS2 pwdUTF8 of
@@ -168,14 +227,14 @@ pkcs12 failure encdec hashAlg cec pbeParam bs pwdUTF8 =
 -- | Apply PKCS #12 derivation on the specified password and run an encryption
 -- or decryption function on some input using derived key and IV.  This variant
 -- uses an RC2 cipher with the EKL specified (effective key length).
-pkcs12rc2 :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
+pkcs12rc2 :: Hash.HashAlgorithm hash
           => (StoreError -> result)
           -> (Key -> ContentEncryptionParams -> ByteString -> result)
           -> DigestProxy hash
           -> Int
           -> PBEParameter
           -> ByteString
-          -> password
+          -> ProtectionPassword
           -> result
 pkcs12rc2 failure encdec hashAlg len pbeParam bs pwdUTF8 =
     case toUCS2 pwdUTF8 of
@@ -191,14 +250,14 @@ pkcs12rc2 failure encdec hashAlg len pbeParam bs pwdUTF8 =
 -- | Apply PKCS #12 derivation on the specified password and run an encryption
 -- or decryption function on some input using derived key.  This variant does
 -- not derive any IV and is required for RC4.
-pkcs12stream :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
+pkcs12stream :: Hash.HashAlgorithm hash
              => (StoreError -> result)
              -> (Key -> ByteString -> result)
              -> DigestProxy hash
              -> Int
              -> PBEParameter
              -> ByteString
-             -> password
+             -> ProtectionPassword
              -> result
 pkcs12stream failure encdec hashAlg keyLen pbeParam bs pwdUTF8 =
     case toUCS2 pwdUTF8 of
@@ -209,13 +268,13 @@ pkcs12stream failure encdec hashAlg keyLen pbeParam bs pwdUTF8 =
 
 -- | Apply PKCS #12 derivation on the specified password and run a MAC function
 -- on some input using derived key.
-pkcs12mac :: (Hash.HashAlgorithm hash, ByteArrayAccess password)
+pkcs12mac :: Hash.HashAlgorithm hash
           => (StoreError -> result)
           -> (Key -> MACAlgorithm -> ByteString -> result)
           -> DigestProxy hash
           -> PBEParameter
           -> ByteString
-          -> password
+          -> ProtectionPassword
           -> result
 pkcs12mac failure macFn hashAlg pbeParam bs pwdUTF8 =
     case toUCS2 pwdUTF8 of

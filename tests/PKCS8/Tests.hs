@@ -11,7 +11,7 @@ import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
 import Util
-import PKCS8.Instances
+import PKCS8.Instances ()
 
 keyTests :: String -> TestTree
 keyTests prefix =
@@ -85,7 +85,7 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         let r = readKeyFileFromMemory $ writeKeyFileToMemory fmt l
         in map Right l === map (recover $ fromString "not-used") r
     , testProperty "marshalling with encryption" $ \es k -> do
-        p <- arbitraryPassword
+        p <- arbitrary
         let r = readKeyFileFromMemory <$> writeEncryptedKeyFileToMemory es p k
         return $ Right [Right k] === (map (recover p) <$> r)
     ]

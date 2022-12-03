@@ -2,6 +2,11 @@
 
 ## 0.3.0.0 - YYYY-MM-DD
 
+* API change in PKCS5, PKCS8 and PKCS12 modules to handle better password-based
+  encryption derived from an empty password.  All encryption/decryption
+  functions now expect an opaque `ProtectionPassword` data type.  Conversion
+  functions `toProtectionPassword` and `fromProtectionPassword` are provided.
+
 * Added support for KMAC (Keccak Message Authentication Code) in CMS
   authenticated data, through constructors `KMAC_SHAKE128` and `KMAC_SHAKE256`.
 

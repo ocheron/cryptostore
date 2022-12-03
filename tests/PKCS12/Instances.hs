@@ -29,7 +29,7 @@ arbitraryAlias = resize 16 asciiChar
 arbitraryIntegrityParams :: Gen IntegrityParams
 arbitraryIntegrityParams = (,) <$> arbitraryIntegrityDigest <*> arbitrary
 
-arbitraryPKCS12 :: Password -> Gen PKCS12
+arbitraryPKCS12 :: ProtectionPassword -> Gen PKCS12
 arbitraryPKCS12 pwd = do
     p <- one
     ps <- listOf one

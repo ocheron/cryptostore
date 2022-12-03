@@ -35,7 +35,10 @@ module Crypto.Store.PKCS8
     , PrivateKeyFormat(..)
     , FormattedKey(..)
     -- * Password-based protection
-    , Password
+    , ProtectionPassword
+    , emptyNotTerminated
+    , fromProtectionPassword
+    , toProtectionPassword
     , OptProtected(..)
     , recover
     , recoverA
@@ -78,7 +81,7 @@ import Crypto.Store.Util
 -- | Data type for objects that are possibly protected with a password.
 data OptProtected a = Unprotected a
                       -- ^ Value is unprotected
-                    | Protected (Password -> Either StoreError a)
+                    | Protected (ProtectionPassword -> Either StoreError a)
                       -- ^ Value is protected with a password
 
 instance Functor OptProtected where
@@ -86,7 +89,7 @@ instance Functor OptProtected where
     fmap f (Protected g)   = Protected (fmap f . g)
 
 -- | Try to recover an 'OptProtected' content using the specified password.
-recover :: Password -> OptProtected a -> Either StoreError a
+recover :: ProtectionPassword -> OptProtected a -> Either StoreError a
 recover _   (Unprotected x) = Right x
 recover pwd (Protected f)   = f pwd
 
@@ -98,12 +101,14 @@ recover pwd (Protected f)   = f pwd
 -- >
 -- > [encryptedKey] <- readKeyFile "privkey.pem"
 -- > let askForPassword = putStr "Please enter password: " >> B.getLine
--- > result <- recoverA askForPassword encryptedKey
+-- > result <- recoverA (toProtectionPassword <$> askForPassword) encryptedKey
 -- > case result of
 -- >     Left err  -> putStrLn $ "Unable to recover key: " ++ show err
 -- >     Right key -> print key
 recoverA :: Applicative f
-         => f Password -> OptProtected a -> f (Either StoreError a)
+         => f ProtectionPassword
+         -> OptProtected a
+         -> f (Either StoreError a)
 recoverA _   (Unprotected x) = pure (Right x)
 recoverA get (Protected f)   = fmap f get
 
@@ -178,7 +183,7 @@ writeKeyFileToMemory fmt = pemsWriteBS . map (keyToPEM fmt)
 -- Fresh 'EncryptionScheme' parameters should be generated for each key to
 -- encrypt.
 writeEncryptedKeyFile :: FilePath
-                      -> EncryptionScheme -> Password-> X509.PrivKey
+                      -> EncryptionScheme -> ProtectionPassword -> X509.PrivKey
                       -> IO (Either StoreError ())
 writeEncryptedKeyFile path alg pwd privKey =
     let pem = encryptKeyToPEM alg pwd privKey
@@ -191,8 +196,8 @@ writeEncryptedKeyFile path alg pwd privKey =
 --
 -- Fresh 'EncryptionScheme' parameters should be generated for each key to
 -- encrypt.
-writeEncryptedKeyFileToMemory :: EncryptionScheme -> Password -> X509.PrivKey
-                              -> Either StoreError B.ByteString
+writeEncryptedKeyFileToMemory :: EncryptionScheme -> ProtectionPassword
+                              -> X509.PrivKey -> Either StoreError B.ByteString
 writeEncryptedKeyFileToMemory alg pwd privKey =
     pemWriteBS <$> encryptKeyToPEM alg pwd privKey
 
@@ -241,7 +246,7 @@ modernPrivKeyASN1S attrs privKey =
 --
 -- Fresh 'EncryptionScheme' parameters should be generated for each key to
 -- encrypt.
-encryptKeyToPEM :: EncryptionScheme -> Password -> X509.PrivKey
+encryptKeyToPEM :: EncryptionScheme -> ProtectionPassword -> X509.PrivKey
                 -> Either StoreError PEM
 encryptKeyToPEM alg pwd privKey = toPEM <$> encrypt alg pwd bs
   where bs = pemContent (keyToModernPEM privKey)

@@ -44,7 +44,6 @@ testType caseName prefix = testCaseSteps caseName $ \step -> do
                     recover pwd (getAllSafeKeys scs) @?= Right [key]
                     getAllSafeX509Certs scs @?= certs
   where
-    pwd :: Password
     pwd = fromString "dontchangeme"
 
     nameIntegrity n = "integrity with " ++ n
@@ -70,14 +69,14 @@ testType caseName prefix = testCaseSteps caseName $ \step -> do
 propertyTests :: TestTree
 propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
     [ testProperty "marshalling" $ do
-        pE <- arbitraryPassword
+        pE <- arbitrary
         c <- arbitraryPKCS12 pE
         let r = readP12FileFromMemory $ writeUnprotectedP12FileToMemory c
         return $ Right (Right c) === (recover (fromString "not-used") <$> r)
     , testProperty "marshalling with authentication" $ do
         params <- arbitraryIntegrityParams
-        c <- arbitraryPassword >>= arbitraryPKCS12
-        pI <- arbitraryPassword
+        c <- arbitrary >>= arbitraryPKCS12
+        pI <- arbitrary
         let r = readP12FileFromMemory <$> writeP12FileToMemory params pI c
         return $ Right (Right (Right c)) === (fmap (recover pI) <$> r)
     , localOption (QuickCheckTests 20) $ testProperty "converting credentials" $
@@ -92,7 +91,7 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
     ]
   where
     testCredConv privKey to from = do
-        pwd <- arbitraryPassword
+        pwd <- arbitrary
         chain <- arbitrary >>= arbitraryCertificateChain
         chain' <- shuffleCertificateChain chain
         let cred = (chain, privKey)

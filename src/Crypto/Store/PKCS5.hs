@@ -11,7 +11,10 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 module Crypto.Store.PKCS5
-    ( Password
+    ( ProtectionPassword
+    , emptyNotTerminated
+    , fromProtectionPassword
+    , toProtectionPassword
     , EncryptedContent
     -- * High-level API
     , PKCS5(..)
@@ -38,7 +41,6 @@ module Crypto.Store.PKCS5
     ) where
 
 import           Data.ASN1.Types
-import           Data.ByteArray (ByteArrayAccess)
 import           Data.ByteString (ByteString)
 import           Data.Maybe (fromMaybe)
 
@@ -46,7 +48,6 @@ import Crypto.Store.ASN1.Parse
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Encrypted
-import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.Util
 import Crypto.Store.Error
 import Crypto.Store.PKCS5.PBES1
@@ -192,20 +193,20 @@ instance ASN1Object PKCS5 where
     fromASN1 = runParseASN1State parse
 
 -- | Encrypt a bytestring with the specified encryption scheme and password.
-encrypt :: EncryptionScheme -> Password -> ByteString -> Either StoreError PKCS5
+encrypt :: EncryptionScheme -> ProtectionPassword -> ByteString -> Either StoreError PKCS5
 encrypt alg pwd bs = build <$> pbEncrypt alg bs pwd
   where
     build ed = ed `seq` PKCS5 { encryptionAlgorithm = alg, encryptedData = ed }
 
 -- | Decrypt the PKCS #5 content with the specified password.
-decrypt :: PKCS5 -> Password -> Either StoreError ByteString
+decrypt :: PKCS5 -> ProtectionPassword -> Either StoreError ByteString
 decrypt obj = pbDecrypt (encryptionAlgorithm obj) (encryptedData obj)
 
 
 -- Encryption Schemes
 
 -- | Encrypt a bytestring with the specified encryption scheme and password.
-pbEncrypt :: EncryptionScheme -> ByteString -> Password
+pbEncrypt :: EncryptionScheme -> ByteString -> ProtectionPassword
           -> Either StoreError EncryptedContent
 pbEncrypt (PBES2 p)                 = pbes2  contentEncrypt p
 pbEncrypt (PBE_MD5_DES_CBC p)       = pkcs5  Left contentEncrypt MD5  DES p
@@ -219,7 +220,7 @@ pbEncrypt (PBE_SHA1_RC2_40 p)       = pkcs12rc2 Left contentEncrypt SHA1 40 p
 
 -- | Decrypt an encrypted bytestring with the specified encryption scheme and
 -- password.
-pbDecrypt :: EncryptionScheme -> EncryptedContent -> Password -> Either StoreError ByteString
+pbDecrypt :: EncryptionScheme -> EncryptedContent -> ProtectionPassword -> Either StoreError ByteString
 pbDecrypt (PBES2 p)                 = pbes2  contentDecrypt p
 pbDecrypt (PBE_MD5_DES_CBC p)       = pkcs5  Left contentDecrypt MD5  DES p
 pbDecrypt (PBE_SHA1_DES_CBC p)      = pkcs5  Left contentDecrypt SHA1 DES p
@@ -230,9 +231,8 @@ pbDecrypt (PBE_SHA1_DES_EDE2_CBC p) = pkcs12 Left contentDecrypt SHA1 DES_EDE2 p
 pbDecrypt (PBE_SHA1_RC2_128 p)      = pkcs12rc2 Left contentDecrypt SHA1 128 p
 pbDecrypt (PBE_SHA1_RC2_40 p)       = pkcs12rc2 Left contentDecrypt SHA1 40 p
 
-pbes2 :: ByteArrayAccess password
-      => (Key -> ContentEncryptionParams -> ByteString -> result)
-      -> PBES2Parameter -> ByteString -> password -> result
+pbes2 :: (Key -> ContentEncryptionParams -> ByteString -> result)
+      -> PBES2Parameter -> ByteString -> ProtectionPassword -> result
 pbes2 encdec PBES2Parameter{..} bs pwd = encdec key pbes2EScheme bs
-  where key = kdfDerive pbes2KDF len pwd :: Key
+  where key = kdfDerive pbes2KDF len (fromProtectionPassword pwd) :: Key
         len = fromMaybe (getMaximumKeySize pbes2EScheme) (kdfKeyLength pbes2KDF)
