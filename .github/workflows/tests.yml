@@ -12,9 +12,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - uses: actions/setup-haskell@v1
+    - uses: haskell/actions/setup@v2
       with:
-        ghc-version: '8.10.3'
+        ghc-version: '8.10.7'
         cabal-version: '3.2'
 
     - name: Cache
@@ -38,4 +38,4 @@ jobs:
       run: cabal build --enable-tests --enable-benchmarks all
 
     - name: Run tests
-      run: cabal test all
+      run: cabal test all --test-show-details=direct

@@ -1,8 +1,8 @@
 # cryptostore
 
-[![Build Status](https://travis-ci.org/ocheron/cryptostore.png?branch=master)](https://travis-ci.org/ocheron/cryptostore)
-[![BSD](https://b.repl.ca/v1/license-BSD-blue.png)](https://en.wikipedia.org/wiki/BSD_licenses)
-[![Haskell](https://b.repl.ca/v1/language-haskell-lightgrey.png)](https://haskell.org/)
+[![Build Status](https://github.com/ocheron/cryptostore/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/ocheron/cryptostore/actions/workflows/tests.yml)
+[![BSD](https://img.shields.io/badge/License-BSD-blue)](https://en.wikipedia.org/wiki/BSD_licenses)
+[![Haskell](https://img.shields.io/badge/Language-Haskell-lightgrey)](https://haskell.org/)
 
 This package allows to read and write cryptographic objects to/from ASN.1.
 
