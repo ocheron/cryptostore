@@ -38,10 +38,10 @@ testType caseName prefix = testCaseSteps caseName $ \step -> do
         let r = readP12FileFromMemory (pemContent pem)
 
         assertRight r $ \integrity ->
-            assertRight (recover pwd integrity) $ \privacy ->
-                assertRight (recover pwd $ unPKCS12 privacy) $ \scs -> do
+            assertRight (recoverAuthenticated pwd integrity) $ \(ppwd, privacy) ->
+                assertRight (recover ppwd $ unPKCS12 privacy) $ \scs -> do
                     step ("Testing " ++ name)
-                    recover pwd (getAllSafeKeys scs) @?= Right [key]
+                    recover ppwd (getAllSafeKeys scs) @?= Right [key]
                     getAllSafeX509Certs scs @?= certs
   where
     pwd = fromString "dontchangeme"
@@ -72,13 +72,15 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         pE <- arbitrary
         c <- arbitraryPKCS12 pE
         let r = readP12FileFromMemory $ writeUnprotectedP12FileToMemory c
-        return $ Right (Right c) === (recover (fromString "not-used") <$> r)
+            unused = fromString "not-used"
+        return $ Right (Right c) === (fmap snd . recoverAuthenticated unused <$> r)
     , testProperty "marshalling with authentication" $ do
         params <- arbitraryIntegrityParams
         c <- arbitrary >>= arbitraryPKCS12
         pI <- arbitrary
         let r = readP12FileFromMemory <$> writeP12FileToMemory params pI c
-        return $ Right (Right (Right c)) === (fmap (recover pI) <$> r)
+            p = fromProtectionPassword pI
+        return $ Right (Right (Right (pI, c))) === (fmap (recoverAuthenticated p) <$> r)
     , localOption (QuickCheckTests 20) $ testProperty "converting credentials" $
         \pChain pKey privKey ->
             testCredConv privKey toCredential (fromCredential pChain pKey)

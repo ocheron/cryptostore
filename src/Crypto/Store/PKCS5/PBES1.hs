@@ -18,6 +18,7 @@ module Crypto.Store.PKCS5.PBES1
     , emptyNotTerminated
     , fromProtectionPassword
     , toProtectionPassword
+    , toProtectionPasswords
     , pkcs5
     , pkcs12
     , pkcs12rc2
@@ -106,6 +107,11 @@ fromProtectionPassword = applyPP B.empty id
 -- be tried as well.
 toProtectionPassword :: ByteString -> ProtectionPassword
 toProtectionPassword = PasswordUTF8
+
+toProtectionPasswords :: ByteString -> [ProtectionPassword]
+toProtectionPasswords bs
+    | B.null bs = [PasswordUTF8 B.empty, NullPassword]
+    | otherwise = [PasswordUTF8 bs]
 
 -- | Secret key.
 type Key = B.ScrubbedBytes

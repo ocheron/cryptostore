@@ -6,6 +6,9 @@
   encryption derived from an empty password.  All encryption/decryption
   functions now expect an opaque `ProtectionPassword` data type.  Conversion
   functions `toProtectionPassword` and `fromProtectionPassword` are provided.
+  Additionnally in the PKCS12 module, the type `OptProtected` is replaced with
+  `OptAuthenticated` when dealing with password integrity.  Similarly at that
+  level, function `recover` is to be replaced with `recoverAuthenticated`.
 
 * Added support for KMAC (Keccak Message Authentication Code) in CMS
   authenticated data, through constructors `KMAC_SHAKE128` and `KMAC_SHAKE256`.

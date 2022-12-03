@@ -13,6 +13,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Crypto.Store.PKCS12
@@ -57,6 +58,9 @@ module Crypto.Store.PKCS12
     , toCredential
     , toNamedCredential
     -- * Password-based protection
+    , Password
+    , OptAuthenticated(..)
+    , recoverAuthenticated
     , ProtectionPassword
     , emptyNotTerminated
     , fromProtectionPassword
@@ -85,6 +89,7 @@ import Crypto.Store.CMS
 import Crypto.Store.CMS.Algorithms
 import Crypto.Store.CMS.Attribute
 import Crypto.Store.CMS.Encrypted
+import Crypto.Store.CMS.Enveloped
 import Crypto.Store.CMS.Util
 import Crypto.Store.Error
 import Crypto.Store.PKCS5
@@ -92,30 +97,63 @@ import Crypto.Store.PKCS5.PBES1
 import Crypto.Store.PKCS8
 
 
+-- Password-based integrity
+
+-- | Data type for objects that are possibly authenticated with a password.
+--
+-- Content is verified and retrieved by providing a 'Password' value.  When
+-- verification is successful, a value of type 'ProtectionPassword' is also
+-- returned and this value can be fed to an inner decryption layer that needs
+-- the same password (usual case for PKCS #12).
+data OptAuthenticated a = Unauthenticated a
+                          -- ^ Value is not authenticated
+                        | Authenticated (Password -> Either StoreError (ProtectionPassword, a))
+                          -- ^ Value is authenticated with a password
+
+instance Functor OptAuthenticated where
+    fmap f (Unauthenticated x) = Unauthenticated (f x)
+    fmap f (Authenticated g)   = Authenticated (fmap (fmap f) . g)
+
+-- | Try to recover an 'OptAuthenticated' content using the specified password.
+--
+-- When successful, the content is returned, as well as the password converted
+-- to type 'ProtectionPassword'.  This password value can then be fed to the
+-- inner decryption layer when both passwords are known to be same (usual case
+-- for PKCS #12).
+recoverAuthenticated :: Password -> OptAuthenticated a -> Either StoreError (ProtectionPassword, a)
+recoverAuthenticated pwd (Unauthenticated x) = Right (toProtectionPassword pwd, x)
+recoverAuthenticated pwd (Authenticated f)   = f pwd
+
+
 -- Decoding and parsing
 
 -- | Read a PKCS #12 file from disk.
-readP12File :: FilePath -> IO (Either StoreError (OptProtected PKCS12))
+readP12File :: FilePath -> IO (Either StoreError (OptAuthenticated PKCS12))
 readP12File path = readP12FileFromMemory <$> BS.readFile path
 
 -- | Read a PKCS #12 file from a bytearray in BER format.
-readP12FileFromMemory :: BS.ByteString -> Either StoreError (OptProtected PKCS12)
+readP12FileFromMemory :: BS.ByteString -> Either StoreError (OptAuthenticated PKCS12)
 readP12FileFromMemory ber = decode ber >>= integrity
   where
     integrity PFX{..} =
         case macData of
-            Nothing -> Unprotected <$> decode authSafeData
-            Just md -> return $ Protected (verify md authSafeData)
+            Nothing -> Unauthenticated <$> decode authSafeData
+            Just md -> return $ Authenticated (verify md authSafeData)
 
     verify MacData{..} content pwdUTF8 =
         case digAlg of
-            DigestAlgorithm d ->
-                let fn key macAlg bs
-                        | not (securityAcceptable macAlg) =
-                            Left (InvalidParameter "Integrity MAC too weak")
-                        | macValue == mac macAlg key bs = decode bs
-                        | otherwise = Left BadContentMAC
-                 in pkcs12mac Left fn d macParams content pwdUTF8
+            DigestAlgorithm d -> loop (toProtectionPasswords pwdUTF8)
+              where
+                -- iterate over all possible representations of a password
+                -- until a successful match is found
+                loop []           = Left BadContentMAC
+                loop (pwd:others) =
+                    let fn key macAlg bs
+                            | not (securityAcceptable macAlg) =
+                                Left (InvalidParameter "Integrity MAC too weak")
+                            | macValue == mac macAlg key bs = (pwd,) <$> decode bs
+                            | otherwise = loop others
+                     in pkcs12mac Left fn d macParams content pwd
 
 
 -- Generating and encoding

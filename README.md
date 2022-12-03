@@ -92,13 +92,28 @@ usually both privacy and integrity, with a single password for all or not.  The
 API to read PKCS #12 files requires some password at each layer.  This API is
 available in module `Crypto.Store.PKCS12`.
 
+Reading a binary PKCS #12 file using a single password doing both integrity
+and privacy (usual case):
+
+```haskell
+> :set -XOverloadedStrings
+> :m Crypto.Store.PKCS12
+> Right p12 <- readP12File "/path/to/file.p12"
+> let Right (password, pkcs12) = recoverAuthenticated "mypassword" p12
+> let Right contents = recover password (unPKCS12 pkcs12)
+> getAllSafeX509Certs contents
+[SignedExact {getSigned = ...}]
+> recover password (getAllSafeKeys contents)
+Right [PrivKeyRSA ...]
+```
+
 Reading a binary PKCS #12 file using distinct integrity and privacy passwords:
 
 ```haskell
 > :set -XOverloadedStrings
 > :m Crypto.Store.PKCS12
 > Right p12 <- readP12File "/path/to/file.p12"
-> let Right pkcs12 = recover "myintegrityassword" p12
+> let Right (_, pkcs12) = recoverAuthenticated "myintegritypassword" p12
 > let Right contents = recover "myprivacypassword" (unPKCS12 pkcs12)
 > getAllSafeX509Certs contents
 [SignedExact {getSigned = ...}]
@@ -144,7 +159,7 @@ key and a certificate chain.  This pair is the type alias `Credential` in `tls`.
 
 -- Read PKCS #12 content as credential
 > Right p12 <- readP12File "/path/to/file.p12"
-> let Right pkcs12 = recover "myintegrityassword" p12
+> let Right (_, pkcs12) = recoverAuthenticated "myintegritypassword" p12
 > let Right (Just cred) = recover "myprivacypassword" (toCredential pkcs12)
 > cred
 (CertificateChain [...], PrivKeyRSA (...))
@@ -165,7 +180,7 @@ key and a certificate chain.  This pair is the type alias `Credential` in `tls`.
 > let Right pkcs12' = fromCredential (Just sCert) sKey "myprivacypassword" cred
 > salt <- generateSalt 8
 > let iParams = (DigestAlgorithm SHA256, PBEParameter salt 2048)
-> writeP12File "/path/to/newfile.p12" iParams "myintegrityassword" pkcs12'
+> writeP12File "/path/to/newfile.p12" iParams "myintegritypassword" pkcs12'
 ```
 
 Variants `toNamedCredential` and `fromNamedCredential` are also available when
