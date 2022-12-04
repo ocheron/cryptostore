@@ -66,6 +66,30 @@ testType caseName prefix = testCaseSteps caseName $ \step -> do
                      , "PBE-SHA1-RC2-40"
                      ]
 
+testEmptyPassword :: TestTree
+testEmptyPassword = testCaseSteps "empty password" $ \step -> do
+    step "Reading PKCS #12 files"
+    pems <- readPEMs path
+    length pems @?= length infos
+
+    forM_ (zip infos pems) $ \((name, numKeys, numCerts), pem) -> do
+        let r = readP12FileFromMemory (pemContent pem)
+
+        assertRight r $ \integrity ->
+            assertRight (recoverAuthenticated pwd integrity) $ \(ppwd, privacy) ->
+                assertRight (recover ppwd $ unPKCS12 privacy) $ \scs -> do
+                    step ("Testing " ++ name)
+                    assertRight (recover ppwd $ getAllSafeKeys scs) $ \keys ->
+                        length keys @?= numKeys
+                    length (getAllSafeX509Certs scs) @?= numCerts
+  where
+    pwd = fromString ""
+
+    path  = testFile "pkcs12-empty-password.pem"
+    infos = [ ("Windows Certificate Export Wizard", 1, 2)
+            , ("OpenSSL", 1, 1)
+            ]
+
 propertyTests :: TestTree
 propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
     [ testProperty "marshalling" $ do
@@ -105,5 +129,6 @@ pkcs12Tests =
     testGroup "PKCS12"
         [ testType "RSA"                        "rsa"
         , testType "Ed25519"                    "ed25519"
+        , testEmptyPassword
         , propertyTests
         ]
