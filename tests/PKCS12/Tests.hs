@@ -88,6 +88,8 @@ testEmptyPassword = testCaseSteps "empty password" $ \step -> do
     path  = testFile "pkcs12-empty-password.pem"
     infos = [ ("Windows Certificate Export Wizard", 1, 2)
             , ("OpenSSL", 1, 1)
+            , ("GnuTLS with --empty-password", 1, 1)
+            , ("GnuTLS with --null-password", 1, 1)
             ]
 
 propertyTests :: TestTree
