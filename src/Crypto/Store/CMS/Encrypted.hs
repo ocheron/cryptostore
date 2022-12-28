@@ -101,5 +101,3 @@ parseEncryptedContentInfo = onNextContainer Sequence $ do
     parseEncryptedContent = parseWrapped <|> parsePrimitive
     parseWrapped  = onNextContainer (Container Context 0) parseOctetStrings
     parsePrimitive = do Other Context 0 bs <- getNext; return bs
-    parseOctetString = do OctetString bs <- getNext; return bs
-    parseOctetStrings = B.concat <$> getMany parseOctetString

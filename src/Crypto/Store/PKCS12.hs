@@ -784,7 +784,7 @@ decode = decodeASN1Object
 parseOctetStringObject :: (Monoid e, ParseASN1Object [ASN1Event] obj)
                        => String -> ParseASN1 e obj
 parseOctetStringObject name = do
-    OctetString bs <- getNext
+    bs <- parseOctetString
     case decode bs of
         Left e  -> throwParseError (name ++ ": " ++ show e)
         Right c -> return c

@@ -102,8 +102,7 @@ instance Monoid e => ParseASN1Object e RecipientIdentifier where
     parse = parseIASN <|> parseSKI
       where parseIASN = RecipientIASN <$> parse
             parseSKI  = RecipientSKI  <$>
-                onNextContainer (Container Context 0) parseBS
-            parseBS = do { OctetString bs <- getNext; return bs }
+                onNextContainer (Container Context 0) parseOctetStringPrim
 
 getKTVersion :: RecipientIdentifier -> Integer
 getKTVersion (RecipientIASN _) = 0
@@ -177,8 +176,7 @@ instance Monoid e => ParseASN1Object e OriginatorIdentifierOrKey where
     parse = parseIASN <|> parseSKI <|> parsePublic
       where parseIASN = OriginatorIASN <$> parse
             parseSKI  = OriginatorSKI  <$>
-                onNextContainer (Container Context 0) parseBS
-            parseBS = do { OctetString bs <- getNext; return bs }
+                onNextContainer (Container Context 0) parseOctetStringPrim
             parsePublic  = OriginatorPublic <$>
                 parseOriginatorPublicKey (Container Context 1)
 
@@ -375,7 +373,7 @@ instance Monoid e => ParseASN1Object e RecipientInfo where
                 throwParseError ("RecipientInfo: parsed invalid KT version: " ++ show v)
             rid <- parse
             ktp <- parseAlgorithm Sequence
-            (OctetString ek) <- getNext
+            OctetString ek <- getNext
             return KTRecipientInfo { ktRid = rid
                                    , ktKeyTransportParams = ktp
                                    , ktEncryptedKey = ek
@@ -398,7 +396,7 @@ instance Monoid e => ParseASN1Object e RecipientInfo where
             IntVal 4 <- getNext
             kid <- parse
             kep <- parseAlgorithm Sequence
-            (OctetString ek) <- getNext
+            OctetString ek <- getNext
             return KEKRecipientInfo { kekId = kid
                                     , kekKeyEncryptionParams = kep
                                     , kekEncryptedKey = ek
@@ -408,7 +406,7 @@ instance Monoid e => ParseASN1Object e RecipientInfo where
             IntVal 0 <- getNext
             kdf <- parseAlgorithm (Container Context 0)
             kep <- parseAlgorithm Sequence
-            (OctetString ek) <- getNext
+            OctetString ek <- getNext
             return PasswordRecipientInfo { priKeyDerivationFunc = kdf
                                          , priKeyEncryptionParams = kep
                                          , priEncryptedKey = ek

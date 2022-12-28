@@ -24,6 +24,10 @@ module Crypto.Store.CMS.Util
     , Enumerable(..)
     , OIDNameableWrapper(..)
     , withObjectID
+    -- * Parsing octet strings
+    , parseOctetString
+    , parseOctetStringPrim
+    , parseOctetStrings
     -- * Parsing and encoding ASN.1 objects
     , ASN1Event
     , ASN1ObjectExact(..)
@@ -41,12 +45,15 @@ module Crypto.Store.CMS.Util
     , orElse
     ) where
 
+import Control.Applicative
+
 import           Data.ASN1.BinaryEncoding
 import           Data.ASN1.BinaryEncoding.Raw
 import           Data.ASN1.Encoding
 import           Data.ASN1.OID
 import           Data.ASN1.Types
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString as B
 import           Data.List (find)
 import           Data.X509
 
@@ -231,3 +238,22 @@ orElse pa pb = do
     case va of
         Nothing -> pb
         _       -> return va
+
+-- | Parse an octet string, in primitive or constructed encodings.
+parseOctetString :: Monoid e => ParseASN1 e ByteString
+parseOctetString = parseOctetStringPrim <|> parseConstructed
+  where
+    parseConstructed = onNextContainer (Container Universal 4) parseOctetStrings
+
+-- | Parse an octet string in primitive encoding.
+parseOctetStringPrim :: Monoid e => ParseASN1 e ByteString
+parseOctetStringPrim = do
+    next <- getNext
+    case next of
+        OctetString bs -> return bs
+        _ -> throwParseError "parseOctetStringPrim: parsed unexpected content"
+
+-- | Parse some octet strings, in primitive or constructed encodings, and
+-- concatenate the result.
+parseOctetStrings :: Monoid e => ParseASN1 e ByteString
+parseOctetStrings = B.concat <$> getMany parseOctetString

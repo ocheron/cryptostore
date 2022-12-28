@@ -105,12 +105,7 @@ dataASN1S :: ASN1Elem e => ByteString -> ASN1Stream e
 dataASN1S = gOctetString
 
 parseData :: Monoid e => ParseASN1 e ByteString
-parseData = do
-    next <- getNext
-    case next of
-        OctetString bs -> return bs
-        _              -> throwParseError "Data: parsed unexpected content"
-
+parseData = parseOctetString
 
 -- Encapsulation
 

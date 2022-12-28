@@ -91,7 +91,7 @@ instance Monoid e => ParseASN1Object e SignerInfo where
         dig <- parseAlgorithm Sequence
         sAttrs <- parseAttributes (Container Context 0)
         alg <- parseAlgorithm Sequence
-        (OctetString sig) <- getNext
+        OctetString sig <- getNext
         uAttrs <- parseAttributes (Container Context 1)
         return SignerInfo { siSignerId = sid
                           , siDigestAlgorithm = dig
@@ -124,8 +124,7 @@ instance Monoid e => ParseASN1Object e SignerIdentifier where
     parse = parseIASN <|> parseSKI
       where parseIASN = SignerIASN <$> parse
             parseSKI  = SignerSKI  <$>
-                onNextContainer (Container Context 0) parseBS
-            parseBS = do { OctetString bs <- getNext; return bs }
+                onNextContainer (Container Context 0) parseOctetStringPrim
 
 -- | Try to find a certificate with the specified identifier.
 findSigner :: SignerIdentifier
@@ -326,16 +325,10 @@ parseEncapsulatedContentInfo =
     onNextContainer Sequence $ do
         OID oid <- getNext
         withObjectID "content type" oid $ \ct ->
-            wrap ct <$> onNextContainerMaybe (Container Context 0) parseInner
+            wrap ct <$> onNextContainerMaybe (Container Context 0) parseOctetString
   where
     wrap ct Nothing  = (ct, Detached)
     wrap ct (Just c) = (ct, Attached c)
-
-    parseInner = parseContentSingle <|> parseContentChunks
-
-    parseContentSingle = do { OctetString bs <- getNext; return bs }
-    parseContentChunks = onNextContainer (Container Universal 4) $
-        B.concat <$> getMany parseContentSingle
 
 digestTypesASN1S :: ASN1Elem e => [DigestAlgorithm] -> ASN1Stream e
 digestTypesASN1S list cont = foldr (algorithmASN1S Sequence) cont list
