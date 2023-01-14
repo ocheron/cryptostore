@@ -1,6 +1,6 @@
 # Revision history for cryptostore
 
-## 0.3.0.0 - YYYY-MM-DD
+## 0.3.0.0 - 2023-01-14
 
 * API change in PKCS5, PKCS8 and PKCS12 modules to handle better password-based
   encryption derived from an empty password.  All encryption/decryption

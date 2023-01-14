@@ -1,5 +1,5 @@
 name:                cryptostore
-version:             0.2.3.0
+version:             0.3.0.0
 synopsis:            Serialization of cryptographic data types
 description:         Haskell implementation of PKCS \#8, PKCS \#12 and CMS
                      (Cryptographic Message Syntax).
