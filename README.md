@@ -50,8 +50,8 @@ Generating a private key and writing to disk, with password-based encryption:
 > :set -XOverloadedStrings
 > :m Crypto.PubKey.RSA Crypto.Store.PKCS8 Data.X509 Crypto.Store.PKCS5
 > privKey <- PrivKeyRSA . snd <$> generate (2048 `div` 8) 0x10001
-> salt <- generateSalt 8
-> let kdf = PBKDF2 salt 2048 Nothing PBKDF2_SHA256
+> salt <- generateSalt 16
+> let kdf = PBKDF2 salt 200000 Nothing PBKDF2_SHA256
 > encParams <- generateEncryptionParams (CBC AES256)
 > let pbes = PBES2 (PBES2Parameter kdf encParams)
 > writeEncryptedKeyFile "/path/to/privkey.pem" pbes "mypassword" privKey
@@ -59,8 +59,8 @@ Right ()
 ```
 
 Parameters used in this example are AES-256-CBC as cipher, PBKDF2 as
-key-derivation function, with an 8-byte salt, 2048 iterations and SHA-256 as
-pseudorandom function.
+key-derivation function, with a 16-byte salt, 200,000 iterations and SHA-256
+as pseudorandom function.
 
 ## Public Keys and Signed Objects
 
@@ -137,15 +137,15 @@ Generating a PKCS #12 file containing a private key:
 >     contents = SafeContents [keyBag]
 
 -- Encrypt the contents
-> salt <- generateSalt 8
-> let kdf = PBKDF2 salt 2048 Nothing PBKDF2_SHA256
+> salt <- generateSalt 16
+> let kdf = PBKDF2 salt 200000 Nothing PBKDF2_SHA256
 > encParams <- generateEncryptionParams (CBC AES256)
 > let pbes = PBES2 (PBES2Parameter kdf encParams)
 >     Right pkcs12 = encrypted pbes "mypassword" contents
 
 -- Save to PKCS #12 with integrity protection (same password)
-> salt' <- generateSalt 8
-> let iParams = (DigestAlgorithm SHA256, PBEParameter salt' 2048)
+> salt' <- generateSalt 16
+> let iParams = (DigestAlgorithm SHA256, PBEParameter salt' 200000)
 > writeP12File "/path/to/privkey.p12" iParams "mypassword" pkcs12
 Right ()
 ```
@@ -165,21 +165,21 @@ key and a certificate chain.  This pair is the type alias `Credential` in `tls`.
 (CertificateChain [...], PrivKeyRSA (...))
 
 -- Scheme to reencrypt the key
-> saltK <- generateSalt 8
-> let kdfK = PBKDF2 saltK 2048 Nothing PBKDF2_SHA256
+> saltK <- generateSalt 16
+> let kdfK = PBKDF2 saltK 200000 Nothing PBKDF2_SHA256
 > encParamsK <- generateEncryptionParams (CBC AES256)
 > let sKey = PBES2 (PBES2Parameter kdfK encParamsK)
 
 -- Scheme to reencrypt the certificate chain
 > saltC <- generateSalt 8
-> let kdfC = PBKDF2 saltC 1024 Nothing PBKDF2_SHA256
+> let kdfC = PBKDF2 saltC 100000 Nothing PBKDF2_SHA256
 > encParamsC <- generateEncryptionParams (CBC AES128)
 > let sCert = PBES2 (PBES2Parameter kdfC encParamsC)
 
 -- Write the content back to a new file
 > let Right pkcs12' = fromCredential (Just sCert) sKey "myprivacypassword" cred
-> salt <- generateSalt 8
-> let iParams = (DigestAlgorithm SHA256, PBEParameter salt 2048)
+> salt <- generateSalt 16
+> let iParams = (DigestAlgorithm SHA256, PBEParameter salt 200000)
 > writeP12File "/path/to/newfile.p12" iParams "myintegritypassword" pkcs12'
 ```
 
@@ -229,8 +229,8 @@ password recipient, then decrypt the data to recover the content.
 -- Encrypt the Content Encryption Key with a Password Recipient Info,
 -- i.e. a KDF will derive the Key Encryption Key from a password
 -- that the recipient will need to know
-> salt <- generateSalt 8
-> let kdf = PBKDF2 salt 2048 Nothing PBKDF2_SHA256
+> salt <- generateSalt 16
+> let kdf = PBKDF2 salt 200000 Nothing PBKDF2_SHA256
 > keParams <- generateEncryptionParams (CBC AES128)
 > let pri = forPasswordRecipient "mypassword" kdf (PWRIKEK keParams)
 
