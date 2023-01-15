@@ -92,7 +92,7 @@ applyPP _ f (PasswordUTF8 b) = f b
 -- deriving a symmetric key on some systems, like the certificate export
 -- wizard on Windows.
 --
--- This value is different from @'toProtectionPassword ""'@ and can be tried
+-- This value is different from @'toProtectionPassword' ""@ and can be tried
 -- when decrypting content with a password known to be empty.
 emptyNotTerminated :: ProtectionPassword
 emptyNotTerminated = NullPassword
