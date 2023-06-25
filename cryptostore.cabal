@@ -19,6 +19,11 @@ source-repository head
   type:     git
   location: https://github.com/ocheron/cryptostore
 
+flag use_crypton
+  description: Use crypton instead of cryptonite
+  manual: True
+  default: False
+
 library
   hs-source-dirs:      src
   exposed-modules:     Crypto.Store.CMS
@@ -56,11 +61,16 @@ library
                      , bytestring
                      , basement
                      , memory
-                     , cryptonite >= 0.26
                      , pem >= 0.1 && < 0.3
                      , asn1-types >= 0.3.1 && < 0.4
                      , asn1-encoding >= 0.9 && < 0.10
                      , hourglass >= 0.2
+  if flag(use_crypton)
+    build-depends:     crypton
+                     , crypton-x509
+                     , crypton-x509-validation
+  else
+    build-depends:     cryptonite >=0.26
                      , x509 >= 1.7.5
                      , x509-validation >= 1.5
   default-language:    Haskell2010
@@ -86,14 +96,18 @@ test-suite test-cryptostore
   build-depends:       base >= 4.9 && < 5
                      , bytestring
                      , asn1-types >= 0.3.1 && < 0.4
-                     , cryptonite >= 0.25
                      , memory
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
                      , hourglass
                      , pem
-                     , x509
                      , cryptostore
+  if flag(use_crypton)
+    build-depends:     crypton
+                     , crypton-x509
+  else
+    build-depends:     cryptonite >=0.25
+                     , x509
   default-language:    Haskell2010
   ghc-options:         -Wall
