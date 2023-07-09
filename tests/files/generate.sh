@@ -62,6 +62,8 @@ fi
 
 "$OPENSSL" version || exit $?
 
+PROVIDERS="-provider default -provider legacy"
+
 function der_to_pem () {
   echo "-----BEGIN $1-----"
   "$OPENSSL" base64 -e
@@ -82,7 +84,8 @@ function encrypt() {
                   PBE-SHA1-RC2-128 \
                   PBE-SHA1-RC2-40; do
       "$OPENSSL" pkcs8 -topk8 -in "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
-        -v1 $cipher -passout pass:"$PASSWORD"
+        -v1 $cipher -passout pass:"$PASSWORD" \
+        $PROVIDERS
     done
   ) > "$DEST_DIR"/"$TYPE"-encrypted-pbes1.pem
 
@@ -90,7 +93,8 @@ function encrypt() {
   (
     for cipher in des des3 cast camellia128 rc2 rc2-40-cbc rc2-64-cbc; do
       "$OPENSSL" pkcs8 -topk8 -in "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
-        -v2 $cipher -passout pass:"$PASSWORD"
+        -v2 $cipher -passout pass:"$PASSWORD" \
+        $PROVIDERS
     done
   ) > "$DEST_DIR"/"$TYPE"-encrypted-pbkdf2.pem
 
@@ -109,7 +113,7 @@ function encrypt() {
 "$OPENSSL" genpkey -algorithm RSA -out "$DEST_DIR"/rsa-unencrypted-pkcs8.pem
 
 "$OPENSSL" rsa -in "$DEST_DIR"/rsa-unencrypted-pkcs8.pem \
-  -out "$DEST_DIR"/rsa-unencrypted-trad.pem
+  -traditional -out "$DEST_DIR"/rsa-unencrypted-trad.pem
 
 encrypt rsa
 
@@ -157,9 +161,6 @@ encrypt ecdsa-epc
 "$OPENSSL" genpkey -algorithm x25519 \
   -out "$DEST_DIR"/x25519-unencrypted-pkcs8.pem
 
-"$OPENSSL" pkey -in "$DEST_DIR"/x25519-unencrypted-pkcs8.pem \
-  -traditional -out "$DEST_DIR"/x25519-unencrypted-trad.pem
-
 encrypt x25519
 
 
@@ -167,9 +168,6 @@ encrypt x25519
 
 "$OPENSSL" genpkey -algorithm x448 \
   -out "$DEST_DIR"/x448-unencrypted-pkcs8.pem
-
-"$OPENSSL" pkey -in "$DEST_DIR"/x448-unencrypted-pkcs8.pem \
-  -traditional -out "$DEST_DIR"/x448-unencrypted-trad.pem
 
 encrypt x448
 
@@ -179,9 +177,6 @@ encrypt x448
 "$OPENSSL" genpkey -algorithm ed25519 \
   -out "$DEST_DIR"/ed25519-unencrypted-pkcs8.pem
 
-"$OPENSSL" pkey -in "$DEST_DIR"/ed25519-unencrypted-pkcs8.pem \
-  -traditional -out "$DEST_DIR"/ed25519-unencrypted-trad.pem
-
 encrypt ed25519
 
 
@@ -189,9 +184,6 @@ encrypt ed25519
 
 "$OPENSSL" genpkey -algorithm ed448 \
   -out "$DEST_DIR"/ed448-unencrypted-pkcs8.pem
-
-"$OPENSSL" pkey -in "$DEST_DIR"/ed448-unencrypted-pkcs8.pem \
-  -traditional -out "$DEST_DIR"/ed448-unencrypted-trad.pem
 
 encrypt ed448
 
@@ -251,6 +243,7 @@ for TYPE in rsa ed25519; do
       -inkey "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
       -in "$DEST_DIR"/"$TYPE"-self-signed-cert.pem \
       -name "PKCS12 ($TYPE) -certpbe $certpbe" -certpbe $certpbe \
+      $PROVIDERS \
       | der_to_pem PKCS12
     done
 
@@ -259,6 +252,7 @@ for TYPE in rsa ed25519; do
       -inkey "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
       -in "$DEST_DIR"/"$TYPE"-self-signed-cert.pem \
       -name "PKCS12 ($TYPE) -keypbe $keypbe" -keypbe $keypbe \
+      $PROVIDERS \
       | der_to_pem PKCS12
     done
   ) > "$DEST_DIR"/"$TYPE"-pkcs12.pem
@@ -283,7 +277,7 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
 
   for MODE in pss; do
     echo "$MESSAGE" | "$OPENSSL" cms -sign -outform PEM \
-      -stream -indef -md sha256 \
+      -nodetach -md sha256 \
       -inkey "$DEST_DIR"/rsa-unencrypted-pkcs8.pem \
       -signer "$DEST_DIR"/rsa-self-signed-cert.pem \
       -keyopt rsa_padding_mode:"$MODE"
@@ -320,14 +314,16 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
     for TYPE in rsa; do
       echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
         -stream -indef $cipher \
-        -recip "$DEST_DIR"/"$TYPE"-self-signed-cert.pem
+        -recip "$DEST_DIR"/"$TYPE"-self-signed-cert.pem \
+        $PROVIDERS
     done
 
     for MODE in oaep; do
       echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
         -stream -indef $cipher \
         -recip "$DEST_DIR"/rsa-self-signed-cert.pem \
-        -keyopt rsa_padding_mode:"$MODE"
+        -keyopt rsa_padding_mode:"$MODE" \
+        $PROVIDERS
     done
   done
 ) > "$DEST_DIR"/cms-enveloped-ktri-data.pem
@@ -344,7 +340,8 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
         echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
           -stream -indef $cipher \
           -recip "$DEST_DIR"/"$TYPE"-self-signed-cert.pem \
-          -keyopt ecdh_kdf_md:"$MD" -keyopt ecdh_cofactor_mode:0
+          -keyopt ecdh_kdf_md:"$MD" -keyopt ecdh_cofactor_mode:0 \
+          $PROVIDERS
       done
     done
   done
@@ -359,7 +356,8 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
     key=`expr "$cipher_key" : '[^:]*:\([^:]*\)'`
 
     echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
-      -stream -indef $cipher -secretkey $key -secretkeyid 30
+      -stream -indef $cipher -secretkey $key -secretkeyid 30 \
+      $PROVIDERS
   done
 ) > "$DEST_DIR"/cms-enveloped-kekri-data.pem
 
@@ -372,7 +370,8 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
     key=`expr "$cipher_key" : '[^:]*:\([^:]*\)'`
 
     echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
-      -stream -indef $cipher -pwri_password "$PASSWORD"
+      -stream -indef $cipher -pwri_password "$PASSWORD" \
+      $PROVIDERS
   done
 ) > "$DEST_DIR"/cms-enveloped-pwri-data.pem
 
@@ -395,6 +394,7 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
     key=`expr "$cipher_key" : '[^:]*:\([^:]*\)'`
 
     echo "$MESSAGE" | "$OPENSSL" cms -EncryptedData_encrypt -outform PEM \
-      -stream -indef $cipher -secretkey $key
+      -stream -indef $cipher -secretkey $key \
+      $PROVIDERS
   done
 ) > "$DEST_DIR"/cms-encrypted-data.pem

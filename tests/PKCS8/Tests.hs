@@ -13,8 +13,10 @@ import Test.Tasty.QuickCheck
 import Util
 import PKCS8.Instances ()
 
-keyTests :: String -> TestTree
-keyTests prefix =
+data KeyTestType = InnerOuter | OnlyOuter
+
+keyTests :: KeyTestType -> String -> TestTree
+keyTests InnerOuter prefix =
     testGroup "PrivateKey"
         [ testCase "read outer" $ do
               kOuter <- readKeyFile fOuter
@@ -42,6 +44,19 @@ keyTests prefix =
         ]
   where
     fInner = testFile (prefix ++ "-unencrypted-trad.pem")
+    fOuter = testFile (prefix ++ "-unencrypted-pkcs8.pem")
+keyTests OnlyOuter prefix =
+    testGroup "PrivateKey"
+        [ testCase "read" $ do
+              kOuter <- readKeyFile fOuter
+              length kOuter @?= 1
+        , testCase "write" $ do
+              bs <- B.readFile fOuter
+              let kOuter = readKeyFileFromMemory bs
+                  [Unprotected kO] = kOuter
+              writeKeyFileToMemory PKCS8Format [kO] @?= bs
+        ]
+  where
     fOuter = testFile (prefix ++ "-unencrypted-pkcs8.pem")
 
 encryptedKeyTests :: String -> TestTree
@@ -72,10 +87,10 @@ encryptedKeyTests prefix =
                            in all (\(Protected getKey) -> getKey pwd == Right key) kE
                 ]
 
-testType :: TestName -> String -> TestTree
-testType name prefix =
+testType :: TestName -> KeyTestType -> String -> TestTree
+testType name ty prefix =
     testGroup name
-        [ keyTests prefix
+        [ keyTests ty prefix
         , encryptedKeyTests prefix
         ]
 
@@ -93,13 +108,13 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
 pkcs8Tests :: TestTree
 pkcs8Tests =
     testGroup "PKCS8"
-        [ testType "RSA"                        "rsa"
-        , testType "DSA"                        "dsa"
-        , testType "EC (named curve)"           "ecdsa-p256"
-        , testType "EC (explicit prime curve)"  "ecdsa-epc"
-        , testType "X25519"                     "x25519"
-        , testType "X448"                       "x448"
-        , testType "Ed25519"                    "ed25519"
-        , testType "Ed448"                      "ed448"
+        [ testType "RSA"                        InnerOuter  "rsa"
+        , testType "DSA"                        InnerOuter  "dsa"
+        , testType "EC (named curve)"           InnerOuter  "ecdsa-p256"
+        , testType "EC (explicit prime curve)"  InnerOuter  "ecdsa-epc"
+        , testType "X25519"                     OnlyOuter   "x25519"
+        , testType "X448"                       OnlyOuter   "x448"
+        , testType "Ed25519"                    OnlyOuter   "ed25519"
+        , testType "Ed448"                      OnlyOuter   "ed448"
         , propertyTests
         ]
