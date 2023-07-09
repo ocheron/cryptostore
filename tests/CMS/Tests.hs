@@ -230,28 +230,70 @@ encryptedDataTests =
 
 authEnvelopedDataTests :: TestTree
 authEnvelopedDataTests =
-    testCaseSteps "AuthEnvelopedData" $ \step -> do
-        cms <- readCMSFile path
-        assertEqual "unexpected parse count" count (length cms)
+    testGroup "AuthEnvelopedData"
+        [ testKT "KTRI" path3
+        , testKA "KARI" path4
+        , test "KEKRI" path1 withRecipientKey
+        ]
+  where test caseName path f = testCaseSteps caseName $ \step -> do
+            cms <- readCMSFile path
+            assertEqual "unexpected parse count" (length keys) (length cms)
 
-        forM_ (zip [0..] cms) $ \(index, ci) -> do
-            step ("testing vector " ++ show (index :: Int))
+            forM_ (zip [0..] cms) $ \(index, ci) -> do
+                let (name, key) = keys !! index
+
+                step ("testing " ++ name)
+                ae <- getAuthEnveloppedAttached ci
+                result <- openAuthEnvelopedData (f key) ae
+                assertRight result (verifyInnerMessage message)
+        testKT caseName path = testCaseSteps caseName $ \step -> do
+            let rsaPath = testFile "rsa-unencrypted-pkcs8.pem"
+            [Unprotected priv] <- readKeyFile rsaPath
+
+            cms <- readCMSFile path
+            assertEqual "unexpected parse count" (length modes * length keys) (length cms)
+
+            let pairs = [ (c, m) | c <- map fst keys, m <- modes ]
+            forM_ (zip pairs cms) $ \((c, m), ci) -> do
+                step ("testing " ++ c ++ " with " ++ m)
+                ae <- getAuthEnveloppedAttached ci
+                result <- openAuthEnvelopedData (withRecipientKeyTrans priv) ae
+                assertRight result (verifyInnerMessage message)
+        testKA caseName path = testCaseSteps caseName $ \step -> do
+            let ecdsaKeyPath  = testFile "ecdsa-p256-unencrypted-pkcs8.pem"
+                ecdsaCertPath = testFile "ecdsa-p256-self-signed-cert.pem"
+            [Unprotected priv] <- readKeyFile ecdsaKeyPath
+            [cert] <- readSignedObject ecdsaCertPath
+
+            cms <- readCMSFile path
+            assertEqual "unexpected parse count" (length mds * length keys) (length cms)
+
+            let pairs = [ (c, h) | c <- map fst keys, h <- mds ]
+            forM_ (zip pairs cms) $ \((c, h), ci) -> do
+                step ("testing " ++ c ++ " with " ++ h)
+                ae <- getAuthEnveloppedAttached ci
+                result <- openAuthEnvelopedData (withRecipientKeyAgree priv cert) ae
+                assertRight result (verifyInnerMessage message)
+        getAuthEnveloppedAttached ci = do
             assertBool "unexpected type" (hasType AuthEnvelopedDataType ci)
             let AuthEnvelopedDataCI aeEncap = ci
-            ae <- getAttached aeEncap
-            result <- openAuthEnvelopedData (withRecipientPassword pwd) ae
-            assertRight result (verifyInnerMessage msg)
-
-            step ("testing encoded vector " ++ show index)
-            let [Just ci'] = pemToContentInfo [] (contentInfoToPEM ci)
-                AuthEnvelopedDataCI aeEncap' = ci'
-            ae' <- getAttached aeEncap'
-            result' <- openAuthEnvelopedData (withRecipientPassword pwd) ae'
-            assertRight result' (verifyInnerMessage msg)
-  where path  = testFile "cms-auth-enveloped-data-rfc6476.pem"
-        pwd   = fromString "password"
-        msg   = fromString "Some test data\NUL"
-        count = 2
+            getAttached aeEncap
+        path1 = testFile "cms-auth-enveloped-kekri-data.pem"
+        path3 = testFile "cms-auth-enveloped-ktri-data.pem"
+        path4 = testFile "cms-auth-enveloped-kari-data.pem"
+        keys  = [ ("AES128_GCM",           testKey 16)
+                , ("AES192_GCM",           testKey 24)
+                , ("AES256_GCM",           testKey 32)
+                ]
+        modes = [ "RSAES-PKCS1"
+                , "RSAES-OAEP"
+                ]
+        mds   = [ "SHA1"
+                , "SHA224"
+                , "SHA256"
+                , "SHA384"
+                , "SHA512"
+                ]
 
 propertyTests :: TestTree
 propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"

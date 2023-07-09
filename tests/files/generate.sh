@@ -49,6 +49,11 @@ CIPHER_KEYS_ENCRYPTED=" \
   -aes-256-ecb:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
   -camellia-128-ecb:000102030405060708090a0b0c0d0e0f"
 
+CIPHER_KEYS_AUTH_ENVELOPED=" \
+  -aes-128-gcm:000102030405060708090a0b0c0d0e0f \
+  -aes-192-gcm:000102030405060708090a0b0c0d0e0f1011121314151617 \
+  -aes-256-gcm:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+
 PKCS12_INTEGRITY="sha1 sha256 sha384"
 
 PKCS12_PRIVACY=" \
@@ -398,3 +403,60 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
       $PROVIDERS
   done
 ) > "$DEST_DIR"/cms-encrypted-data.pem
+
+
+# CMS auth-enveloped data (key transport)
+
+(
+  for cipher_key in $CIPHER_KEYS_AUTH_ENVELOPED; do
+    cipher=`expr "$cipher_key" : '\([^:]*\):[^:]*'`
+
+    for TYPE in rsa; do
+      echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
+        -stream -indef $cipher \
+        -recip "$DEST_DIR"/"$TYPE"-self-signed-cert.pem \
+        $PROVIDERS
+    done
+
+    for MODE in oaep; do
+      echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
+        -stream -indef $cipher \
+        -recip "$DEST_DIR"/rsa-self-signed-cert.pem \
+        -keyopt rsa_padding_mode:"$MODE" \
+        $PROVIDERS
+    done
+  done
+) > "$DEST_DIR"/cms-auth-enveloped-ktri-data.pem
+
+
+# CMS auth-enveloped data (key agreement)
+
+(
+  for cipher_key in $CIPHER_KEYS_AUTH_ENVELOPED; do
+    cipher=`expr "$cipher_key" : '\([^:]*\):[^:]*'`
+
+    for TYPE in ecdsa-p256; do
+      for MD in sha1 sha224 sha256 sha384 sha512; do
+        echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
+          -stream -indef $cipher \
+          -recip "$DEST_DIR"/"$TYPE"-self-signed-cert.pem \
+          -keyopt ecdh_kdf_md:"$MD" -keyopt ecdh_cofactor_mode:0 \
+          $PROVIDERS
+      done
+    done
+  done
+) > "$DEST_DIR"/cms-auth-enveloped-kari-data.pem
+
+
+# CMS auth-enveloped data (key encryption key)
+
+(
+  for cipher_key in $CIPHER_KEYS_AUTH_ENVELOPED; do
+    cipher=`expr "$cipher_key" : '\([^:]*\):[^:]*'`
+    key=`expr "$cipher_key" : '[^:]*:\([^:]*\)'`
+
+    echo "$MESSAGE" | "$OPENSSL" cms -encrypt -outform PEM \
+      -stream -indef $cipher -secretkey $key -secretkeyid 30 \
+      $PROVIDERS
+  done
+) > "$DEST_DIR"/cms-auth-enveloped-kekri-data.pem
