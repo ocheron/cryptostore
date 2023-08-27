@@ -35,7 +35,7 @@ keyTests name prefix count =
               writeSignedObjectToMemory objs @?= bs
         , testCase "write public key" $ do
               bs <- B.readFile fKey
-              let key = head (readPubKeyFileFromMemory bs)
+              let (key : _) = readPubKeyFileFromMemory bs
               assertBool "first key differs" $
                   writePubKeyFileToMemory [key] `B.isPrefixOf` bs
         ]

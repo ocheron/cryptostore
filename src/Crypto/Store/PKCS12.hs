@@ -670,9 +670,10 @@ fromCredential' :: ([Attribute] -> [Attribute])
                 -> ProtectionPassword
                 -> (X509.CertificateChain, X509.PrivKey)
                 -> Either StoreError PKCS12
-fromCredential' trans algChain algKey pwd (X509.CertificateChain certs, key)
-    | null certs = Left (InvalidInput "Empty certificate chain")
-    | otherwise  = (<>) <$> pkcs12Chain <*> pkcs12Key
+fromCredential' _ _ _ _ (X509.CertificateChain [], _) =
+    Left (InvalidInput "Empty certificate chain")
+fromCredential' trans algChain algKey pwd (X509.CertificateChain certs@(leaf:_), key) =
+    (<>) <$> pkcs12Chain <*> pkcs12Key
   where
     pkcs12Key   = unencrypted <$> scKeyOrError
     pkcs12Chain =
@@ -689,7 +690,7 @@ fromCredential' trans algChain algKey pwd (X509.CertificateChain certs, key)
     wrap shrouded = SafeContents [Bag (PKCS8ShroudedKeyBag shrouded) attrs]
     encodedKey    = encodeASN1Object (FormattedKey PKCS8Format key)
 
-    X509.Fingerprint keyId = X509.getFingerprint (head certs) X509.HashSHA1
+    X509.Fingerprint keyId = X509.getFingerprint leaf X509.HashSHA1
     attrs = trans (setLocalKeyId keyId [])
 
 -- Standard attributes

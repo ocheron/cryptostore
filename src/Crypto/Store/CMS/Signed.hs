@@ -172,12 +172,13 @@ certSigner :: MonadRandom m
            -> Maybe [Attribute]
            -> [Attribute]
            -> ProducerOfSI m
-certSigner alg priv (CertificateChain chain) sAttrsM uAttrs ct msg =
+certSigner _ _ (CertificateChain []) _ _ _ _ =
+    pure $ Left (InvalidInput "Empty certificate chain")
+certSigner alg priv (CertificateChain chain@(cert:_)) sAttrsM uAttrs ct msg =
     fmap build <$> generate
   where
     md   = digest dig msg
     def  = DigestAlgorithm Crypto.Store.CMS.Algorithms.SHA256
-    cert = head chain
     obj  = signedObject (getSigned cert)
     isn  = IssuerAndSerialNumber (certIssuerDN obj) (certSerial obj)
     pub  = certPubKey obj
