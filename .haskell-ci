@@ -7,8 +7,9 @@ compiler: ghc-8.8 lts-16.31
 compiler: ghc-8.10 lts-18.28
 compiler: ghc-9.0 lts-19.33
 compiler: ghc-9.2 lts-20.26
-compiler: ghc-9.4 lts-21.0
-compiler: ghc-9.6 nightly-2023-06-25
+compiler: ghc-9.4 lts-21.25
+compiler: ghc-9.6 lts-22.4
+compiler: ghc-9.8 nightly-2024-01-06
 
 # options
 option: x509min extradep=basement-0.0.7 extradep=foundation-0.0.20 extradep=memory-0.14.18 extradep=cryptonite-0.26 extradep=x509-1.7.5
@@ -26,6 +27,7 @@ build: ghc-9.0
 build: ghc-9.2
 build: ghc-9.4
 build: ghc-9.6 usecrypton
+build: ghc-9.8 usecrypton
 
 # packages
 package: '.'
