@@ -1127,14 +1127,16 @@ authContentDecrypt key params paramsRaw aad bs expected =
         Params_AUTH_ENC_128 p   -> checkAuthKey 16 key >> authDecrypt p
         Params_AUTH_ENC_256 p   -> checkAuthKey 32 key >> authDecrypt p
         Params_CHACHA20_POLY1305 iv -> ccpInit key iv aad >>= ccpDecrypt
-        ParamsCCM cipher iv m l -> getAEAD cipher key (AEAD_CCM msglen m l) iv >>= decrypt
-        ParamsGCM cipher iv _   -> getAEAD cipher key AEAD_GCM iv >>= decrypt
+        ParamsCCM cipher iv m l -> getAEAD cipher key (AEAD_CCM msglen m l) iv >>= decrypt (getM m)
+        ParamsGCM cipher iv len -> getAEAD cipher key AEAD_GCM iv >>= decrypt len
   where
     msglen  = B.length bs
     badMac  = Left BadContentMAC
 
-    decrypt :: AEAD a -> Either StoreError ba
-    decrypt aead = maybe badMac Right (aeadSimpleDecrypt aead aad bs expected)
+    decrypt :: Int -> AEAD a -> Either StoreError ba
+    decrypt len aead
+        | B.length (unAuthTag expected) /= len = badMac
+        | otherwise = maybe badMac Right (aeadSimpleDecrypt aead aad bs expected)
 
     ccpDecrypt :: ChaChaPoly1305.State -> Either StoreError ba
     ccpDecrypt state
