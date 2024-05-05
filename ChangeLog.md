@@ -1,5 +1,9 @@
 # Revision history for cryptostore
 
+## 0.3.1.0 - 2024-05-05
+
+* Strict validation of GCM/CCM authentication tag length
+
 ## 0.3.0.1 - 2023-06-25
 
 * Add optional flag to use crypton instead of cryptonite
