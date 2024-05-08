@@ -8,7 +8,7 @@ compiler: ghc-8.10 lts-18.28
 compiler: ghc-9.0 lts-19.33
 compiler: ghc-9.2 lts-20.26
 compiler: ghc-9.4 lts-21.25
-compiler: ghc-9.6 lts-22.20
+compiler: ghc-9.6 lts-22.21
 compiler: ghc-9.8 nightly-2024-05-04
 
 # options
