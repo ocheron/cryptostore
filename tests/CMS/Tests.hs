@@ -180,12 +180,16 @@ digestedDataTests =
                 ci' = toAttachedCI dd'
             ci @?= ci'
   where path  = testFile "cms-digested-data.pem"
-        algs  = [ ("MD5",    DigestAlgorithm MD5)
-                , ("SHA1",   DigestAlgorithm SHA1)
-                , ("SHA224", DigestAlgorithm SHA224)
-                , ("SHA256", DigestAlgorithm SHA256)
-                , ("SHA384", DigestAlgorithm SHA384)
-                , ("SHA512", DigestAlgorithm SHA512)
+        algs  = [ ("MD5",      DigestAlgorithm MD5)
+                , ("SHA1",     DigestAlgorithm SHA1)
+                , ("SHA224",   DigestAlgorithm SHA224)
+                , ("SHA256",   DigestAlgorithm SHA256)
+                , ("SHA384",   DigestAlgorithm SHA384)
+                , ("SHA512",   DigestAlgorithm SHA512)
+                , ("SHA3_224", DigestAlgorithm SHA3_224)
+                , ("SHA3_256", DigestAlgorithm SHA3_256)
+                , ("SHA3_384", DigestAlgorithm SHA3_384)
+                , ("SHA3_512", DigestAlgorithm SHA3_512)
                 ]
 
 encryptedDataTests :: TestTree

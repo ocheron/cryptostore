@@ -167,6 +167,14 @@ data DigestProxy hashAlg where
     SHA384 :: DigestProxy Hash.SHA384
     -- | SHA-512
     SHA512 :: DigestProxy Hash.SHA512
+    -- | SHA3-224
+    SHA3_224 :: DigestProxy Hash.SHA3_224
+    -- | SHA3-256
+    SHA3_256 :: DigestProxy Hash.SHA3_256
+    -- | SHA3-384
+    SHA3_384 :: DigestProxy Hash.SHA3_384
+    -- | SHA3-512
+    SHA3_512 :: DigestProxy Hash.SHA3_512
     -- | SHAKE128 (256 bits)
     SHAKE128_256 :: DigestProxy (Hash.SHAKE128 256)
     -- | SHAKE256 (512 bits)
@@ -186,6 +194,10 @@ instance Show (DigestProxy hashAlg) where
     showsPrec _ SHA256       = showString "SHA256"
     showsPrec _ SHA384       = showString "SHA384"
     showsPrec _ SHA512       = showString "SHA512"
+    showsPrec _ SHA3_224     = showString "SHA3_224"
+    showsPrec _ SHA3_256     = showString "SHA3_256"
+    showsPrec _ SHA3_384     = showString "SHA3_384"
+    showsPrec _ SHA3_512     = showString "SHA3_512"
     showsPrec _ SHAKE128_256 = showString "SHAKE128_256"
     showsPrec _ SHAKE256_512 = showString "SHAKE256_512"
     showsPrec d (SHAKE128 p) =
@@ -208,6 +220,10 @@ instance HasStrength (DigestProxy hashAlg) where
     getSecurityBits SHA256       = 128
     getSecurityBits SHA384       = 192
     getSecurityBits SHA512       = 256
+    getSecurityBits SHA3_224     = 112
+    getSecurityBits SHA3_256     = 128
+    getSecurityBits SHA3_384     = 192
+    getSecurityBits SHA3_512     = 256
     getSecurityBits SHAKE128_256 = 128
     getSecurityBits SHAKE256_512 = 256
     getSecurityBits (SHAKE128 a) = shakeSecurityBits 128 a
@@ -233,6 +249,10 @@ instance Eq DigestAlgorithm where
     DigestAlgorithm SHA256       == DigestAlgorithm SHA256       = True
     DigestAlgorithm SHA384       == DigestAlgorithm SHA384       = True
     DigestAlgorithm SHA512       == DigestAlgorithm SHA512       = True
+    DigestAlgorithm SHA3_224     == DigestAlgorithm SHA3_224     = True
+    DigestAlgorithm SHA3_256     == DigestAlgorithm SHA3_256     = True
+    DigestAlgorithm SHA3_384     == DigestAlgorithm SHA3_384     = True
+    DigestAlgorithm SHA3_512     == DigestAlgorithm SHA3_512     = True
     DigestAlgorithm SHAKE128_256 == DigestAlgorithm SHAKE128_256 = True
     DigestAlgorithm SHAKE256_512 == DigestAlgorithm SHAKE256_512 = True
     DigestAlgorithm (SHAKE128 a) == DigestAlgorithm (SHAKE128 b) = natVal a == natVal b
@@ -251,6 +271,10 @@ data DigestType
     | Type_SHA256
     | Type_SHA384
     | Type_SHA512
+    | Type_SHA3_224
+    | Type_SHA3_256
+    | Type_SHA3_384
+    | Type_SHA3_512
     | Type_SHAKE128_256
     | Type_SHAKE256_512
     | Type_SHAKE128_Len
@@ -265,6 +289,10 @@ instance Enumerable DigestType where
              , Type_SHA256
              , Type_SHA384
              , Type_SHA512
+             , Type_SHA3_224
+             , Type_SHA3_256
+             , Type_SHA3_384
+             , Type_SHA3_512
              , Type_SHAKE128_256
              , Type_SHAKE256_512
              , Type_SHAKE128_Len
@@ -280,6 +308,10 @@ instance OIDable DigestType where
     getObjectID Type_SHA256       = [2,16,840,1,101,3,4,2,1]
     getObjectID Type_SHA384       = [2,16,840,1,101,3,4,2,2]
     getObjectID Type_SHA512       = [2,16,840,1,101,3,4,2,3]
+    getObjectID Type_SHA3_224     = [2,16,840,1,101,3,4,2,7]
+    getObjectID Type_SHA3_256     = [2,16,840,1,101,3,4,2,8]
+    getObjectID Type_SHA3_384     = [2,16,840,1,101,3,4,2,9]
+    getObjectID Type_SHA3_512     = [2,16,840,1,101,3,4,2,10]
     getObjectID Type_SHAKE128_256 = [2,16,840,1,101,3,4,2,11]
     getObjectID Type_SHAKE256_512 = [2,16,840,1,101,3,4,2,12]
     getObjectID Type_SHAKE128_Len = [2,16,840,1,101,3,4,2,17]
@@ -300,6 +332,10 @@ instance AlgorithmId DigestAlgorithm where
     algorithmType (DigestAlgorithm SHA256)       = Type_SHA256
     algorithmType (DigestAlgorithm SHA384)       = Type_SHA384
     algorithmType (DigestAlgorithm SHA512)       = Type_SHA512
+    algorithmType (DigestAlgorithm SHA3_224)     = Type_SHA3_224
+    algorithmType (DigestAlgorithm SHA3_256)     = Type_SHA3_256
+    algorithmType (DigestAlgorithm SHA3_384)     = Type_SHA3_384
+    algorithmType (DigestAlgorithm SHA3_512)     = Type_SHA3_512
     algorithmType (DigestAlgorithm SHAKE128_256) = Type_SHAKE128_256
     algorithmType (DigestAlgorithm SHAKE256_512) = Type_SHAKE256_512
     algorithmType (DigestAlgorithm (SHAKE128 _)) = Type_SHAKE128_Len
@@ -320,6 +356,10 @@ instance AlgorithmId DigestAlgorithm where
     parseParameter Type_SHA256       = parseDigestParam (DigestAlgorithm SHA256)
     parseParameter Type_SHA384       = parseDigestParam (DigestAlgorithm SHA384)
     parseParameter Type_SHA512       = parseDigestParam (DigestAlgorithm SHA512)
+    parseParameter Type_SHA3_224     = parseDigestParam (DigestAlgorithm SHA3_224)
+    parseParameter Type_SHA3_256     = parseDigestParam (DigestAlgorithm SHA3_256)
+    parseParameter Type_SHA3_384     = parseDigestParam (DigestAlgorithm SHA3_384)
+    parseParameter Type_SHA3_512     = parseDigestParam (DigestAlgorithm SHA3_512)
     parseParameter Type_SHAKE128_256 = parseDigestParam (DigestAlgorithm SHAKE128_256)
     parseParameter Type_SHAKE256_512 = parseDigestParam (DigestAlgorithm SHAKE256_512)
     parseParameter Type_SHAKE128_Len = parseBitLen $
@@ -456,19 +496,27 @@ instance Enumerable MACType where
              , TypeHMAC SHA256
              , TypeHMAC SHA384
              , TypeHMAC SHA512
+             , TypeHMAC SHA3_224
+             , TypeHMAC SHA3_256
+             , TypeHMAC SHA3_384
+             , TypeHMAC SHA3_512
              , TypeKMAC_SHAKE128
              , TypeKMAC_SHAKE256
              ]
 
 instance OIDable MACType where
-    getObjectID (TypeHMAC MD5)    = [1,3,6,1,5,5,8,1,1]
-    getObjectID (TypeHMAC SHA1)   = [1,3,6,1,5,5,8,1,2]
-    getObjectID (TypeHMAC SHA224) = [1,2,840,113549,2,8]
-    getObjectID (TypeHMAC SHA256) = [1,2,840,113549,2,9]
-    getObjectID (TypeHMAC SHA384) = [1,2,840,113549,2,10]
-    getObjectID (TypeHMAC SHA512) = [1,2,840,113549,2,11]
-    getObjectID TypeKMAC_SHAKE128 = [2,16,840,1,101,3,4,2,19]
-    getObjectID TypeKMAC_SHAKE256 = [2,16,840,1,101,3,4,2,20]
+    getObjectID (TypeHMAC MD5)      = [1,3,6,1,5,5,8,1,1]
+    getObjectID (TypeHMAC SHA1)     = [1,3,6,1,5,5,8,1,2]
+    getObjectID (TypeHMAC SHA224)   = [1,2,840,113549,2,8]
+    getObjectID (TypeHMAC SHA256)   = [1,2,840,113549,2,9]
+    getObjectID (TypeHMAC SHA384)   = [1,2,840,113549,2,10]
+    getObjectID (TypeHMAC SHA512)   = [1,2,840,113549,2,11]
+    getObjectID (TypeHMAC SHA3_224) = [2,16,840,1,101,3,4,2,13]
+    getObjectID (TypeHMAC SHA3_256) = [2,16,840,1,101,3,4,2,14]
+    getObjectID (TypeHMAC SHA3_384) = [2,16,840,1,101,3,4,2,15]
+    getObjectID (TypeHMAC SHA3_512) = [2,16,840,1,101,3,4,2,16]
+    getObjectID TypeKMAC_SHAKE128   = [2,16,840,1,101,3,4,2,19]
+    getObjectID TypeKMAC_SHAKE256   = [2,16,840,1,101,3,4,2,20]
 
     getObjectID ty = error ("Unsupported MACAlgorithm: " ++ show ty)
 

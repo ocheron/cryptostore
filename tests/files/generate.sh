@@ -384,7 +384,7 @@ echo "$MESSAGE" | "$OPENSSL" cms -data_create \
 # CMS digested data
 
 (
-  for digest in MD5 SHA1 SHA224 SHA256 SHA384 SHA512; do
+  for digest in MD5 SHA1 SHA224 SHA256 SHA384 SHA512 SHA3-224 SHA3-256 SHA3-384 SHA3-512; do
     echo "$MESSAGE" | "$OPENSSL" cms -digest_create -md $digest \
       -outform PEM
   done

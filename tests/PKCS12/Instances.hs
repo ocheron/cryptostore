@@ -13,6 +13,7 @@ import           Data.Semigroup
 
 import Test.Tasty.QuickCheck
 
+import Crypto.Store.CMS
 import Crypto.Store.PKCS12
 import Crypto.Store.PKCS5
 
@@ -25,6 +26,18 @@ arbitrarySmall = resize 10 (B.pack <$> arbitrary)
 arbitraryAlias :: Gen String
 arbitraryAlias = resize 16 asciiChar
   where asciiChar = listOf $ choose ('\x20','\x7f')
+
+arbitraryIntegrityDigest :: Gen DigestAlgorithm
+arbitraryIntegrityDigest = elements
+    [ DigestAlgorithm MD2
+    , DigestAlgorithm MD4
+    , DigestAlgorithm MD5
+    , DigestAlgorithm SHA1
+    , DigestAlgorithm SHA224
+    , DigestAlgorithm SHA256
+    , DigestAlgorithm SHA384
+    , DigestAlgorithm SHA512
+    ]
 
 arbitraryIntegrityParams :: Gen IntegrityParams
 arbitraryIntegrityParams = (,) <$> arbitraryIntegrityDigest <*> arbitrary

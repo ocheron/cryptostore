@@ -4,7 +4,6 @@
 module CMS.Instances
     ( arbitraryPassword
     , arbitraryAttributes
-    , arbitraryIntegrityDigest
     , arbitrarySigVer
     , arbitraryEnvDev
     ) where
@@ -138,25 +137,33 @@ instance Arbitrary DigestAlgorithm where
         , pure $ DigestAlgorithm SHA256
         , pure $ DigestAlgorithm SHA384
         , pure $ DigestAlgorithm SHA512
+        , pure $ DigestAlgorithm SHA3_224
+        , pure $ DigestAlgorithm SHA3_256
+        , pure $ DigestAlgorithm SHA3_384
+        , pure $ DigestAlgorithm SHA3_512
         , pure $ DigestAlgorithm SHAKE128_256
         , pure $ DigestAlgorithm SHAKE256_512
         , (\(SomeNat p) -> DigestAlgorithm (SHAKE128 p)) <$> arbitraryNat
         , (\(SomeNat p) -> DigestAlgorithm (SHAKE256 p)) <$> arbitraryNat
         ]
 
-arbitraryIntegrityDigest :: Gen DigestAlgorithm
-arbitraryIntegrityDigest = elements
+arbitraryDigest :: Gen DigestAlgorithm
+arbitraryDigest = elements
     [ DigestAlgorithm MD5
     , DigestAlgorithm SHA1
     , DigestAlgorithm SHA224
     , DigestAlgorithm SHA256
     , DigestAlgorithm SHA384
     , DigestAlgorithm SHA512
+    , DigestAlgorithm SHA3_224
+    , DigestAlgorithm SHA3_256
+    , DigestAlgorithm SHA3_384
+    , DigestAlgorithm SHA3_512
     ]
 
 instance Arbitrary MACAlgorithm where
     arbitrary = oneof
-        [ (\(DigestAlgorithm alg) -> HMAC alg) <$> arbitraryIntegrityDigest
+        [ (\(DigestAlgorithm alg) -> HMAC alg) <$> arbitraryDigest
         , (\(SomeNat p) -> KMAC_SHAKE128 p) <$> arbitraryNat <*> arbitraryCtx
         , (\(SomeNat p) -> KMAC_SHAKE256 p) <$> arbitraryNat <*> arbitraryCtx
         ]
