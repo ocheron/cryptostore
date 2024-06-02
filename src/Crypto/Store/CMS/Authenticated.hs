@@ -10,7 +10,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.Store.CMS.Authenticated
-    ( AuthenticatedData(..)
+    ( EncapsulatedContent
+    , AuthenticatedData(..)
     ) where
 
 import Control.Applicative

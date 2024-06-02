@@ -24,6 +24,9 @@ module Crypto.Store.PKCS5
     , EncryptionScheme(..)
     , PBEParameter(..)
     , PBES2Parameter(..)
+    -- * Message authentication schemes
+    , AuthenticationScheme(..)
+    , PBMAC1Parameter(..)
     -- * Key derivation
     , KeyDerivationFunc(..)
     , PBKDF2_PRF(..)
@@ -38,6 +41,7 @@ module Crypto.Store.PKCS5
     -- * Low-level API
     , pbEncrypt
     , pbDecrypt
+    , pbMac
     ) where
 
 import           Data.ASN1.Types
@@ -47,6 +51,7 @@ import           Data.Maybe (fromMaybe)
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.CMS.Algorithms
+import Crypto.Store.CMS.Authenticated
 import Crypto.Store.CMS.Encrypted
 import Crypto.Store.CMS.Util
 import Crypto.Store.Error
@@ -164,6 +169,62 @@ instance ASN1Elem e => ProduceASN1Object e EncryptionScheme where
 instance Monoid e => ParseASN1Object e EncryptionScheme where
     parse = parseAlgorithm Sequence
 
+data AuthenticationSchemeType = Type_PBMAC1
+
+instance Enumerable AuthenticationSchemeType where
+    values = [ Type_PBMAC1
+             ]
+
+instance OIDable AuthenticationSchemeType where
+    getObjectID Type_PBMAC1 = [1,2,840,113549,1,5,14]
+
+instance OIDNameable AuthenticationSchemeType where
+    fromObjectID oid = unOIDNW <$> fromObjectID oid
+
+-- | Password-Based Message Authentication Scheme (PBMAC).
+newtype AuthenticationScheme = PBMAC1 PBMAC1Parameter -- ^ PBMAC1
+                             deriving (Show,Eq)
+
+-- | PBMAC1 parameters.
+data PBMAC1Parameter = PBMAC1Parameter
+    { pbmac1KDF     :: KeyDerivationFunc  -- ^ Key derivation function
+    , pbmac1AScheme :: MACAlgorithm       -- ^ Underlying message authentication scheme
+    }
+    deriving (Show,Eq)
+
+instance ASN1Elem e => ProduceASN1Object e PBMAC1Parameter where
+    asn1s PBMAC1Parameter{..} =
+        let kdFunc  = algorithmASN1S Sequence pbmac1KDF
+            aScheme = algorithmASN1S Sequence pbmac1AScheme
+         in asn1Container Sequence (kdFunc . aScheme)
+
+instance Monoid e => ParseASN1Object e PBMAC1Parameter where
+    parse = onNextContainer Sequence $ do
+        kdFunc  <- parseAlgorithm Sequence
+        aScheme <- parseAlgorithm Sequence
+        case kdfKeyLength kdFunc of
+            Nothing -> return ()
+            Just sz
+                | validateKeySize aScheme sz -> return ()
+                | otherwise -> throwParseError "PBMAC1Parameter: parsed key length incompatible with message authentication scheme"
+        return PBMAC1Parameter { pbmac1KDF = kdFunc, pbmac1AScheme = aScheme }
+
+instance AlgorithmId AuthenticationScheme where
+    type AlgorithmType AuthenticationScheme = AuthenticationSchemeType
+    algorithmName _  = "message authentication scheme"
+
+    algorithmType (PBMAC1 _)                 = Type_PBMAC1
+
+    parameterASN1S (PBMAC1 p)                 = asn1s p
+
+    parseParameter Type_PBMAC1                 = PBMAC1 <$> parse
+
+instance ASN1Elem e => ProduceASN1Object e AuthenticationScheme where
+    asn1s = algorithmASN1S Sequence
+
+instance Monoid e => ParseASN1Object e AuthenticationScheme where
+    parse = parseAlgorithm Sequence
+
 
 -- High-level API
 
@@ -236,3 +297,16 @@ pbes2 :: (Key -> ContentEncryptionParams -> ByteString -> result)
 pbes2 encdec PBES2Parameter{..} bs pwd = encdec key pbes2EScheme bs
   where key = kdfDerive pbes2KDF len (fromProtectionPassword pwd) :: Key
         len = fromMaybe (getMaximumKeySize pbes2EScheme) (kdfKeyLength pbes2KDF)
+
+
+-- Message Authentication Schemes
+
+-- | Authenticate a message with the specified authentication scheme and
+-- password.
+pbMac :: AuthenticationScheme -> EncapsulatedContent -> ProtectionPassword -> MessageAuthenticationCode
+pbMac (PBMAC1 p) = pbmac1 p
+
+pbmac1 :: PBMAC1Parameter -> ByteString -> ProtectionPassword -> MessageAuthenticationCode
+pbmac1 PBMAC1Parameter{..} bs pwd = mac pbmac1AScheme key bs
+  where key = kdfDerive pbmac1KDF len (fromProtectionPassword pwd) :: Key
+        len = fromMaybe (getMaximumKeySize pbmac1AScheme) (kdfKeyLength pbmac1KDF)
