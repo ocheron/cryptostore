@@ -531,6 +531,12 @@ instance AlgorithmId MACAlgorithm where
     algorithmType (KMAC_SHAKE128 _ _) = TypeKMAC_SHAKE128
     algorithmType (KMAC_SHAKE256 _ _) = TypeKMAC_SHAKE256
 
+    -- SHA-224, SHA-256, SHA-384, SHA-512 have NULL parameter,
+    -- other HMAC algorithms have no parameter
+    parameterASN1S (HMAC SHA224)         = gNull
+    parameterASN1S (HMAC SHA256)         = gNull
+    parameterASN1S (HMAC SHA384)         = gNull
+    parameterASN1S (HMAC SHA512)         = gNull
     parameterASN1S (HMAC _)              = id
     parameterASN1S (KMAC_SHAKE128 p str) = kmacASN1S 256 p str
     parameterASN1S (KMAC_SHAKE256 p str) = kmacASN1S 512 p str
@@ -1273,7 +1279,7 @@ instance AlgorithmId PBKDF2_PRF where
     type AlgorithmType PBKDF2_PRF = PBKDF2_PRF
     algorithmName _  = "PBKDF2 PRF"
     algorithmType    = id
-    parameterASN1S _ = id
+    parameterASN1S _ = gNull
     parseParameter p = getNextMaybe nullOrNothing >> return p
 
 -- | Invoke the pseudorandom function.
