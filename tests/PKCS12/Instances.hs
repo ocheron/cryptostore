@@ -3,7 +3,8 @@
 module PKCS12.Instances
     ( arbitraryPassword
     , arbitraryAlias
-    , arbitraryIntegrityParams
+    , arbitraryTraditionalIntegrity
+    , arbitraryAuthSchemeIntegrity
     , arbitraryPKCS12
     ) where
 
@@ -27,6 +28,12 @@ arbitraryAlias :: Gen String
 arbitraryAlias = resize 16 asciiChar
   where asciiChar = listOf $ choose ('\x20','\x7f')
 
+instance Arbitrary PBMAC1Parameter where
+    arbitrary = PBMAC1Parameter <$> arbitrary <*> arbitrary
+
+arbitraryAuthScheme :: Gen AuthenticationScheme
+arbitraryAuthScheme = PBMAC1 <$> arbitrary
+
 arbitraryIntegrityDigest :: Gen DigestAlgorithm
 arbitraryIntegrityDigest = elements
     [ DigestAlgorithm MD2
@@ -39,8 +46,12 @@ arbitraryIntegrityDigest = elements
     , DigestAlgorithm SHA512
     ]
 
-arbitraryIntegrityParams :: Gen IntegrityParams
-arbitraryIntegrityParams = (,) <$> arbitraryIntegrityDigest <*> arbitrary
+arbitraryTraditionalIntegrity :: Gen IntegrityParams
+arbitraryTraditionalIntegrity =
+    TraditionalIntegrity <$> arbitraryIntegrityDigest <*> arbitrary
+
+arbitraryAuthSchemeIntegrity :: Gen IntegrityParams
+arbitraryAuthSchemeIntegrity = AuthSchemeIntegrity <$> arbitraryAuthScheme
 
 arbitraryPKCS12 :: ProtectionPassword -> Gen PKCS12
 arbitraryPKCS12 pwd = do

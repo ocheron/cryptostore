@@ -2,6 +2,7 @@
 -- | Test utilities.
 module Util
     ( assertJust
+    , assertLeft
     , assertRight
     , getAttached
     , getDetached
@@ -24,6 +25,11 @@ import Test.Tasty.QuickCheck
 assertJust :: Maybe a -> (a -> Assertion) -> Assertion
 assertJust (Just a) f = f a
 assertJust Nothing  _ = assertFailure "expecting Just but got Nothing"
+
+assertLeft :: Show b => Either a b -> (a -> Assertion) -> Assertion
+assertLeft (Left a)  f = f a
+assertLeft (Right val) _ =
+    assertFailure ("expecting Left but got: Right " ++ show val)
 
 assertRight :: Show a => Either a b -> (b -> Assertion) -> Assertion
 assertRight (Right b)  f = f b

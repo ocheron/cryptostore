@@ -145,7 +145,7 @@ Generating a PKCS #12 file containing a private key:
 
 -- Save to PKCS #12 with integrity protection (same password)
 > salt' <- generateSalt 16
-> let iParams = (DigestAlgorithm SHA256, PBEParameter salt' 200000)
+> let iParams = TraditionalIntegrity (DigestAlgorithm SHA256) (PBEParameter salt' 200000)
 > writeP12File "/path/to/privkey.p12" iParams "mypassword" pkcs12
 Right ()
 ```
@@ -179,7 +179,7 @@ key and a certificate chain.  This pair is the type alias `Credential` in `tls`.
 -- Write the content back to a new file
 > let Right pkcs12' = fromCredential (Just sCert) sKey "myprivacypassword" cred
 > salt <- generateSalt 16
-> let iParams = (DigestAlgorithm SHA256, PBEParameter salt 200000)
+> let iParams = TraditionalIntegrity (DigestAlgorithm SHA256) (PBEParameter salt 200000)
 > writeP12File "/path/to/newfile.p12" iParams "myintegritypassword" pkcs12'
 ```
 

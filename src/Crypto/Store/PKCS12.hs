@@ -17,7 +17,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Crypto.Store.PKCS12
-    ( IntegrityParams
+    ( IntegrityParams(..)
     , readP12File
     , readP12FileFromMemory
     , writeP12File
@@ -70,14 +70,16 @@ module Crypto.Store.PKCS12
     , recoverA
     ) where
 
+import Control.Applicative
 import Control.Monad
 
 import           Data.ASN1.Types
 import qualified Data.ByteArray as B
 import qualified Data.ByteString as BS
 import           Data.List (partition)
-import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Maybe (isJust, fromMaybe, mapMaybe)
 import           Data.Semigroup
+import           Data.String (fromString)
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 
@@ -141,25 +143,44 @@ readP12FileFromMemory ber = decode ber >>= integrity
             Just md -> return $ Authenticated (verify md authSafeData)
 
     verify MacData{..} content pwdUTF8 =
-        case digAlg of
-            DigestAlgorithm d -> loop (toProtectionPasswords pwdUTF8)
+        case macAlg of
+            MacTraditional (DigestAlgorithm d) -> loop (toProtectionPasswords pwdUTF8)
               where
                 -- iterate over all possible representations of a password
                 -- until a successful match is found
                 loop []           = Left BadContentMAC
                 loop (pwd:others) =
-                    let fn key macAlg bs
-                            | not (securityAcceptable macAlg) =
+                    let fn key digAlg bs
+                            | not (securityAcceptable digAlg) =
                                 Left (InvalidParameter "Integrity MAC too weak")
-                            | macValue == mac macAlg key bs = (pwd,) <$> decode bs
+                            | macValue == mac digAlg key bs = (pwd,) <$> decode bs
                             | otherwise = loop others
                      in pkcs12mac Left fn d macParams content pwd
+
+            -- for RFC 9579 the primary representation is always used, this is
+            -- fine because we assume the encryption layer also uses that
+            -- representation
+            MacAuthScheme authScheme
+                | not (hasExplicitKeyLength authScheme) ->
+                    Left (InvalidParameter "KDF key length must be explicit")
+                | not (securityAcceptable authScheme) ->
+                    Left (InvalidParameter "Integrity MAC too weak")
+                | macValue == pbMac authScheme content pwd -> (pwd,) <$> decode content
+                | otherwise -> Left BadContentMAC
+              where pwd = toProtectionPassword pwdUTF8
+
+    hasExplicitKeyLength (PBMAC1 p) = isJust $ kdfKeyLength (pbmac1KDF p)
 
 
 -- Generating and encoding
 
 -- | Parameters used for password integrity mode.
-type IntegrityParams = (DigestAlgorithm, PBEParameter)
+data IntegrityParams
+    = TraditionalIntegrity DigestAlgorithm PBEParameter
+      -- ^ Traditional PKCS #12 integrity, with a digest algoritm
+    | AuthSchemeIntegrity AuthenticationScheme
+      -- ^ Integrity with an authentication scheme such as PBMAC1
+    deriving (Show,Eq)
 
 -- | Write a PKCS #12 file to disk.
 writeP12File :: FilePath
@@ -175,17 +196,32 @@ writeP12File path intp pw aSafe =
 writeP12FileToMemory :: IntegrityParams -> ProtectionPassword
                      -> PKCS12
                      -> Either StoreError BS.ByteString
-writeP12FileToMemory (alg@(DigestAlgorithm hashAlg), pbeParam) pwdUTF8 aSafe =
+writeP12FileToMemory intp pwdUTF8 aSafe =
     encode <$> protect
   where
     content   = encodeASN1Object aSafe
     encode md = encodeASN1Object PFX { authSafeData = content, macData = Just md }
 
-    protect = pkcs12mac Left fn hashAlg pbeParam content pwdUTF8
-    fn key macAlg bs = Right MacData { digAlg    = alg
-                                     , macValue  = mac macAlg key bs
-                                     , macParams = pbeParam
-                                     }
+    protect = case intp of
+        TraditionalIntegrity alg@(DigestAlgorithm hashAlg) pbeParam ->
+            let fn key macAlg bs = Right MacData { macAlg    = MacTraditional alg
+                                                 , macValue  = mac macAlg key bs
+                                                 , macParams = pbeParam
+                                                 }
+             in pkcs12mac Left fn hashAlg pbeParam content pwdUTF8
+        AuthSchemeIntegrity authScheme
+            | pwdUTF8 == emptyNotTerminated ->
+                Left (InvalidPassword "Authentication scheme requires terminated password")
+            | otherwise ->
+                Right MacData { macAlg    = MacAuthScheme (transform authScheme)
+                              , macValue  = pbMac authScheme content pwdUTF8
+                              , macParams = unused
+                              }
+    unused = PBEParameter (fromString "NOT USED") 1
+
+    transform (PBMAC1 p) = PBMAC1 (ensureExplicitKeyLength p)
+    ensureExplicitKeyLength p = p { pbmac1KDF = kdfKeyLengthModify fn (pbmac1KDF p) }
+      where fn = Just . fromMaybe (getMaximumKeySize $ pbmac1AScheme p)
 
 -- | Write a PKCS #12 file without integrity protection to disk.
 writeUnprotectedP12File :: FilePath -> PKCS12 -> IO ()
@@ -230,8 +266,12 @@ instance ParseASN1Object [ASN1Event] PFX where
         m <- if b then Just <$> parse else pure Nothing
         return PFX { authSafeData = d, macData = m }
 
+data MacAlg = MacTraditional DigestAlgorithm
+            | MacAuthScheme AuthenticationScheme
+            deriving (Show,Eq)
+
 data MacData = MacData
-    { digAlg :: DigestAlgorithm
+    { macAlg :: MacAlg
     , macValue :: MessageAuthenticationCode
     , macParams :: PBEParameter
     }
@@ -242,25 +282,30 @@ instance ASN1Elem e => ProduceASN1Object e MacData where
         asn1Container Sequence (m . s . i)
       where
         m = asn1Container Sequence (a . v)
-        a = algorithmASN1S Sequence digAlg
+        a = gMacAlg macAlg
         v = gOctetString (B.convert macValue)
         s = gOctetString (pbeSalt macParams)
         i = gIntVal (fromIntegral $ pbeIterationCount macParams)
 
+        gMacAlg (MacTraditional alg) = algorithmASN1S Sequence alg
+        gMacAlg (MacAuthScheme authScheme) = algorithmASN1S Sequence authScheme
+
 instance Monoid e => ParseASN1Object e MacData where
     parse = onNextContainer Sequence $ do
         (a, v) <- onNextContainer Sequence $ do
-            a <- parseAlgorithm Sequence
+            a <- parseTraditional <|> parseAuthScheme
             OctetString v <- getNext
             return (a, v)
         OctetString s <- getNext
         b <- hasNext
         IntVal i <- if b then getNext else pure (IntVal 1)
-        return MacData { digAlg = a
+        return MacData { macAlg = a
                        , macValue = AuthTag (B.convert v)
                        , macParams = PBEParameter s (fromIntegral i)
                        }
-
+      where
+        parseTraditional = MacTraditional <$> parseAlgorithm Sequence
+        parseAuthScheme = MacAuthScheme <$> parseAlgorithm Sequence
 
 -- AuthenticatedSafe
 

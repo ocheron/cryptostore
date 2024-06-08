@@ -6,6 +6,7 @@ import Control.Monad (forM_)
 import Data.PEM (pemContent)
 import Data.String (fromString)
 
+import Crypto.Store.Error
 import Crypto.Store.PKCS12
 import Crypto.Store.PKCS8
 import Crypto.Store.X509 (readSignedObject)
@@ -92,6 +93,40 @@ testEmptyPassword = testCaseSteps "empty password" $ \step -> do
             , ("GnuTLS with --null-password", 1, 1)
             ]
 
+testRfc9579 :: TestTree
+testRfc9579 = testCaseSteps "rfc9579" $ \step -> do
+    step "Reading PKCS #12 files"
+    pems <- readPEMs path
+    length pems @?= length infos
+
+    forM_ (zip infos pems) $ \((name, integrityError), pem) -> do
+        let r = readP12FileFromMemory (pemContent pem)
+
+        assertRight r $ \integrity -> case integrityError of
+            Nothing ->
+                assertRight (recoverAuthenticated pwd integrity) $ \(ppwd, privacy) ->
+                    assertRight (recover ppwd $ unPKCS12 privacy) $ \scs -> do
+                        step ("Testing " ++ name)
+                        assertRight (recover ppwd $ getAllSafeKeys scs) $ \keys ->
+                            length keys @?= 1
+                        length (getAllSafeX509Certs scs) @?= 1
+            Just expectedErr ->
+                assertLeft (recoverAuthenticated pwd integrity) $ \err -> do
+                    err @?= expectedErr
+                    step ("Testing " ++ name)
+  where
+    pwd = fromString "1234"
+
+    path  = testFile "pkcs12-rfc9579.pem"
+    infos = [ ("SHA-256 HMAC and PRF", Nothing)
+            , ("SHA-256 HMAC and SHA-512 PRF", Nothing)
+            , ("SHA-512 HMAC and PRF", Nothing)
+            , ("Incorrect Iteration Count", Just BadContentMAC)
+            , ("Incorrect Salt", Just BadContentMAC)
+            , ("Missing Key Length",
+                Just $ InvalidParameter "KDF key length must be explicit")
+            ]
+
 propertyTests :: TestTree
 propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
     [ testProperty "marshalling" $ do
@@ -100,10 +135,17 @@ propertyTests = localOption (QuickCheckMaxSize 5) $ testGroup "properties"
         let r = readP12FileFromMemory $ writeUnprotectedP12FileToMemory c
             unused = fromString "not-used"
         return $ Right (Right c) === (fmap snd . recoverAuthenticated unused <$> r)
-    , testProperty "marshalling with authentication" $ do
-        params <- arbitraryIntegrityParams
+    , testProperty "marshalling with traditional authentication" $ do
+        params <- arbitraryTraditionalIntegrity
         c <- arbitrary >>= arbitraryPKCS12
         pI <- arbitrary
+        let r = readP12FileFromMemory <$> writeP12FileToMemory params pI c
+            p = fromProtectionPassword pI
+        return $ Right (Right (Right (pI, c))) === (fmap (recoverAuthenticated p) <$> r)
+    , testProperty "marshalling with authentication scheme" $ do
+        params <- arbitraryAuthSchemeIntegrity
+        c <- arbitrary >>= arbitraryPKCS12
+        pI <- arbitrary `suchThat` (/= emptyNotTerminated)
         let r = readP12FileFromMemory <$> writeP12FileToMemory params pI c
             p = fromProtectionPassword pI
         return $ Right (Right (Right (pI, c))) === (fmap (recoverAuthenticated p) <$> r)
@@ -132,5 +174,6 @@ pkcs12Tests =
         [ testType "RSA"                        "rsa"
         , testType "Ed25519"                    "ed25519"
         , testEmptyPassword
+        , testRfc9579
         , propertyTests
         ]

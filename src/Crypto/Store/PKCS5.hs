@@ -185,6 +185,9 @@ instance OIDNameable AuthenticationSchemeType where
 newtype AuthenticationScheme = PBMAC1 PBMAC1Parameter -- ^ PBMAC1
                              deriving (Show,Eq)
 
+instance HasStrength AuthenticationScheme where
+    getSecurityBits (PBMAC1 p) = getSecurityBits (pbmac1AScheme p)
+
 -- | PBMAC1 parameters.
 data PBMAC1Parameter = PBMAC1Parameter
     { pbmac1KDF     :: KeyDerivationFunc  -- ^ Key derivation function

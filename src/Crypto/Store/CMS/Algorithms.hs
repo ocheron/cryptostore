@@ -24,7 +24,7 @@ module Crypto.Store.CMS.Algorithms
     , MessageAuthenticationCode
     , MACAlgorithm(..)
     , mac
-    , HasStrength
+    , HasStrength(..)
     , securityAcceptable
     , HasKeySize(..)
     , getMaximumKeySize
@@ -54,6 +54,7 @@ module Crypto.Store.CMS.Algorithms
     , generateSalt
     , KeyDerivationFunc(..)
     , kdfKeyLength
+    , kdfKeyLengthModify
     , kdfDerive
     , KeyEncryptionParams(..)
     , keyEncrypt
@@ -1380,6 +1381,12 @@ instance AlgorithmId KeyDerivationFunc where
 kdfKeyLength :: KeyDerivationFunc -> Maybe Int
 kdfKeyLength PBKDF2{..} = pbkdf2KeyLength
 kdfKeyLength Scrypt{..} = scryptKeyLength
+
+-- | Modify the optional key length stored in the KDF parameters.
+kdfKeyLengthModify :: (Maybe Int -> Maybe Int)
+                   -> KeyDerivationFunc -> KeyDerivationFunc
+kdfKeyLengthModify f kdf@PBKDF2{..} = kdf{pbkdf2KeyLength = f pbkdf2KeyLength}
+kdfKeyLengthModify f kdf@Scrypt{..} = kdf{scryptKeyLength = f scryptKeyLength}
 
 -- | Run a key derivation function to produce a result of the specified length
 -- using the supplied password.
