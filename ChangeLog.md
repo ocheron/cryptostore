@@ -1,5 +1,15 @@
 # Revision history for cryptostore
 
+## Unreleased
+
+* Added support of PBMAC1 for PKCS#12 integrity.  Type `IntegrityParams` used
+  in functions `writeP12File` and `writeP12FileToMemory` is modified.
+  A low-level function for PBMAC1 is also available in the PKCS5 module.
+
+* CMS now supports SHA-3 algorithms in HMAC, or as digest algorithm
+
+* Fixed encoding of some HMAC and PRF parameters
+
 ## 0.3.1.0 - 2024-05-05
 
 * Strict validation of GCM/CCM authentication tag length
