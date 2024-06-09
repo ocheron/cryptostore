@@ -186,6 +186,39 @@ key and a certificate chain.  This pair is the type alias `Credential` in `tls`.
 Variants `toNamedCredential` and `fromNamedCredential` are also available when
 PKCS #12 elements need an alias (friendly name).
 
+The library also supports integrity protection with PBMAC1 as defined in
+[RFC 9579](https://tools.ietf.org/html/rfc9579). The following example shows
+how to use PBKDF2 with SHA-256 HMAC and PRF:
+
+```haskell
+> :set -XOverloadedStrings
+
+-- Generate a private key
+> :m Crypto.PubKey.RSA Data.X509
+> privKey <- PrivKeyRSA . snd <$> generate (2048 `div` 8) 0x10001
+
+-- Put the key inside a bag
+> :m Crypto.Store.PKCS12 Crypto.Store.PKCS8 Crypto.Store.PKCS5 Crypto.Store.CMS
+> let attrs = setFriendlyName "Some Key" []
+>     keyBag = Bag (KeyBag $ FormattedKey PKCS8Format privKey) attrs
+>     contents = SafeContents [keyBag]
+
+-- Encrypt the contents
+> salt <- generateSalt 16
+> let kdf = PBKDF2 salt 200000 Nothing PBKDF2_SHA256
+> encParams <- generateEncryptionParams (CBC AES256)
+> let pbes = PBES2 (PBES2Parameter kdf encParams)
+>     Right pkcs12 = encrypted pbes "mypassword" contents
+
+-- Save to PKCS #12 with PBMAC1 integrity protection (same password)
+> salt' <- generateSalt 16
+> let kdf' = PBKDF2 salt' 200000 (Just 32) PBKDF2_SHA256
+> let authScheme = PBMAC1 $ PBMAC1Parameter kdf' (HMAC SHA256)
+> let iParams = AuthSchemeIntegrity authScheme
+> writeP12File "/path/to/privkey.p12" iParams "mypassword" pkcs12
+Right ()
+```
+
 ## Cryptographic Message Syntax
 
 The API to read and write CMS content is available in `Crypto.Store.CMS`.  The
