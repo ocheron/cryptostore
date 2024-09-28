@@ -506,8 +506,8 @@ instance Enumerable MACType where
              ]
 
 instance OIDable MACType where
-    getObjectID (TypeHMAC MD5)      = [1,3,6,1,5,5,8,1,1]
-    getObjectID (TypeHMAC SHA1)     = [1,3,6,1,5,5,8,1,2]
+    getObjectID (TypeHMAC MD5)      = [1,2,840,113549,2,6]
+    getObjectID (TypeHMAC SHA1)     = [1,2,840,113549,2,7]
     getObjectID (TypeHMAC SHA224)   = [1,2,840,113549,2,8]
     getObjectID (TypeHMAC SHA256)   = [1,2,840,113549,2,9]
     getObjectID (TypeHMAC SHA384)   = [1,2,840,113549,2,10]
