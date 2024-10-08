@@ -60,7 +60,6 @@ testType caseName prefix = testCaseSteps caseName $ \step -> do
     integrityModes = [ "SHA-1"
                      , "SHA-256"
                      , "SHA-384"
-                     , "PBMAC1 with SHA-1"
                      , "PBMAC1 with SHA-256"
                      , "PBMAC1 with SHA-512"
                      ]

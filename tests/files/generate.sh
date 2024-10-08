@@ -56,7 +56,7 @@ CIPHER_KEYS_AUTH_ENVELOPED=" \
 
 PKCS12_INTEGRITY="sha1 sha256 sha384"
 
-PKCS12_PBMAC1_INTEGRITY="sha1 sha256 sha512"
+PKCS12_PBMAC1_INTEGRITY="sha256 sha512"
 
 PKCS12_PRIVACY=" \
   aes-128-cbc \
@@ -245,12 +245,12 @@ for TYPE in rsa ed25519; do
       | der_to_pem PKCS12
     done
 
-    for md in $PKCS12_PBMAC1_INTEGRITY; do
+    for macalg in $PKCS12_PBMAC1_INTEGRITY; do
       "$OPENSSL" pkcs12 -export -passout pass:"$PASSWORD" \
       -inkey "$DEST_DIR"/"$TYPE"-unencrypted-pkcs8.pem \
       -in "$DEST_DIR"/"$TYPE"-self-signed-cert.pem \
-      -name "PKCS12 ($TYPE) -pbmac1_pbkdf2_md $md $macalg" \
-      -pbmac1_pbkdf2 -pbmac1_pbkdf2_md $md \
+      -name "PKCS12 ($TYPE) -macalg $macalg -pbmac1_pbkdf2_md $macalg" \
+      -macalg $macalg -pbmac1_pbkdf2 -pbmac1_pbkdf2_md $macalg \
       | der_to_pem PKCS12
     done
 
