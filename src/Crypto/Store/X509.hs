@@ -150,9 +150,6 @@ signedToPEM :: forall a. SignedObject a => X509.SignedExact a -> PEM
 signedToPEM obj = mkPEM (signedObjectName prx) (X509.encodeSignedObject obj)
   where prx = Proxy :: Proxy a
 
-mkPEM :: String -> B.ByteString -> PEM
-mkPEM name bs = PEM { pemName = name, pemHeader = [], pemContent = bs}
-
 
 -- RSA public keys
 
