@@ -11,6 +11,7 @@ module Crypto.Store.PEM
     , writePEMs
     , pemsWriteBS
     , pemsWriteLBS
+    , mkPEM
     , module Data.PEM
     ) where
 
@@ -33,3 +34,7 @@ pemsWriteLBS = L.concat . map pemWriteLBS
 -- | Write a PEM file to disk.
 writePEMs :: FilePath -> [PEM] -> IO ()
 writePEMs filepath = L.writeFile filepath . pemsWriteLBS
+
+-- | Make a PEM without headers.
+mkPEM :: String -> B.ByteString -> PEM
+mkPEM name bs = PEM { pemName = name, pemHeader = [], pemContent = bs}

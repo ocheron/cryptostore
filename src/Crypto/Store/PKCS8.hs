@@ -252,9 +252,6 @@ encryptKeyToPEM alg pwd privKey = toPEM <$> encrypt alg pwd bs
   where bs = pemContent (keyToModernPEM privKey)
         toPEM pkcs8 = mkPEM "ENCRYPTED PRIVATE KEY" (encodeASN1Object pkcs8)
 
-mkPEM :: String -> B.ByteString -> PEM
-mkPEM name bs = PEM { pemName = name, pemHeader = [], pemContent = bs}
-
 
 -- Private key formats: traditional (SSLeay compatible) and modern (PKCS #8)
 
