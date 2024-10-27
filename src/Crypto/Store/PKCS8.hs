@@ -27,6 +27,7 @@ module Crypto.Store.PKCS8
     ( readKeyFile
     , readKeyFileFromMemory
     , pemToKey
+    , fromPem
     , writeKeyFile
     , writeKeyFileToMemory
     , keyToPEM
@@ -130,24 +131,14 @@ accumulate = catMaybes . foldr (flip pemToKey) []
 
 -- | Read a private key from a 'PEM' element and add it to the accumulator list.
 pemToKey :: [Maybe (OptProtected X509.PrivKey)] -> PEM -> [Maybe (OptProtected X509.PrivKey)]
-pemToKey acc pem =
-    case decodeASN1' BER (pemContent pem) of
-        Left _     -> acc
-        Right asn1 -> run (getParser $ pemName pem) asn1 : acc
+pemToKey acc pem = either (\_err -> acc) (\pk -> Just pk : acc) $ fromPem pem
 
+-- | Read private key from PEM while keeping the error
+fromPem :: PEM -> Either String (OptProtected X509.PrivKey)
+fromPem pem = do
+  asn1 :: [ASN1] <- either (Left . show) pure $ decodeASN1' BER $ pemContent pem
+  runParseASN1 (getParser $ pemName pem) asn1
   where
-    run p = either (const Nothing) Just . runParseASN1 p
-
-    allTypes  = unFormat <$> parse
-    rsa       = X509.PrivKeyRSA . unFormat <$> parse
-    dsa       = X509.PrivKeyDSA . DSA.toPrivateKey . unFormat <$> parse
-    ecdsa     = X509.PrivKeyEC . unFormat <$> parse
-    x25519    = X509.PrivKeyX25519 <$> parseModern
-    x448      = X509.PrivKeyX448 <$> parseModern
-    ed25519   = X509.PrivKeyEd25519 <$> parseModern
-    ed448     = X509.PrivKeyEd448 <$> parseModern
-    encrypted = inner . decrypt <$> parse
-
     getParser "PRIVATE KEY"           = Unprotected <$> allTypes
     getParser "RSA PRIVATE KEY"       = Unprotected <$> rsa
     getParser "DSA PRIVATE KEY"       = Unprotected <$> dsa
@@ -159,12 +150,28 @@ pemToKey acc pem =
     getParser "ENCRYPTED PRIVATE KEY" = Protected   <$> encrypted
     getParser _                       = empty
 
-    inner decfn pwd = do
-        decrypted <- decfn pwd
-        asn1 <- mapLeft DecodingError $ decodeASN1' BER decrypted
-        case run allTypes asn1 of
-            Nothing -> Left (ParseFailure "No key parsed after decryption")
-            Just k  -> return k
+    allTypes :: ParseASN1 () X509.PrivKey
+    allTypes  = unFormat <$> parse
+
+    rsa, dsa, ecdsa, x25519, x448, ed25519, ed448 :: ParseASN1 () X509.PrivKey
+    rsa       = X509.PrivKeyRSA . unFormat <$> parse
+    dsa       = X509.PrivKeyDSA . DSA.toPrivateKey . unFormat <$> parse
+    ecdsa     = X509.PrivKeyEC . unFormat <$> parse
+    x25519    = X509.PrivKeyX25519 <$> parseModern
+    x448      = X509.PrivKeyX448 <$> parseModern
+    ed25519   = X509.PrivKeyEd25519 <$> parseModern
+    ed448     = X509.PrivKeyEd448 <$> parseModern
+
+    encrypted :: ParseASN1 () (ProtectionPassword -> Either StoreError X509.PrivKey)
+    encrypted = inner . decrypt <$> parse
+      where
+        inner :: (t -> Either StoreError B.ByteString) -> t -> Either StoreError X509.PrivKey
+        inner decfn pwd = do
+          decrypted <- decfn pwd
+          asn1 <- mapLeft DecodingError $ decodeASN1' BER decrypted
+          case runParseASN1 allTypes asn1 of
+              Left _ -> Left (ParseFailure "No key parsed after decryption")
+              Right k  -> return k
 
 
 -- Writing to PEM format
