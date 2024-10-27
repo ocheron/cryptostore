@@ -611,68 +611,54 @@ parseCurveFn = parseNamedCurve <|> parsePrimeCurve
 -- X25519, X448, Ed25519, Ed448
 
 instance ASN1Elem e => ProduceASN1Object e (Modern X25519.SecretKey) where
-    asn1s (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
-      where
-        v     = gIntVal 0
-        alg   = asn1Container Sequence (gOID [1,3,101,110])
-        bs    = innerEddsaASN1S privKey
-        att   = attributesASN1S (Container Context 0) attrs
+    asn1s = produceModernEddsa [1,3,101,110]
 
 instance Monoid e => ParseASN1Object e (Modern X25519.SecretKey) where
-    parse = onNextContainer Sequence $ do
-        skipVersion
-        onNextContainer Sequence $ do { OID [1,3,101,110] <- getNext; return () }
-        (attrs, bs) <- parseAttrKeys
-        Modern attrs <$> parseInnerEddsa "X25519" X25519.secretKey bs
+    parse = parseModernEddsa "X25519" [1,3,101,110] X25519.secretKey
 
 instance ASN1Elem e => ProduceASN1Object e (Modern X448.SecretKey) where
-    asn1s (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
-      where
-        v     = gIntVal 0
-        alg   = asn1Container Sequence (gOID [1,3,101,111])
-        bs    = innerEddsaASN1S privKey
-        att   = attributesASN1S (Container Context 0) attrs
+    asn1s = produceModernEddsa [1,3,101,111]
 
 instance Monoid e => ParseASN1Object e (Modern X448.SecretKey) where
-    parse = onNextContainer Sequence $ do
-        skipVersion
-        onNextContainer Sequence $ do { OID [1,3,101,111] <- getNext; return () }
-        (attrs, bs) <- parseAttrKeys
-        Modern attrs <$> parseInnerEddsa "X448" X448.secretKey bs
+    parse = parseModernEddsa "X448" [1,3,101,111] X448.secretKey
 
 instance ASN1Elem e => ProduceASN1Object e (Modern Ed25519.SecretKey) where
-    asn1s (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
-      where
-        v     = gIntVal 0
-        alg   = asn1Container Sequence (gOID [1,3,101,112])
-        bs    = innerEddsaASN1S privKey
-        att   = attributesASN1S (Container Context 0) attrs
+    asn1s = produceModernEddsa [1,3,101,112]
 
 instance Monoid e => ParseASN1Object e (Modern Ed25519.SecretKey) where
-    parse = onNextContainer Sequence $ do
-        skipVersion
-        onNextContainer Sequence $ do { OID [1,3,101,112] <- getNext; return () }
-        (attrs, bs) <- parseAttrKeys
-        Modern attrs <$> parseInnerEddsa "Ed25519" Ed25519.secretKey bs
+    parse = parseModernEddsa "Ed25519" [1,3,101,112] Ed25519.secretKey
 
 instance ASN1Elem e => ProduceASN1Object e (Modern Ed448.SecretKey) where
-    asn1s (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
-      where
-        v     = gIntVal 0
-        alg   = asn1Container Sequence (gOID [1,3,101,113])
-        bs    = innerEddsaASN1S privKey
-        att   = attributesASN1S (Container Context 0) attrs
+    asn1s = produceModernEddsa [1,3,101,113]
 
 instance Monoid e => ParseASN1Object e (Modern Ed448.SecretKey) where
-    parse = onNextContainer Sequence $ do
-        skipVersion
-        onNextContainer Sequence $ do { OID [1,3,101,113] <- getNext; return () }
-        (attrs, bs) <- parseAttrKeys
-        Modern attrs <$> parseInnerEddsa "Ed448" Ed448.secretKey bs
+    parse = parseModernEddsa "Ed448" [1,3,101,113] Ed448.secretKey
+
+-- * Producer helpers
+
+produceModernEddsa :: (ByteArrayAccess key, ASN1Elem e) => OID -> Modern key -> ASN1Stream e
+produceModernEddsa oid (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
+  where
+    v     = gIntVal 0
+    alg   = asn1Container Sequence (gOID oid)
+    bs    = innerEddsaASN1S privKey
+    att   = attributesASN1S (Container Context 0) attrs
 
 innerEddsaASN1S :: (ASN1Elem e, ByteArrayAccess key) => key -> ASN1Stream e
 innerEddsaASN1S key = gOctetString (encodeASN1S inner)
   where inner = gOctetString (convert key)
+
+-- * Parser helpers
+
+parseModernEddsa :: Monoid e => String -> OID -> (B.ByteString -> CryptoFailable a) -> ParseASN1 e (Modern a)
+parseModernEddsa tag expectedOid f = onNextContainer Sequence $ do
+  skipVersion
+  onNextContainer Sequence $ do
+    OID oid <- getNext
+    when (oid /= expectedOid) $
+      fail $ "parseModernEddsa: while parsing " <> tag <> " expected OID " <> show expectedOid <> " while got " <> show oid
+  (attrs, bs) <- parseAttrKeys
+  Modern attrs <$> parseInnerEddsa tag f bs
 
 parseInnerEddsa :: Monoid e
                 => String
