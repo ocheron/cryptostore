@@ -327,23 +327,6 @@ instance Monoid e => ParseASN1Object e (Modern X509.PrivKey) where
         ed25519 = fmap X509.PrivKeyEd25519 <$> parse
         ed448   = fmap X509.PrivKeyEd448 <$> parse
 
-skipVersion :: Monoid e => ParseASN1 e ()
-skipVersion = do
-    IntVal v <- getNext
-    when (v /= 0 && v /= 1) $
-        throwParseError ("PKCS8: parsed invalid version: " ++ show v)
-
-skipPublicKey :: Monoid e => ParseASN1 e ()
-skipPublicKey = void (fmap Just parseTaggedPrimitive <|> return Nothing)
-  where parseTaggedPrimitive = do { Other _ 1 bs <- getNext; return bs }
-
-parseAttrKeys :: Monoid e => ParseASN1 e ([Attribute], B.ByteString)
-parseAttrKeys = do
-    OctetString bs <- getNext
-    attrs <- parseAttributes (Container Context 0)
-    skipPublicKey
-    return (attrs, bs)
-
 
 -- RSA
 
@@ -709,3 +692,20 @@ parseInnerEddsa name buildKey input =
             CryptoPassed privKey -> return privKey
             CryptoFailed _       ->
                 throwParseError ("PKCS8: parsed invalid " ++ name ++ " secret key")
+
+skipVersion :: Monoid e => ParseASN1 e ()
+skipVersion = do
+    IntVal v <- getNext
+    when (v /= 0 && v /= 1) $
+        throwParseError ("PKCS8: parsed invalid version: " ++ show v)
+
+skipPublicKey :: Monoid e => ParseASN1 e ()
+skipPublicKey = void (fmap Just parseTaggedPrimitive <|> return Nothing)
+  where parseTaggedPrimitive = do { Other _ 1 bs <- getNext; return bs }
+
+parseAttrKeys :: Monoid e => ParseASN1 e ([Attribute], B.ByteString)
+parseAttrKeys = do
+    OctetString bs <- getNext
+    attrs <- parseAttributes (Container Context 0)
+    skipPublicKey
+    return (attrs, bs)
