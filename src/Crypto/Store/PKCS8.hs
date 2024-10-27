@@ -280,14 +280,13 @@ newtype Traditional a = Traditional { unTraditional :: a }
 parseTraditional :: ParseASN1Object e (Traditional a) => ParseASN1 e a
 parseTraditional = unTraditional <$> parse
 
-data Modern a = Modern [Attribute] a
+data Modern a = Modern { _modernAttributes :: [Attribute], unModern :: a }
 
 instance Functor Modern where
     fmap f (Modern attrs a) = Modern attrs (f a)
 
 parseModern :: ParseASN1Object e (Modern a) => ParseASN1 e a
 parseModern = unModern <$> parse
-  where unModern (Modern _ a) = a
 
 -- | A key associated with format.  Allows to implement 'ASN1Object' instances.
 data FormattedKey a = FormattedKey PrivateKeyFormat a
