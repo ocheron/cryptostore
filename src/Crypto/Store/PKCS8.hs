@@ -636,7 +636,7 @@ instance Monoid e => ParseASN1Object e (Modern Ed448.SecretKey) where
 
 -- * Producer helpers
 
-produceModernEddsa :: (ByteArrayAccess key, ASN1Elem e) => OID -> Modern key -> ASN1Stream e
+produceModernEddsa :: (ASN1Elem e, ByteArrayAccess key) => OID -> Modern key -> ASN1Stream e
 produceModernEddsa oid (Modern attrs privKey) = asn1Container Sequence (v . alg . bs . att)
   where
     v     = gIntVal 0
@@ -651,14 +651,14 @@ innerEddsaASN1S key = gOctetString (encodeASN1S inner)
 -- * Parser helpers
 
 parseModernEddsa :: Monoid e => String -> OID -> (B.ByteString -> CryptoFailable a) -> ParseASN1 e (Modern a)
-parseModernEddsa tag expectedOid f = onNextContainer Sequence $ do
+parseModernEddsa name expectedOid buildKey = onNextContainer Sequence $ do
   skipVersion
   onNextContainer Sequence $ do
     OID oid <- getNext
     when (oid /= expectedOid) $
-      fail $ "parseModernEddsa: while parsing " <> tag <> " expected OID " <> show expectedOid <> " while got " <> show oid
+      throwParseError ("PKCS8: while parsing " ++ name ++ " expected OID " ++ show expectedOid ++ " while got " ++ show oid)
   (attrs, bs) <- parseAttrKeys
-  Modern attrs <$> parseInnerEddsa tag f bs
+  Modern attrs <$> parseInnerEddsa name buildKey bs
 
 parseInnerEddsa :: Monoid e
                 => String
