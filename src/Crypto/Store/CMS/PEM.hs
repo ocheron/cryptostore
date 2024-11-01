@@ -11,6 +11,7 @@ module Crypto.Store.CMS.PEM
     , readCMSFileFromMemory
     , berToContentInfo
     , pemToContentInfo
+    , pemToContentInfoAccum
     , writeCMSFile
     , writeCMSFileToMemory
     , contentInfoToDER
@@ -18,7 +19,7 @@ module Crypto.Store.CMS.PEM
     ) where
 
 import qualified Data.ByteString as B
-import           Data.Maybe (catMaybes)
+import           Data.Either (rights)
 
 import Crypto.Store.CMS.Info
 import Crypto.Store.CMS.Util
@@ -37,7 +38,7 @@ readCMSFileFromMemory :: B.ByteString -> [ContentInfo]
 readCMSFileFromMemory = either (const []) accumulate . pemParseBS
 
 accumulate :: [PEM] -> [ContentInfo]
-accumulate = catMaybes . foldr (flip pemToContentInfo) []
+accumulate = rights . map pemToContentInfo
 
 -- | Read a content info from a bytearray in BER format.
 berToContentInfo :: B.ByteString -> Either StoreError ContentInfo
@@ -45,16 +46,16 @@ berToContentInfo = decodeASN1Object
 
 -- | Read a content info from a 'PEM' element and add it to the accumulator
 -- list.
-pemToContentInfo :: [Maybe ContentInfo] -> PEM -> [Maybe ContentInfo]
-pemToContentInfo acc pem
-    | pemName pem `elem` names = decode (pemContent pem)
-    | otherwise                = Nothing : acc
-  where
-    names = [ "CMS", "PKCS7" ]
-    decode bs =
-        case berToContentInfo bs of
-            Left _ -> Nothing : acc
-            Right info -> Just info : acc
+pemToContentInfoAccum :: [Maybe ContentInfo] -> PEM -> [Maybe ContentInfo]
+pemToContentInfoAccum acc pem =
+    either (const Nothing) Just (pemToContentInfo pem) : acc
+
+-- | Read a content info from a 'PEM' element.
+pemToContentInfo :: PEM -> Either StoreError ContentInfo
+pemToContentInfo pem
+    | pemName pem `elem` names = berToContentInfo (pemContent pem)
+    | otherwise                = Left UnexpectedNameForPEM
+  where names = [ "CMS", "PKCS7" ]
 
 
 -- Writing to PEM format

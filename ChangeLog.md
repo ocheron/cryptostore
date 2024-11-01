@@ -8,6 +8,11 @@
 
 * CMS now supports SHA-3 algorithms in HMAC, or as digest algorithm
 
+* Functions `pemToKey`, `pemToPubKey` and `pemToContentInfo` are modified to
+  return error details when a PEM object cannot be read.  The old API signature
+  that discarded error details is available with functions renamed
+  `pemToKeyAccum`, `pemToPubKeyAccum` and `pemToContentInfoAccum`.
+
 * Fixed encoding of some HMAC and PRF parameters
 
 ## 0.3.1.0 - 2024-05-05

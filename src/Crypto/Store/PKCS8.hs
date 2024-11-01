@@ -25,6 +25,7 @@ module Crypto.Store.PKCS8
     ( readKeyFile
     , readKeyFileFromMemory
     , pemToKey
+    , pemToKeyAccum
     , writeKeyFile
     , writeKeyFileToMemory
     , keyToPEM
@@ -55,6 +56,7 @@ import Data.ASN1.BinaryEncoding
 import Data.ASN1.BitArray
 import Data.ASN1.Encoding
 import Data.ByteArray (ByteArrayAccess, convert)
+import Data.Either (rights)
 import Data.Maybe
 import qualified Data.X509 as X509
 import qualified Data.ByteString as B
@@ -124,18 +126,26 @@ readKeyFileFromMemory :: B.ByteString -> [OptProtected X509.PrivKey]
 readKeyFileFromMemory = either (const []) accumulate . pemParseBS
 
 accumulate :: [PEM] -> [OptProtected X509.PrivKey]
-accumulate = catMaybes . foldr (flip pemToKey) []
+accumulate = rights . map pemToKey
 
 -- | Read a private key from a 'PEM' element and add it to the accumulator list.
-pemToKey :: [Maybe (OptProtected X509.PrivKey)] -> PEM -> [Maybe (OptProtected X509.PrivKey)]
-pemToKey acc pem =
-    case decodeASN1' BER (pemContent pem) of
-        Left _     -> acc
-        Right asn1 -> run (getParser $ pemName pem) asn1 : acc
+--
+-- This API is modelled after the original @pemToKey@ in "Data.X509.Memory".
+pemToKeyAccum :: [Maybe (OptProtected X509.PrivKey)] -> PEM -> [Maybe (OptProtected X509.PrivKey)]
+pemToKeyAccum acc pem =
+    case pemToKey pem of
+        Left (DecodingError _) -> acc
+        Left _                 -> Nothing : acc
+        Right key              -> Just key : acc
+
+-- | Read a private key from a 'PEM' element.
+pemToKey :: PEM -> Either StoreError (OptProtected X509.PrivKey)
+pemToKey pem = do
+    asn1 <- mapLeft DecodingError $ decodeASN1' BER (pemContent pem)
+    parser <- getParser (pemName pem)
+    mapLeft ParseFailure $ runParseASN1 parser asn1
 
   where
-    run p = either (const Nothing) Just . runParseASN1 p
-
     allTypes  = unFormat <$> parse
     rsa       = X509.PrivKeyRSA . unFormat <$> parse
     dsa       = X509.PrivKeyDSA . DSA.toPrivateKey . unFormat <$> parse
@@ -146,23 +156,23 @@ pemToKey acc pem =
     ed448     = X509.PrivKeyEd448 <$> parseModern
     encrypted = inner . decrypt <$> parse
 
-    getParser "PRIVATE KEY"           = Unprotected <$> allTypes
-    getParser "RSA PRIVATE KEY"       = Unprotected <$> rsa
-    getParser "DSA PRIVATE KEY"       = Unprotected <$> dsa
-    getParser "EC PRIVATE KEY"        = Unprotected <$> ecdsa
-    getParser "X25519 PRIVATE KEY"    = Unprotected <$> x25519
-    getParser "X448 PRIVATE KEY"      = Unprotected <$> x448
-    getParser "ED25519 PRIVATE KEY"   = Unprotected <$> ed25519
-    getParser "ED448 PRIVATE KEY"     = Unprotected <$> ed448
-    getParser "ENCRYPTED PRIVATE KEY" = Protected   <$> encrypted
-    getParser _                       = empty
+    getParser "PRIVATE KEY"           = return (Unprotected <$> allTypes)
+    getParser "RSA PRIVATE KEY"       = return (Unprotected <$> rsa)
+    getParser "DSA PRIVATE KEY"       = return (Unprotected <$> dsa)
+    getParser "EC PRIVATE KEY"        = return (Unprotected <$> ecdsa)
+    getParser "X25519 PRIVATE KEY"    = return (Unprotected <$> x25519)
+    getParser "X448 PRIVATE KEY"      = return (Unprotected <$> x448)
+    getParser "ED25519 PRIVATE KEY"   = return (Unprotected <$> ed25519)
+    getParser "ED448 PRIVATE KEY"     = return (Unprotected <$> ed448)
+    getParser "ENCRYPTED PRIVATE KEY" = return (Protected   <$> encrypted)
+    getParser _                       = Left UnexpectedNameForPEM
 
     inner decfn pwd = do
         decrypted <- decfn pwd
         asn1 <- mapLeft DecodingError $ decodeASN1' BER decrypted
-        case run allTypes asn1 of
-            Nothing -> Left (ParseFailure "No key parsed after decryption")
-            Just k  -> return k
+        case runParseASN1 allTypes asn1 of
+            Left _   -> Left (ParseFailure "No key parsed after decryption")
+            Right k  -> return k
 
 
 -- Writing to PEM format

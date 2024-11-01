@@ -26,6 +26,8 @@ data StoreError =
       -- ^ Error while decoding ASN.1 content
     | ParseFailure String
       -- ^ Error while parsing an ASN.1 object
+    | UnexpectedNameForPEM
+      -- ^ The name of the given PEM object is not supported
     | DecryptionFailed
       -- ^ Unable to decrypt, incorrect key or password?
     | BadContentMAC

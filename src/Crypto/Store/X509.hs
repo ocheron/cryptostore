@@ -20,6 +20,7 @@ module Crypto.Store.X509
     , readPubKeyFile
     , readPubKeyFileFromMemory
     , pemToPubKey
+    , pemToPubKeyAccum
     , writePubKeyFile
     , writePubKeyFileToMemory
     , pubKeyToPEM
@@ -36,7 +37,7 @@ module Crypto.Store.X509
 import Data.ASN1.Types
 import Data.ASN1.BinaryEncoding
 import Data.ASN1.Encoding
-import Data.Maybe
+import Data.Either (rights)
 import Data.Proxy
 import qualified Data.X509 as X509
 import qualified Data.ByteString as B
@@ -46,7 +47,9 @@ import qualified Crypto.PubKey.RSA as RSA
 import Crypto.Store.ASN1.Generate
 import Crypto.Store.ASN1.Parse
 import Crypto.Store.CMS.Util
+import Crypto.Store.Error
 import Crypto.Store.PEM
+import Crypto.Store.Util
 
 
 -- | Class of signed objects convertible to PEM.
@@ -78,24 +81,32 @@ readPubKeyFileFromMemory :: B.ByteString -> [X509.PubKey]
 readPubKeyFileFromMemory = either (const []) accumulate . pemParseBS
 
 accumulate :: [PEM] -> [X509.PubKey]
-accumulate = catMaybes . foldr (flip pemToPubKey) []
+accumulate = rights . map pemToPubKey
 
 -- | Read a public key from a 'PEM' element and add it to the accumulator list.
-pemToPubKey :: [Maybe X509.PubKey] -> PEM -> [Maybe X509.PubKey]
-pemToPubKey acc pem =
-    case decodeASN1' BER (pemContent pem) of
-        Left _     -> acc
-        Right asn1 -> run (getParser $ pemName pem) asn1 : acc
+--
+-- This API is modelled after function @pemToKey@ in "Data.X509.Memory".
+pemToPubKeyAccum :: [Maybe X509.PubKey] -> PEM -> [Maybe X509.PubKey]
+pemToPubKeyAccum acc pem =
+    case pemToPubKey pem of
+        Left (DecodingError _) -> acc
+        Left _                 -> Nothing : acc
+        Right pubKey           -> Just pubKey : acc
+
+-- | Read a public key from a 'PEM' element.
+pemToPubKey :: PEM -> Either StoreError X509.PubKey
+pemToPubKey pem = do
+    asn1 <- mapLeft DecodingError $ decodeASN1' BER (pemContent pem)
+    parser <- getParser (pemName pem)
+    (pubKey, unparsed) <- mapLeft ParseFailure $ parser asn1
+    case unparsed of
+        [] -> return pubKey
+        er -> Left $ ParseFailure ("pemToPubKey: remaining state " ++ show er)
 
   where
-    run p asn1 =
-        case p asn1 of
-            Right (pubKey, []) -> Just pubKey
-            _                  -> Nothing
-
-    getParser "PUBLIC KEY"           = fromASN1
-    getParser "RSA PUBLIC KEY"       = runParseASN1State rsapkParser
-    getParser _                      = const (Left undefined)
+    getParser "PUBLIC KEY"           = return fromASN1
+    getParser "RSA PUBLIC KEY"       = return (runParseASN1State rsapkParser)
+    getParser _                      = Left UnexpectedNameForPEM
 
     rsapkParser = (\(RSAPublicKey pub) -> X509.PubKeyRSA pub) <$> parse
 
