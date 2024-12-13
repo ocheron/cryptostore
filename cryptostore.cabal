@@ -1,5 +1,5 @@
 name:                cryptostore
-version:             0.3.1.0
+version:             0.4.0.0
 synopsis:            Serialization of cryptographic data types
 description:         Haskell implementation of PKCS \#8, PKCS \#12 and CMS
                      (Cryptographic Message Syntax).
@@ -18,11 +18,6 @@ cabal-version:       >=1.10
 source-repository head
   type:     git
   location: https://github.com/ocheron/cryptostore
-
-flag use_crypton
-  description: Use crypton instead of cryptonite
-  manual: True
-  default: False
 
 library
   hs-source-dirs:      src
@@ -65,14 +60,9 @@ library
                      , asn1-types >= 0.3.1 && < 0.4
                      , asn1-encoding >= 0.9 && < 0.10
                      , hourglass >= 0.2
-  if flag(use_crypton)
-    build-depends:     crypton
+                     , crypton
                      , crypton-x509
                      , crypton-x509-validation
-  else
-    build-depends:     cryptonite >=0.26
-                     , x509 >= 1.7.5
-                     , x509-validation >= 1.5
   default-language:    Haskell2010
   ghc-options:         -Wall
 
@@ -103,11 +93,7 @@ test-suite test-cryptostore
                      , hourglass
                      , pem
                      , cryptostore
-  if flag(use_crypton)
-    build-depends:     crypton
+                     , crypton
                      , crypton-x509
-  else
-    build-depends:     cryptonite >=0.25
-                     , x509
   default-language:    Haskell2010
   ghc-options:         -Wall
