@@ -21,6 +21,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Crypto.Store.PKCS8
     ( readKeyFile
     , readKeyFileFromMemory
@@ -239,7 +241,7 @@ keyToModernPEM :: X509.PrivKey -> PEM
 keyToModernPEM privKey = mkPEM "PRIVATE KEY" (encodeASN1S asn1)
   where asn1 = modernPrivKeyASN1S [] privKey
 
-modernPrivKeyASN1S :: ASN1Elem e => [Attribute] -> X509.PrivKey -> ASN1Stream e
+modernPrivKeyASN1S :: forall e . ASN1Elem e => [Attribute] -> X509.PrivKey -> ASN1Stream e
 modernPrivKeyASN1S attrs privKey =
     case privKey of
         X509.PrivKeyRSA k -> modern k
@@ -250,6 +252,7 @@ modernPrivKeyASN1S attrs privKey =
         X509.PrivKeyEd25519 k -> modern k
         X509.PrivKeyEd448   k -> modern k
   where
+    modern :: forall a . ProduceASN1Object e (Modern a) => a -> ASN1Stream e
     modern a = asn1s (Modern attrs a)
 
 -- | Generate a PKCS #8 encrypted PEM for a private key.
@@ -277,14 +280,13 @@ newtype Traditional a = Traditional { unTraditional :: a }
 parseTraditional :: ParseASN1Object e (Traditional a) => ParseASN1 e a
 parseTraditional = unTraditional <$> parse
 
-data Modern a = Modern [Attribute] a
+data Modern a = Modern { _modernAttributes :: [Attribute], unModern :: a }
 
 instance Functor Modern where
     fmap f (Modern attrs a) = Modern attrs (f a)
 
 parseModern :: ParseASN1Object e (Modern a) => ParseASN1 e a
 parseModern = unModern <$> parse
-  where unModern (Modern _ a) = a
 
 -- | A key associated with format.  Allows to implement 'ASN1Object' instances.
 data FormattedKey a = FormattedKey PrivateKeyFormat a
