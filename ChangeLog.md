@@ -6,7 +6,7 @@
   in functions `writeP12File` and `writeP12FileToMemory` is modified.
   A low-level function for PBMAC1 is also available in the PKCS5 module.
 
-* CMS now supports SHA-3 algorithms in HMAC, or as digest algorithm
+* CMS now supports SHA-3 algorithms in HMAC, ECDSA, or as digest algorithm
 
 * Functions `pemToKey`, `pemToPubKey` and `pemToContentInfo` are modified to
   return error details when a PEM object cannot be read.  The old API signature

@@ -2131,6 +2131,10 @@ instance Enumerable SignatureType where
              , TypeECDSA (DigestAlgorithm SHA256)
              , TypeECDSA (DigestAlgorithm SHA384)
              , TypeECDSA (DigestAlgorithm SHA512)
+             , TypeECDSA (DigestAlgorithm SHA3_224)
+             , TypeECDSA (DigestAlgorithm SHA3_256)
+             , TypeECDSA (DigestAlgorithm SHA3_384)
+             , TypeECDSA (DigestAlgorithm SHA3_512)
 
              , TypeEd25519
              , TypeEd448
@@ -2158,6 +2162,10 @@ instance OIDable SignatureType where
     getObjectID (TypeECDSA (DigestAlgorithm SHA256)) = [1,2,840,10045,4,3,2]
     getObjectID (TypeECDSA (DigestAlgorithm SHA384)) = [1,2,840,10045,4,3,3]
     getObjectID (TypeECDSA (DigestAlgorithm SHA512)) = [1,2,840,10045,4,3,4]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA3_224)) = [2,16,840,1,101,3,4,3,9]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA3_256)) = [2,16,840,1,101,3,4,3,10]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA3_384)) = [2,16,840,1,101,3,4,3,11]
+    getObjectID (TypeECDSA (DigestAlgorithm SHA3_512)) = [2,16,840,1,101,3,4,3,12]
 
     getObjectID TypeEd25519                          = [1,3,101,112]
     getObjectID TypeEd448                            = [1,3,101,113]

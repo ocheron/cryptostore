@@ -210,6 +210,10 @@ instance Arbitrary SignatureAlg where
         , pure $ ECDSA (DigestAlgorithm SHA256)
         , pure $ ECDSA (DigestAlgorithm SHA384)
         , pure $ ECDSA (DigestAlgorithm SHA512)
+        , pure $ ECDSA (DigestAlgorithm SHA3_224)
+        , pure $ ECDSA (DigestAlgorithm SHA3_256)
+        , pure $ ECDSA (DigestAlgorithm SHA3_384)
+        , pure $ ECDSA (DigestAlgorithm SHA3_512)
 
         , pure Ed25519
         , pure Ed448
